@@ -2,9 +2,29 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { registerSW } from 'virtual:pwa-register';
 import App from './App';
+import { RuntimeErrorBoundary } from './components/RuntimeErrorBoundary';
 
-registerSW({ immediate: true });
+let serviceWorkerReloading = false;
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (serviceWorkerReloading) return;
+    serviceWorkerReloading = true;
+    window.location.reload();
+  });
+}
+
+registerSW({
+  immediate: true,
+  onRegisteredSW(_url, registration) {
+    void registration?.update();
+  },
+  onRegisterError(error) {
+    console.error('Service worker registration failed', error);
+  }
+});
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
-  <React.StrictMode><App /></React.StrictMode>
+  <React.StrictMode>
+    <RuntimeErrorBoundary><App /></RuntimeErrorBoundary>
+  </React.StrictMode>
 );

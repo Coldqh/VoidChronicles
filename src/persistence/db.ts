@@ -1,5 +1,6 @@
 import Dexie, { type EntityTable } from 'dexie';
 import type { GameStateSnapshot } from '../game/types';
+import { parseSnapshot } from './snapshot';
 
 export interface SaveRecord {
   id: string;
@@ -21,12 +22,13 @@ class VoidDatabase extends Dexie {
 export const db = new VoidDatabase();
 
 export async function saveSnapshot(snapshot: GameStateSnapshot): Promise<void> {
-  await db.saves.put({ id: 'ironman', updatedAt: new Date().toISOString(), snapshot });
+  const safeSnapshot = parseSnapshot(snapshot);
+  await db.saves.put({ id: 'ironman', updatedAt: new Date().toISOString(), snapshot: safeSnapshot });
 }
 
 export async function loadSnapshot(): Promise<GameStateSnapshot | null> {
   const record = await db.saves.get('ironman');
-  return record?.snapshot ?? null;
+  return record ? parseSnapshot(record.snapshot) : null;
 }
 
 export async function deleteSnapshot(): Promise<void> {
@@ -34,20 +36,19 @@ export async function deleteSnapshot(): Promise<void> {
 }
 
 export function exportSnapshot(snapshot: GameStateSnapshot): void {
-  const blob = new Blob([JSON.stringify(snapshot, null, 2)], { type: 'application/json' });
+  const safeSnapshot = parseSnapshot(snapshot);
+  const blob = new Blob([JSON.stringify(safeSnapshot, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement('a');
   anchor.href = url;
-  anchor.download = `void-chronicles-${snapshot.galaxy.seed}.json`;
+  anchor.download = `void-chronicles-${safeSnapshot.galaxy.seed}.json`;
+  document.body.append(anchor);
   anchor.click();
-  URL.revokeObjectURL(url);
+  anchor.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1_000);
 }
 
 export async function readSnapshotFile(file: File): Promise<GameStateSnapshot> {
   const raw = await file.text();
-  const parsed = JSON.parse(raw) as GameStateSnapshot;
-  if (parsed.schemaVersion !== 1 || !parsed.galaxy || !parsed.captain || !parsed.ship) {
-    throw new Error('Неподдерживаемый или повреждённый файл сохранения');
-  }
-  return parsed;
+  return parseSnapshot(JSON.parse(raw) as unknown);
 }

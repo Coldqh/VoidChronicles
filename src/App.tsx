@@ -27,17 +27,14 @@ function MainMenu() {
   const startGame = useGameStore((state) => state.startGame);
   const resumeGame = useGameStore((state) => state.resumeGame);
   const restoreSnapshot = useGameStore((state) => state.restoreSnapshot);
+  const saveAvailable = useGameStore((state) => state.saveAvailable);
+  const saveError = useGameStore((state) => state.saveError);
+  const dismissSaveError = useGameStore((state) => state.dismissSaveError);
+  const clearGame = useGameStore((state) => state.clearGame);
   const [settings, setSettings] = useState(defaultSettings);
   const [progress, setProgress] = useState<GenerationProgress | null>(null);
-  const [canResume, setCanResume] = useState(false);
   const fileRef = useRef<HTMLInputElement | null>(null);
 
-  useEffect(() => {
-    resumeGame().then((ok) => {
-      setCanResume(ok);
-      if (ok) useGameStore.getState().setScreen('menu');
-    }).catch(() => setCanResume(false));
-  }, [resumeGame]);
 
   const create = async () => {
     setProgress({ stage: 'start', progress: 0.01, message: 'Инициализация генератора' });
@@ -65,10 +62,12 @@ function MainMenu() {
       <span className="eyebrow">PROCEDURAL SPACE ROGUELIKE</span>
       <h1>VOID<br/>CHRONICLES</h1>
       <p className="menu-subtitle">Каждая галактика имеет собственную историю. Каждая экспедиция может стать последней.</p>
+      {saveError && <div className="save-error"><b>Сейв не загружен</b><p>{saveError}</p><div className="menu-actions"><button onClick={dismissSaveError}>Скрыть</button><button className="danger-button" onClick={() => void clearGame()}>Удалить повреждённый сейв</button></div></div>}
       {progress ? <div className="generation-panel">
         <div className="generation-line"><span>{progress.stage.toUpperCase()}</span><strong>{Math.round(progress.progress * 100)}%</strong></div>
         <div className="progress-track"><i style={{ width: `${progress.progress * 100}%` }} /></div>
         <p>{progress.message}</p>
+        {progress.stage === 'error' && <button onClick={() => setProgress(null)}>Вернуться к настройкам</button>}
       </div> : <>
         <div className="seed-row"><label>SEED<input value={settings.seed} onChange={(event) => setSettings({ ...settings, seed: event.target.value || 'VOID' })} /></label><button onClick={() => setSettings({ ...settings, seed: `VOID-${Math.random().toString(36).slice(2, 10).toUpperCase()}` })}>Случайный</button></div>
         <div className="settings-grid">
@@ -79,7 +78,7 @@ function MainMenu() {
         </div>
         <div className="menu-actions">
           <button className="primary-button large" onClick={create}>Создать галактику</button>
-          {canResume && <button onClick={() => resumeGame()}>Продолжить ironman</button>}
+          {saveAvailable && <button onClick={() => void resumeGame()}>Продолжить ironman</button>}
           <button onClick={() => fileRef.current?.click()}>Импорт сохранения</button>
           <input ref={fileRef} hidden type="file" accept="application/json" onChange={(event) => importSave(event.target.files?.[0])} />
         </div>
@@ -149,7 +148,7 @@ function GalaxyScreen() {
       <aside className="log-panel"><span className="eyebrow">ЖУРНАЛ КОРАБЛЯ</span>{store.logs.slice(0, 8).map((entry) => <article className={`log-entry ${entry.tone}`} key={entry.id}><b>{entry.title}</b><p>{entry.text}</p><small>{formatYear(entry.year)}</small></article>)}</aside>
     </div>
     {expeditionPlanet && <ExpeditionModal seed={store.galaxy.seed} planet={expeditionPlanet} artifact={artifactFor(expeditionPlanet)} onClose={() => setExpeditionPlanet(null)} onComplete={async (artifact, injury) => { await store.completeExpedition(current.id, expeditionPlanet.id, artifact, injury); setExpeditionPlanet(null); }} />}
-    {shipCombat && <ShipCombatModal playerHull={store.ship.hull} onDamage={store.damageShip} onVictory={async () => { await store.earnCredits(620, 'Победа в корабельном бою'); setShipCombat(false); }} onEscape={() => setShipCombat(false)} />}
+    {shipCombat && <ShipCombatModal playerHull={store.ship.hull} onDamage={store.damageShip} onVictory={async () => { await store.earnCredits(620, 'Победа в корабельном бою'); setShipCombat(false); }} onEscape={() => setShipCombat(false)} onDefeat={() => { setShipCombat(false); store.setScreen('ship'); }} />}
   </div>;
 }
 
@@ -173,9 +172,21 @@ function ShipScreen() {
   return <div className="game-shell"><TopBar/><main className="ship-screen"><section className="ship-hero"><span className="eyebrow">ЛИЧНЫЙ ИССЛЕДОВАТЕЛЬСКИЙ КОРАБЛЬ</span><h1>{ship.name}</h1><div className="ship-silhouette"><div className="ship-core"/><div className="ship-wing left"/><div className="ship-wing right"/></div><div className="ship-actions"><button onClick={repairShip}>Полный ремонт</button><button onClick={refuelShip}>Заправить</button>{snapshot && <button onClick={()=>exportSnapshot(snapshot)}>Экспорт сейва</button>}<button className="danger-button" onClick={clearGame}>Удалить ironman</button></div></section><section className="ship-data"><article><h2>Состояние</h2><div className="meter"><span>Корпус</span><strong>{ship.hull}/{ship.maxHull}</strong><i style={{width:`${ship.hull}%`}}/></div><div className="meter"><span>Топливо</span><strong>{ship.fuel}/{ship.maxFuel}</strong><i style={{width:`${ship.fuel}%`}}/></div><div className="stat-row"><span>Дальность</span><b>{ship.jumpRange}</b></div><div className="stat-row"><span>Груз</span><b>{ship.cargo.length}/{ship.cargoCapacity}</b></div></article><article><h2>Модули</h2>{ship.modules.map((module)=><div className="module-row" key={module.id}><span>{module.slot}</span><div><b>{module.name}</b><p>{module.effect}</p></div><em>R{module.rarity}</em></div>)}</article><article><h2>Капитан</h2><div className="stat-row"><span>Имя</span><b>{captain.name}</b></div><div className="stat-row"><span>Уровень</span><b>{captain.level}</b></div><div className="stat-row"><span>Здоровье</span><b>{captain.health}/{captain.maxHealth}</b></div><h3>Травмы</h3>{captain.injuries.length===0?<p>Травм нет.</p>:captain.injuries.map((injury)=><p key={injury.id}>{injury.bodyPart}: {injury.type} ({injury.severity}/10)</p>)}</article><article><h2>Груз</h2>{ship.cargo.length===0?<p>Трюм пуст.</p>:ship.cargo.map((item)=><div className="module-row" key={item.id}><span>{item.kind}</span><div><b>{item.name}</b><p>Оценка: ₡ {item.value}</p><button onClick={()=>sellCargo(item.id)}>Продать за ₡ {Math.round(item.value*.72)}</button></div><em>x{item.quantity}</em></div>)}</article></section></main></div>;
 }
 
+function BootScreen() {
+  return <main className="boot-screen"><div className="boot-mark">◆</div><span className="eyebrow">VOID CHRONICLES</span><p>Проверка локального архива…</p></main>;
+}
+
 export default function App() {
   const screen = useGameStore((state) => state.screen);
   const galaxy = useGameStore((state) => state.galaxy);
+  const hydrationStatus = useGameStore((state) => state.hydrationStatus);
+  const hydrateFromStorage = useGameStore((state) => state.hydrateFromStorage);
+
+  useEffect(() => {
+    void hydrateFromStorage();
+  }, [hydrateFromStorage]);
+
+  if (hydrationStatus === 'idle' || hydrationStatus === 'loading') return <BootScreen/>;
   if (!galaxy || screen === 'menu') return <MainMenu/>;
   if (screen === 'archive') return <ArchiveScreen/>;
   if (screen === 'ship') return <ShipScreen/>;

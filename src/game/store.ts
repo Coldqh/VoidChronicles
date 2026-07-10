@@ -10,9 +10,11 @@ import type {
   StarSystem
 } from './types';
 import { deleteSnapshot, loadSnapshot, saveSnapshot } from '../persistence/db';
+import { parseSnapshot, snapshotErrorMessage } from '../persistence/snapshot';
 import { createRng } from '../generation/rng';
 
 export type MainScreen = 'menu' | 'galaxy' | 'archive' | 'ship';
+export type HydrationStatus = 'idle' | 'loading' | 'ready' | 'error';
 
 interface GameStore {
   screen: MainScreen;
@@ -25,8 +27,13 @@ interface GameStore {
   discoveries: Discovery[];
   logs: GameLogEntry[];
   generationActive: boolean;
+  hydrationStatus: HydrationStatus;
+  saveAvailable: boolean;
+  saveError: string | null;
   setScreen(screen: MainScreen): void;
   setGenerationActive(active: boolean): void;
+  hydrateFromStorage(): Promise<void>;
+  dismissSaveError(): void;
   startGame(galaxy: Galaxy): Promise<void>;
   resumeGame(): Promise<boolean>;
   clearGame(): Promise<void>;
@@ -90,8 +97,16 @@ function distance(a: StarSystem, b: StarSystem): number {
 
 async function persist(get: () => GameStore): Promise<void> {
   const snapshot = get().getSnapshot();
-  if (snapshot) await saveSnapshot(snapshot);
+  if (!snapshot) return;
+  try {
+    await saveSnapshot(snapshot);
+  } catch (error) {
+    console.error('Ironman autosave failed', error);
+    useGameStore.setState({ saveError: `Автосохранение не выполнено: ${snapshotErrorMessage(error)}` });
+  }
 }
+
+let hydrationTask: Promise<void> | null = null;
 
 export const useGameStore = create<GameStore>((set, get) => ({
   screen: 'menu',
@@ -104,8 +119,57 @@ export const useGameStore = create<GameStore>((set, get) => ({
   discoveries: [],
   logs: [],
   generationActive: false,
+  hydrationStatus: 'idle',
+  saveAvailable: false,
+  saveError: null,
   setScreen: (screen) => set({ screen }),
   setGenerationActive: (generationActive) => set({ generationActive }),
+  async hydrateFromStorage() {
+    const status = get().hydrationStatus;
+    if (status === 'ready') return;
+    if (hydrationTask) return hydrationTask;
+
+    set({ hydrationStatus: 'loading', saveError: null });
+    hydrationTask = (async () => {
+      try {
+        const snapshot = await loadSnapshot();
+        if (!snapshot) {
+          set({ hydrationStatus: 'ready', saveAvailable: false, saveError: null });
+          return;
+        }
+        const safe = parseSnapshot(snapshot);
+        set({
+          screen: 'menu',
+          galaxy: safe.galaxy,
+          captain: safe.captain,
+          ship: safe.ship,
+          currentSystemId: safe.currentSystemId,
+          selectedSystemId: safe.currentSystemId,
+          gameYear: safe.gameYear,
+          discoveries: safe.discoveries,
+          logs: safe.logs,
+          hydrationStatus: 'ready',
+          saveAvailable: true,
+          saveError: null
+        });
+      } catch (error) {
+        set({
+          hydrationStatus: 'error',
+          saveAvailable: false,
+          saveError: snapshotErrorMessage(error),
+          galaxy: null,
+          captain: null,
+          ship: null,
+          currentSystemId: null,
+          selectedSystemId: null
+        });
+      } finally {
+        hydrationTask = null;
+      }
+    })();
+    return hydrationTask;
+  },
+  dismissSaveError() { set({ saveError: null, hydrationStatus: 'ready' }); },
   async startGame(galaxy) {
     const start = galaxy.systems.find((system) => system.id === galaxy.startSystemId);
     if (!start) throw new Error('Стартовая система не найдена');
@@ -118,22 +182,31 @@ export const useGameStore = create<GameStore>((set, get) => ({
       selectedSystemId: start.id,
       gameYear: 0,
       discoveries: [],
-      logs: [makeLog(0, 'Новая экспедиция', `Корабль «Странник-01» начинает путь из системы ${start.name}.`, 'good')]
+      logs: [makeLog(0, 'Новая экспедиция', `Корабль «Странник-01» начинает путь из системы ${start.name}.`, 'good')],
+      hydrationStatus: 'ready',
+      saveAvailable: true,
+      saveError: null
     });
     await persist(get);
   },
   async resumeGame() {
-    const snapshot = await loadSnapshot();
-    if (!snapshot) return false;
-    await get().restoreSnapshot(snapshot);
+    if (!get().galaxy) await get().hydrateFromStorage();
+    if (!get().galaxy || !get().captain || !get().ship || !get().currentSystemId) return false;
+    set({ screen: 'galaxy', saveAvailable: true, saveError: null });
     return true;
   },
   async clearGame() {
-    await deleteSnapshot();
-    set({
-      screen: 'menu', galaxy: null, captain: null, ship: null, currentSystemId: null,
-      selectedSystemId: null, gameYear: 0, discoveries: [], logs: []
-    });
+    try {
+      await deleteSnapshot();
+    } catch (error) {
+      console.error('Failed to delete ironman save', error);
+    } finally {
+      set({
+        screen: 'menu', galaxy: null, captain: null, ship: null, currentSystemId: null,
+        selectedSystemId: null, gameYear: 0, discoveries: [], logs: [],
+        hydrationStatus: 'ready', saveAvailable: false, saveError: null
+      });
+    }
   },
   selectSystem(selectedSystemId) { set({ selectedSystemId }); },
   async travelTo(systemId) {
@@ -268,8 +341,10 @@ export const useGameStore = create<GameStore>((set, get) => ({
     const ship = get().ship;
     if (!ship) return;
     const hull = Math.max(0, ship.hull - amount);
-    const statuses = status && !ship.statuses.includes(status) ? [...ship.statuses, status] : ship.statuses;
-    set({ ship: { ...ship, hull, statuses }, logs: [makeLog(get().gameYear, 'Повреждение корабля', `Корпус потерял ${amount} прочности.${status ? ` Состояние: ${status}.` : ''}`, 'danger'), ...get().logs] });
+    const nextStatus = hull <= 0 ? 'корабль выведен из строя' : status;
+    const statuses = nextStatus && !ship.statuses.includes(nextStatus) ? [...ship.statuses, nextStatus] : ship.statuses;
+    const title = hull <= 0 ? 'Корабль выведен из строя' : 'Повреждение корабля';
+    set({ ship: { ...ship, hull, statuses }, logs: [makeLog(get().gameYear, title, `Корпус потерял ${amount} прочности.${nextStatus ? ` Состояние: ${nextStatus}.` : ''}`, 'danger'), ...get().logs] });
     await persist(get);
   },
   async repairShip() {
@@ -310,18 +385,22 @@ export const useGameStore = create<GameStore>((set, get) => ({
     await persist(get);
   },
   async restoreSnapshot(snapshot) {
+    const safe = parseSnapshot(snapshot);
     set({
       screen: 'galaxy',
-      galaxy: snapshot.galaxy,
-      captain: snapshot.captain,
-      ship: snapshot.ship,
-      currentSystemId: snapshot.currentSystemId,
-      selectedSystemId: snapshot.currentSystemId,
-      gameYear: snapshot.gameYear,
-      discoveries: snapshot.discoveries,
-      logs: snapshot.logs
+      galaxy: safe.galaxy,
+      captain: safe.captain,
+      ship: safe.ship,
+      currentSystemId: safe.currentSystemId,
+      selectedSystemId: safe.currentSystemId,
+      gameYear: safe.gameYear,
+      discoveries: safe.discoveries,
+      logs: safe.logs,
+      hydrationStatus: 'ready',
+      saveAvailable: true,
+      saveError: null
     });
-    await saveSnapshot(snapshot);
+    await persist(get);
   },
   getSnapshot() {
     const { galaxy, captain, ship, currentSystemId, gameYear, discoveries, logs } = get();

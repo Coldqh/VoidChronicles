@@ -1,11 +1,21 @@
-VOID CHRONICLES — CI/PAGES HOTFIX
+VOID CHRONICLES — RUNTIME STABILITY HOTFIX
 
-1. Extract this archive into C:\VoidChronicles with replacement enabled.
-2. Run PowerShell in C:\VoidChronicles.
-3. If GitHub CLI is installed and authenticated:
-   powershell -ExecutionPolicy Bypass -File .\apply-pages-hotfix.ps1
+Исправлено:
+- бесконечное переключение меню и карты после перезапуска;
+- гонка между проверкой старого сейва и созданием новой галактики;
+- отдельная фаза загрузки IndexedDB;
+- проверка и безопасное восстановление сейвов;
+- экран аварийного восстановления вместо белой страницы;
+- безопасное автосохранение при ошибках IndexedDB;
+- тяжёлое пересоздание ResizeObserver на каждом движении карты;
+- O(N^2) поиск маршрутов при каждой отрисовке Canvas;
+- мутация React-state в наземной экспедиции;
+- повторные клики и двойные награды в боях;
+- корректное поражение корабля;
+- обновление и очистка старого PWA-кэша;
+- 2 теста целостности сохранений.
 
-Without GitHub CLI, first open:
-https://github.com/Coldqh/VoidChronicles/settings/pages
-Set Build and deployment -> Source -> GitHub Actions.
-Then run the same PowerShell script.
+Применение:
+1. Распаковать архив в отдельную папку.
+2. Запустить apply-runtime-hotfix.ps1.
+3. После успешного deploy один раз выполнить жёсткое обновление страницы Ctrl+F5.
