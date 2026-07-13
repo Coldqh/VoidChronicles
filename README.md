@@ -1,8 +1,16 @@
 # Void Chronicles
 
-**Current version: v0.9.1 — Legacy & Brand**
+**Current version: v0.9.2 — Responsive Shell**
 
 Procedural single-player space exploration roguelike built with React, TypeScript and Canvas.
+
+## v0.9.2 Responsive Shell
+
+- device-specific layouts for phones, tablets, laptops and wide desktop screens;
+- natural vertical page scrolling restored across the application;
+- compact mobile HUD and fixed five-action mobile dock;
+- responsive maps, panels, cards, modals, combat and expedition layouts;
+- safe-area support for installed iOS/Android PWA mode.
 
 ## v0.9 Legacy & Continuity
 

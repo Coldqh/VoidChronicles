@@ -156,6 +156,11 @@ function AppChrome() {
     return () => window.removeEventListener('keydown', close);
   }, []);
 
+  useEffect(() => {
+    document.documentElement.classList.toggle('drawer-open', open);
+    return () => document.documentElement.classList.remove('drawer-open');
+  }, [open]);
+
   if (!store.captain || !store.ship) return null;
   const navigate = (screen: MainScreen) => { store.setScreen(screen); setOpen(false); };
   const knownContacts = store.civilizationContacts.some((entry) => entry.stage !== 'unknown');
@@ -187,6 +192,13 @@ function AppChrome() {
       </nav>
       <footer><div><span>КОРПУС</span><b>{store.ship.hull}/{store.ship.maxHull}</b></div><div><span>ЭКИПАЖ</span><b>{store.crew.length + 1}</b></div><div><span>СХЕМА СЕЙВА</span><b>v{SAVE_SCHEMA_VERSION}</b></div></footer>
     </aside>
+    <nav className="mobile-dock" aria-label="Быстрая навигация">
+      <button className={store.screen === 'command' ? 'active' : ''} onClick={() => navigate('command')} aria-label="Мостик"><i>⌂</i><span>Мостик</span></button>
+      <button className={store.screen === 'system' ? 'active' : ''} onClick={() => navigate('system')} aria-label="Система"><i>◎</i><span>Система</span></button>
+      <button className={store.screen === 'galaxy' ? 'active' : ''} onClick={() => navigate('galaxy')} aria-label="Галактика"><i>✦</i><span>Галактика</span></button>
+      <button className={store.screen === 'operations' ? 'active' : ''} onClick={() => navigate('operations')} aria-label="Операции"><i>⚔</i><span>Операции</span></button>
+      <button onClick={() => setOpen(true)} aria-label="Открыть все разделы"><i>☰</i><span>Разделы</span></button>
+    </nav>
   </>;
 }
 

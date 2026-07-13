@@ -1,12 +1,15 @@
-# v0.9.1 — Legacy, Continuity & Brand
-
-- Includes the complete v0.9 legacy/continuity patch.
-- Adds the new Void Chronicles brand mark to the HUD, navigation drawer and boot screen.
-- Adds favicon, Apple touch icon and installable PWA icons.
-- Adds brand-asset validation before every production build.
-- Uses stable GitHub Pages action versions and removes the unnecessary configure-pages step.
-
 # Changelog
+
+## v0.9.2 — Responsive Shell
+
+- replaced the fixed-height global layout with a scroll-safe responsive application shell;
+- restored vertical touch scrolling on every long screen and removed the global body scroll lock on compact devices;
+- added a compact mobile HUD and a fixed five-action navigation dock;
+- added dedicated phone, tablet, laptop and wide-desktop breakpoints;
+- converted dense multi-column panels to device-appropriate grids and horizontal rails;
+- made maps, system inspectors, modals, combat, expedition, archive and settings layouts usable on narrow screens;
+- added safe-area padding for installed PWA mode and landscape-phone handling;
+- added automated responsive-shell regression checks.
 
 ## v0.9.0 — Legacy & Continuity
 
