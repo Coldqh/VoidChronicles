@@ -1,5 +1,19 @@
 # Changelog
 
+## v0.7.0 — Encounters & Consequences
+
+- added a reusable scene engine for distress calls, negotiations, crew moments, mysteries, travel and hub encounters;
+- added meaningful choices with credits, reputation, faction standing, crew morale, objectives and delayed consequences;
+- added deterministic travel encounters and local hub scenes tied to real systems, factions and NPCs;
+- added an objective layer that separates urgent decisions, opportunities, long stories and tutorial goals;
+- added a dedicated Scenes screen and placed the highest-priority incoming scene directly on the Command Deck;
+- added a seven-step modern onboarding experience with progress, context and a checkbox to disable it before galaxy generation;
+- added tutorial restart controls in Settings without touching the ironman archive;
+- redesigned the interface with layered spatial glass, animated scan lines, orbital compositions, cinematic scene cards and responsive mobile layouts;
+- added lazy loading for Living World and Laboratory screens;
+- migrated save schema from v7 to v8 with automatic narrative defaults for existing parties;
+- expanded deterministic narrative, migration and UI coverage; total suite: 36 tests.
+
 ## v0.6.0 — Relics, Technology & Living World
 
 - added a ship laboratory with multi-cycle artifact research, specialist bonuses, costs, risks and accidents;

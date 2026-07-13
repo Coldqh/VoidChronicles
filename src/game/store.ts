@@ -23,11 +23,15 @@ import type {
   MarketGood,
   NewsItem,
   PointOfInterest,
+  PlayerObjective,
+  PendingConsequence,
   ResearchProject,
   SaveMetadata,
   ScanReport,
   Ship,
   StarSystem,
+  StoryScene,
+  TutorialState,
   TechnologyBlueprint,
   WorldThread
 } from './types';
@@ -54,8 +58,9 @@ import { generateContracts, generateMarket, generateNews, initializeLivingGalaxy
 import { culturalArtifactMultiplier, initializeCivilizationLayer } from '../world/civilizations';
 import { blueprintFromProject, createResearchProject, researchPower } from '../research/technology';
 import { initializeWorldThreads, syncWorldThreads } from '../world/storyThreads';
+import { generateHubScene, generateTravelScene, initializeNarrative, processDueConsequences } from '../narrative/encounters';
 
-export type MainScreen = 'menu' | 'command' | 'galaxy' | 'system' | 'hub' | 'contracts' | 'factions' | 'civilizations' | 'crew' | 'archive' | 'laboratory' | 'world' | 'ship' | 'settings';
+export type MainScreen = 'menu' | 'command' | 'encounters' | 'galaxy' | 'system' | 'hub' | 'contracts' | 'factions' | 'civilizations' | 'crew' | 'archive' | 'laboratory' | 'world' | 'ship' | 'settings';
 export type HydrationStatus = 'idle' | 'loading' | 'ready' | 'error';
 export type SaveStatus = 'idle' | 'pending' | 'saving' | 'saved' | 'error';
 
@@ -89,6 +94,10 @@ interface GameStore {
   technologyBlueprints: TechnologyBlueprint[];
   equipmentInventory: EquipmentItem[];
   worldThreads: WorldThread[];
+  storyScenes: StoryScene[];
+  pendingConsequences: PendingConsequence[];
+  objectives: PlayerObjective[];
+  tutorial: TutorialState;
   generationActive: boolean;
   hydrationStatus: HydrationStatus;
   saveAvailable: boolean;
@@ -100,6 +109,10 @@ interface GameStore {
   busyAction: string | null;
   setScreen(screen: MainScreen): void;
   setGenerationActive(active: boolean): void;
+  advanceTutorial(): Promise<void>;
+  skipTutorial(): Promise<void>;
+  restartTutorial(): Promise<void>;
+  resolveStoryScene(sceneId: string, choiceId: string): Promise<{ ok: boolean; message: string }>;
   hydrateFromStorage(): Promise<void>;
   dismissSaveError(): void;
   dismissRecoveryNotice(): void;
@@ -333,6 +346,10 @@ export const useGameStore = create<GameStore>((set, get) => ({
   technologyBlueprints: [],
   equipmentInventory: [],
   worldThreads: [],
+  storyScenes: [],
+  pendingConsequences: [],
+  objectives: [],
+  tutorial: { enabled: false, active: false, currentStep: 0, completed: true },
   generationActive: false,
   hydrationStatus: 'idle',
   saveAvailable: false,
@@ -346,6 +363,83 @@ export const useGameStore = create<GameStore>((set, get) => ({
     if (!get().busyAction) set({ screen });
   },
   setGenerationActive: (generationActive) => set({ generationActive }),
+  async advanceTutorial() {
+    const tutorial = get().tutorial;
+    if (!tutorial.active || tutorial.completed) return;
+    const nextStep = tutorial.currentStep + 1;
+    const completed = nextStep >= 7;
+    set({
+      tutorial: { ...tutorial, currentStep: completed ? 6 : nextStep, active: !completed, completed },
+      objectives: get().objectives.map((objective) => objective.id === 'objective_tutorial_bridge' ? { ...objective, status: completed ? 'completed' as const : objective.status, progress: completed ? 100 : Math.round(nextStep / 7 * 100) } : objective)
+    });
+    await persist(set, get, completed ? 'tutorial-complete' : 'tutorial-step');
+  },
+  async skipTutorial() {
+    set({
+      tutorial: { enabled: false, active: false, currentStep: 6, completed: true },
+      objectives: get().objectives.map((objective) => objective.id === 'objective_tutorial_bridge' ? { ...objective, status: 'completed' as const, progress: 100 } : objective),
+      logs: [makeLog(get().gameYear, 'Обучение отключено', 'Корабельный помощник больше не показывает вводные подсказки.', 'info'), ...get().logs]
+    });
+    await persist(set, get, 'tutorial-skip');
+  },
+  async restartTutorial() {
+    const existing = get().objectives.some((objective) => objective.id === 'objective_tutorial_bridge');
+    set({
+      tutorial: { enabled: true, active: true, currentStep: 0, completed: false },
+      objectives: existing
+        ? get().objectives.map((objective) => objective.id === 'objective_tutorial_bridge' ? { ...objective, status: 'active' as const, progress: 0 } : objective)
+        : [{ id: 'objective_tutorial_bridge', title: 'Освоиться на мостике', description: 'Завершить короткое обучение и выбрать первую цель.', kind: 'tutorial' as const, status: 'active' as const, createdYear: get().gameYear, progress: 0 }, ...get().objectives]
+    });
+    await persist(set, get, 'tutorial-restart');
+  },
+  async resolveStoryScene(sceneId, choiceId) {
+    return runExclusive('story-scene', set, get, async () => {
+      const scene = get().storyScenes.find((entry) => entry.id === sceneId && entry.status === 'available');
+      const choice = scene?.choices.find((entry) => entry.id === choiceId);
+      const captain = get().captain;
+      if (!scene || !choice || !captain) return { ok: false, message: 'Сцена уже закрыта или выбор недоступен' };
+      if ((choice.effect.credits ?? 0) < 0 && captain.credits < Math.abs(choice.effect.credits ?? 0)) return { ok: false, message: 'Недостаточно кредитов' };
+      let factions = get().factions;
+      if (choice.effect.factionId && choice.effect.factionReputation) {
+        factions = adjustFactionStanding(factions, choice.effect.factionId, get().gameYear, `scene-${scene.id}-${choice.id}`, choice.effect.factionReputation, `Выбор в сцене «${scene.title}».`);
+      }
+      const crew = get().crew.map((member) => ({ ...member, morale: Math.max(0, Math.min(100, member.morale + (choice.effect.crewMorale ?? 0))) }));
+      const consequence = choice.effect.consequenceDelay && choice.effect.consequenceTitle ? {
+        id: `consequence_${scene.id}_${choice.id}_${get().gameYear}`,
+        status: 'pending' as const,
+        createdYear: get().gameYear,
+        triggerYear: get().gameYear + choice.effect.consequenceDelay,
+        title: choice.effect.consequenceTitle,
+        text: choice.effect.consequenceText ?? 'Решение продолжает менять ситуацию.',
+        tone: choice.effect.consequenceTone ?? 'info' as const,
+        systemId: scene.systemId,
+        factionId: choice.effect.factionId,
+        sourceSceneId: scene.id
+      } : null;
+      const objective = choice.effect.objectiveTitle ? {
+        id: `objective_${scene.id}_${choice.id}`,
+        title: choice.effect.objectiveTitle,
+        description: choice.effect.objectiveDescription ?? scene.summary,
+        kind: 'story' as const,
+        status: 'active' as const,
+        createdYear: get().gameYear,
+        systemId: choice.effect.objectiveSystemId ?? scene.systemId,
+        sourceSceneId: scene.id,
+        progress: 0
+      } : null;
+      set({
+        storyScenes: get().storyScenes.map((entry) => entry.id === scene.id ? { ...entry, status: 'resolved' as const, resolvedChoiceId: choice.id } : entry),
+        pendingConsequences: consequence ? [consequence, ...get().pendingConsequences] : get().pendingConsequences,
+        objectives: objective ? [objective, ...get().objectives] : get().objectives,
+        factions,
+        crew,
+        captain: { ...captain, credits: Math.max(0, captain.credits + (choice.effect.credits ?? 0)), reputation: captain.reputation + (choice.effect.reputation ?? 0) },
+        logs: [makeLog(get().gameYear, scene.title, `${choice.label}. ${choice.summary}`, choice.risk === 'high' ? 'warning' : choice.risk === 'low' ? 'good' : 'info'), ...get().logs]
+      });
+      await persist(set, get, 'story-scene');
+      return { ok: true, message: 'Решение принято. Мир запомнил выбор.' };
+    }, { ok: false, message: 'Другое действие ещё выполняется' });
+  },
   async hydrateFromStorage() {
     if (get().hydrationStatus === 'ready') return;
     if (hydrationTask) return hydrationTask;
@@ -389,6 +483,10 @@ export const useGameStore = create<GameStore>((set, get) => ({
           technologyBlueprints: safe.technologyBlueprints,
           equipmentInventory: safe.equipmentInventory,
           worldThreads: safe.worldThreads,
+          storyScenes: safe.storyScenes,
+          pendingConsequences: safe.pendingConsequences,
+          objectives: safe.objectives,
+          tutorial: safe.tutorial,
           saveMeta: safe.saveMeta ?? null,
           hydrationStatus: 'ready',
           saveAvailable: true,
@@ -423,6 +521,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       const living = initializeLivingGalaxy(galaxy);
       const civilizationLayer = initializeCivilizationLayer(galaxy, living.hubs);
       const enrichedGalaxy = civilizationLayer.galaxy;
+      const narrative = initializeNarrative(enrichedGalaxy, civilizationLayer.hubs, living.factions, galaxy.settings.tutorialEnabled !== false);
       const start = enrichedGalaxy.systems.find((system) => system.id === enrichedGalaxy.startSystemId);
       if (!start) throw new Error('Стартовая система не найдена');
       set({
@@ -454,6 +553,10 @@ export const useGameStore = create<GameStore>((set, get) => ({
         technologyBlueprints: [],
         equipmentInventory: initialEquipment(),
         worldThreads: initializeWorldThreads(enrichedGalaxy.civilizations, living.factions, civilizationLayer.archaeologyChains, 0),
+        storyScenes: narrative.storyScenes,
+        pendingConsequences: narrative.pendingConsequences,
+        objectives: narrative.objectives,
+        tutorial: narrative.tutorial,
         logs: [makeLog(0, 'Новая экспедиция', `Корабль «Странник-01» начинает путь из системы ${start.name}.`, 'good')],
         hydrationStatus: 'ready',
         saveAvailable: true,
@@ -482,7 +585,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
         set({
           screen: 'menu', galaxy: null, captain: null, ship: null, currentSystemId: null,
           selectedSystemId: null, gameYear: 0, discoveries: [], logs: [], scanReports: [],
-          pointsOfInterest: [], evidence: [], hypotheses: [], artifactKnowledge: [], crew: [], crewCandidates: [], factions: [], hubs: [], contracts: [], news: [], locationStates: [], currentHubId: null, localNpcs: [], civilizationContacts: [], archaeologyChains: [], researchProjects: [], technologyBlueprints: [], equipmentInventory: [], worldThreads: [],
+          pointsOfInterest: [], evidence: [], hypotheses: [], artifactKnowledge: [], crew: [], crewCandidates: [], factions: [], hubs: [], contracts: [], news: [], locationStates: [], currentHubId: null, localNpcs: [], civilizationContacts: [], archaeologyChains: [], researchProjects: [], technologyBlueprints: [], equipmentInventory: [], worldThreads: [], storyScenes: [], pendingConsequences: [], objectives: [], tutorial: { enabled: false, active: false, currentStep: 0, completed: true },
           hydrationStatus: 'ready', saveAvailable: false, saveError: null,
           saveStatus: 'idle', saveMeta: null, backupCount: 0, recoveryNotice: null
         });
@@ -550,7 +653,15 @@ export const useGameStore = create<GameStore>((set, get) => ({
       const newsItem = generateNews(updatedGalaxy.seed, updatedGalaxy.systems, get().hubs, nextYear, get().news.length);
       const nextNews = [newsItem, ...get().news].slice(0, 500);
       const worldThreads = syncWorldThreads(get().worldThreads, contracts, nextNews, get().researchProjects, nextYear);
-      set({ galaxy: updatedGalaxy, ship: updatedShip, currentSystemId: target.id, selectedSystemId: target.id, currentHubId: null, gameYear: nextYear, logs, contracts, news: nextNews, worldThreads });
+      const generatedScene = encounter ? null : generateTravelScene(updatedGalaxy.seed, current.id, target.id, target.name, nextYear, get().hubs, get().factions);
+      const processedConsequences = processDueConsequences(get().pendingConsequences, nextYear);
+      processedConsequences.due.forEach((entry) => logs.unshift(makeLog(nextYear, entry.title, entry.text, entry.tone)));
+      const storyScenes = [
+        ...(generatedScene ? [generatedScene] : []),
+        ...get().storyScenes.map((scene) => scene.status === 'available' && scene.expiresYear !== undefined && scene.expiresYear < nextYear ? { ...scene, status: 'expired' as const } : scene)
+      ].slice(0, 160);
+      const objectives = get().objectives.map((objective) => objective.status === 'active' && objective.deadlineYear !== undefined && objective.deadlineYear < nextYear ? { ...objective, status: 'failed' as const } : objective);
+      set({ galaxy: updatedGalaxy, ship: updatedShip, currentSystemId: target.id, selectedSystemId: target.id, currentHubId: null, gameYear: nextYear, logs, contracts, news: nextNews, worldThreads, storyScenes, pendingConsequences: processedConsequences.consequences, objectives });
       await persist(set, get, 'travel');
       return { ok: true, message: 'Перелёт завершён', encounter };
     }, { ok: false, message: 'Другое действие ещё выполняется' });
@@ -1146,6 +1257,11 @@ export const useGameStore = create<GameStore>((set, get) => ({
         updatedCaptain = { ...updatedCaptain, credits: updatedCaptain.credits + reward, reputation: updatedCaptain.reputation + 2 };
         logs.unshift(makeLog(gameYear, 'Доставка завершена', `Контракты закрыты. Получено ${reward} кредитов.`, 'good'));
       }
+      const hubNpc = get().localNpcs.find((npc) => npc.hubId === hub.id && npc.alive && npc.present);
+      const hubScene = generateHubScene(galaxy.seed, hub, faction, hubNpc?.id, gameYear);
+      const storyScenes = hubScene && !get().storyScenes.some((scene) => scene.id === hubScene.id)
+        ? [hubScene, ...get().storyScenes].slice(0, 160)
+        : get().storyScenes;
 
       set({
         hubs: hubs.map((entry) => ({ ...entry, docked: entry.id === hub.id, visited: entry.id === hub.id ? true : entry.visited })),
@@ -1155,6 +1271,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
         captain: updatedCaptain,
         factions: updatedFactions,
         contracts: updatedContracts,
+        storyScenes,
         logs
       });
       await persist(set, get, 'dock');
@@ -1403,6 +1520,10 @@ export const useGameStore = create<GameStore>((set, get) => ({
         technologyBlueprints: safe.technologyBlueprints,
         equipmentInventory: safe.equipmentInventory,
         worldThreads: safe.worldThreads,
+        storyScenes: safe.storyScenes,
+        pendingConsequences: safe.pendingConsequences,
+        objectives: safe.objectives,
+        tutorial: safe.tutorial,
         saveMeta: safe.saveMeta ?? null,
         hydrationStatus: 'ready',
         saveAvailable: true,
@@ -1416,7 +1537,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   getSnapshot() {
     const {
       galaxy, captain, ship, currentSystemId, gameYear, discoveries, logs, saveMeta,
-      scanReports, pointsOfInterest, evidence, hypotheses, artifactKnowledge, crew, crewCandidates, factions, hubs, contracts, news, locationStates, currentHubId, localNpcs, civilizationContacts, archaeologyChains, researchProjects, technologyBlueprints, equipmentInventory, worldThreads
+      scanReports, pointsOfInterest, evidence, hypotheses, artifactKnowledge, crew, crewCandidates, factions, hubs, contracts, news, locationStates, currentHubId, localNpcs, civilizationContacts, archaeologyChains, researchProjects, technologyBlueprints, equipmentInventory, worldThreads, storyScenes, pendingConsequences, objectives, tutorial
     } = get();
     if (!galaxy || !captain || !ship || !currentSystemId) return null;
     return {
@@ -1448,7 +1569,11 @@ export const useGameStore = create<GameStore>((set, get) => ({
       researchProjects,
       technologyBlueprints,
       equipmentInventory,
-      worldThreads
+      worldThreads,
+      storyScenes,
+      pendingConsequences,
+      objectives,
+      tutorial
     };
   }
 }));

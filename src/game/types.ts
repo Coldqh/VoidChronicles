@@ -20,6 +20,10 @@ export type BlueprintStatus = 'discovered' | 'available' | 'installed' | 'restri
 export type WorldThreadCategory = 'politics' | 'discovery' | 'conflict' | 'culture' | 'research' | 'crew';
 export type WorldThreadStatus = 'emerging' | 'active' | 'escalating' | 'resolved' | 'lost';
 export type EquipmentCategory = 'weapon' | 'armor' | 'tool' | 'medical' | 'implant' | 'relic';
+export type StorySceneCategory = 'distress' | 'negotiation' | 'crew' | 'mystery' | 'travel' | 'hub' | 'consequence';
+export type StorySceneStatus = 'available' | 'resolved' | 'expired';
+export type ObjectiveStatus = 'active' | 'completed' | 'failed';
+export type ConsequenceStatus = 'pending' | 'resolved';
 
 export interface GalaxySettings {
   seed: string;
@@ -29,6 +33,7 @@ export interface GalaxySettings {
   lifeFrequency: number;
   anomalyFrequency: number;
   difficulty: 'explorer' | 'standard' | 'brutal';
+  tutorialEnabled?: boolean;
 }
 
 export interface Coordinates { x: number; y: number; }
@@ -447,6 +452,83 @@ export interface WorldThread {
 
 export type FactionKind = 'government' | 'corporation' | 'university' | 'cartel' | 'tradeHouse' | 'religious' | 'pirates';
 export type FactionDisposition = 'friendly' | 'neutral' | 'wary' | 'hostile';
+
+export interface StoryChoiceEffect {
+  credits?: number;
+  reputation?: number;
+  factionId?: string;
+  factionReputation?: number;
+  crewMorale?: number;
+  objectiveTitle?: string;
+  objectiveDescription?: string;
+  objectiveSystemId?: string;
+  consequenceDelay?: number;
+  consequenceTitle?: string;
+  consequenceText?: string;
+  consequenceTone?: GameLogEntry['tone'];
+}
+
+export interface StoryChoice {
+  id: string;
+  label: string;
+  summary: string;
+  risk: 'low' | 'medium' | 'high' | 'unknown';
+  requires?: string[];
+  effect: StoryChoiceEffect;
+}
+
+export interface StoryScene {
+  id: string;
+  category: StorySceneCategory;
+  status: StorySceneStatus;
+  title: string;
+  summary: string;
+  body: string;
+  source: string;
+  systemId: string;
+  hubId?: string;
+  npcIds: string[];
+  factionIds: string[];
+  createdYear: number;
+  expiresYear?: number;
+  choices: StoryChoice[];
+  resolvedChoiceId?: string;
+}
+
+export interface PendingConsequence {
+  id: string;
+  status: ConsequenceStatus;
+  createdYear: number;
+  triggerYear: number;
+  title: string;
+  text: string;
+  tone: GameLogEntry['tone'];
+  systemId?: string;
+  factionId?: string;
+  sourceSceneId?: string;
+}
+
+export interface PlayerObjective {
+  id: string;
+  title: string;
+  description: string;
+  kind: 'urgent' | 'opportunity' | 'story' | 'tutorial';
+  status: ObjectiveStatus;
+  createdYear: number;
+  deadlineYear?: number;
+  systemId?: string;
+  hubId?: string;
+  sourceSceneId?: string;
+  progress: number;
+}
+
+export interface TutorialState {
+  enabled: boolean;
+  active: boolean;
+  currentStep: number;
+  completed: boolean;
+}
+
 export interface FactionMemory {
   id: string;
   year: number;
@@ -679,4 +761,8 @@ export interface GameStateSnapshot {
   technologyBlueprints: TechnologyBlueprint[];
   equipmentInventory: EquipmentItem[];
   worldThreads: WorldThread[];
+  storyScenes: StoryScene[];
+  pendingConsequences: PendingConsequence[];
+  objectives: PlayerObjective[];
+  tutorial: TutorialState;
 }

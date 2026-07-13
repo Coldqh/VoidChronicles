@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { GalaxyCanvas } from './components/GalaxyCanvas';
 import { ExpeditionModal } from './components/ExpeditionModal';
 import { ShipCombatModal } from './components/ShipCombatModal';
+import { TutorialOverlay } from './components/TutorialOverlay';
 import { SystemMap } from './components/SystemMap';
 import { roleLabel } from './crew/generateCrew';
 import type { GenerationProgress } from './generation/generateGalaxy';
@@ -14,7 +15,8 @@ import type {
   Hypothesis,
   LocalNpc,
   Planet,
-  PointOfInterest
+  PointOfInterest,
+  StoryScene
 } from './game/types';
 import { useGameStore, type MainScreen } from './game/store';
 import { exportSnapshot, readSnapshotFile } from './persistence/db';
@@ -22,8 +24,8 @@ import { forceApplicationUpdate } from './runtime/update';
 import { APP_CODENAME, APP_VERSION, BUILD_TIME, SAVE_SCHEMA_VERSION } from './version';
 import { contactStageLabel } from './world/civilizations';
 import { generateMarket } from './world/livingGalaxy';
-import { LaboratoryScreen } from './screens/LaboratoryScreen';
-import { WorldScreen } from './screens/WorldScreen';
+const LaboratoryScreen = lazy(() => import('./screens/LaboratoryScreen').then((module) => ({ default: module.LaboratoryScreen })));
+const WorldScreen = lazy(() => import('./screens/WorldScreen').then((module) => ({ default: module.WorldScreen })));
 import './styles/app.css';
 
 const defaultSettings: GalaxySettings = {
@@ -33,7 +35,8 @@ const defaultSettings: GalaxySettings = {
   civilizationCount: 12,
   lifeFrequency: 0.34,
   anomalyFrequency: 0.035,
-  difficulty: 'standard'
+  difficulty: 'standard',
+  tutorialEnabled: true
 };
 
 const formatYear = (year: number) => year < 0 ? `${Math.abs(year).toLocaleString('ru-RU')} лет до старта` : `Год ${year}`;
@@ -91,6 +94,7 @@ function MainMenu() {
           <label>История<select value={settings.historyYears} onChange={(event) => setSettings({ ...settings, historyYears: Number(event.target.value) })}><option value={100000}>100 000</option><option value={2000000}>2 000 000</option><option value={10000000}>10 000 000</option></select></label>
           <label>Цивилизации<input type="number" min="2" max="80" value={settings.civilizationCount} onChange={(event) => setSettings({ ...settings, civilizationCount: Number(event.target.value) })}/></label>
           <label>Сложность<select value={settings.difficulty} onChange={(event) => setSettings({ ...settings, difficulty: event.target.value as GalaxySettings['difficulty'] })}><option value="explorer">Исследователь</option><option value="standard">Стандарт</option><option value="brutal">Жестокая</option></select></label>
+          <label className="tutorial-choice"><span><b>Обучение нового капитана</b><small>Современное вводное сопровождение на первом запуске.</small></span><input type="checkbox" checked={settings.tutorialEnabled !== false} onChange={(event) => setSettings({ ...settings, tutorialEnabled: event.target.checked })}/><i/></label>
         </div>
         <div className="menu-actions">
           <button className="primary-button large" disabled={store.generationActive || Boolean(store.busyAction)} onClick={create}>{store.generationActive ? 'Генерация…' : 'Создать галактику'}</button>
@@ -108,6 +112,7 @@ function MainMenu() {
 const navigationGroups: { title: string; items: { id: MainScreen; label: string; icon: string }[] }[] = [
   { title: 'КОМАНДОВАНИЕ', items: [
     { id: 'command', label: 'Мостик', icon: '◆' },
+    { id: 'encounters', label: 'Сцены', icon: '◌' },
     { id: 'galaxy', label: 'Галактика', icon: '✦' },
     { id: 'system', label: 'Система', icon: '◉' }
   ] },
@@ -158,6 +163,37 @@ function AppChrome() {
   </>;
 }
 
+function SceneCard({ scene, featured = false }: { scene: StoryScene; featured?: boolean }) {
+  const store = useGameStore();
+  const [message, setMessage] = useState('');
+  const system = store.galaxy?.systems.find((entry) => entry.id === scene.systemId);
+  return <article className={`scene-card scene-${scene.category} ${featured ? 'featured' : ''}`}>
+    <div className="scene-scanline"/>
+    <header><span>{scene.category.toUpperCase()} · {scene.source}</span><b>{system?.name ?? 'неизвестная система'}</b></header>
+    <div className="scene-body"><h3>{scene.title}</h3><p className="scene-summary">{scene.summary}</p><p>{scene.body}</p></div>
+    <div className="scene-choices">{scene.choices.map((choice) => <button key={choice.id} className={`choice-risk-${choice.risk}`} disabled={Boolean(store.busyAction)} onClick={async () => { const result = await store.resolveStoryScene(scene.id, choice.id); setMessage(result.message); }}><span>{choice.label}</span><small>{choice.summary}</small><i>{choice.risk}</i></button>)}</div>
+    {message && <div className="scene-result">{message}</div>}
+  </article>;
+}
+
+function EncountersScreen() {
+  const store = useGameStore();
+  const available = store.storyScenes.filter((scene) => scene.status === 'available').sort((a, b) => b.createdYear - a.createdYear);
+  const history = store.storyScenes.filter((scene) => scene.status !== 'available').slice(0, 30);
+  return <div className="game-shell"><AppChrome/><main className="scroll-screen encounter-screen">
+    <header className="screen-hero cinematic-hero"><div><span className="eyebrow">СВЯЗЬ · ВЫБОР · ПОСЛЕДСТВИЯ</span><h1>Сцены экспедиции</h1><p>Каждый вызов существует в конкретном месте, у конкретных людей и имеет продолжение. Неотвеченные сцены могут исчезнуть.</p></div><div className="hero-counter"><b>{available.length}</b><span>требуют решения</span></div></header>
+    <section className="scene-gallery">{available.length ? available.map((scene, index) => <SceneCard key={scene.id} scene={scene} featured={index === 0}/>) : <article className="empty-panel museum-empty"><b>Канал чист</b><p>Новые сцены появятся в перелётах, хабах, экспедициях и после отложенных последствий.</p></article>}</section>
+    <section className="resolved-scenes"><div className="section-heading"><div><span className="eyebrow">ПАМЯТЬ РЕШЕНИЙ</span><h2>Закрытые сцены</h2></div></div><div>{history.map((scene) => <article key={scene.id}><span>{scene.status}</span><b>{scene.title}</b><p>{scene.choices.find((choice) => choice.id === scene.resolvedChoiceId)?.label ?? 'Сцена завершена без решения'}</p></article>)}</div></section>
+  </main></div>;
+}
+
+function TutorialController() {
+  const tutorial = useGameStore((state) => state.tutorial);
+  const advance = useGameStore((state) => state.advanceTutorial);
+  const skip = useGameStore((state) => state.skipTutorial);
+  return <TutorialOverlay tutorial={tutorial} onNext={() => void advance()} onSkip={() => void skip()}/>;
+}
+
 function CommandDeckScreen() {
   const store = useGameStore();
   const galaxy = store.galaxy;
@@ -168,6 +204,8 @@ function CommandDeckScreen() {
   const activeContracts = store.contracts.filter((contract) => contract.status === 'active');
   const activeResearch = store.researchProjects.filter((project) => project.status === 'active');
   const urgentThreads = store.worldThreads.filter((thread) => thread.status !== 'resolved' && thread.status !== 'lost').sort((a, b) => b.urgency - a.urgency).slice(0, 4);
+  const activeScenes = store.storyScenes.filter((scene) => scene.status === 'available').sort((a, b) => b.createdYear - a.createdYear);
+  const activeObjectives = store.objectives.filter((objective) => objective.status === 'active').slice(0, 6);
   const opportunities = [
     localHubs[0] ? { title: `Стыковка: ${localHubs[0].name}`, text: 'Торговля, люди, новости и контракты текущей системы.', action: () => void store.dockAtHub(localHubs[0].id), label: 'Перейти в хаб' } : null,
     store.ship.cargo.some((item) => item.artifactId && !store.researchProjects.some((project) => project.artifactId === item.artifactId)) ? { title: 'Неизученный объект на борту', text: 'Артефакт можно изолировать и превратить в технологический проект.', action: () => store.setScreen('laboratory'), label: 'Открыть лабораторию' } : null,
@@ -177,14 +215,16 @@ function CommandDeckScreen() {
   const nearbyCivilizations = galaxy.civilizations.filter((civ) => current.civilizationIds.includes(civ.id) || current.planets.some((planet) => planet.civilizationId === civ.id));
 
   return <div className="game-shell"><AppChrome/><main className="scroll-screen command-deck living-command-deck">
-    <section className="command-hero living-hero"><div><span className="eyebrow">КОМАНДНЫЙ МОСТИК · {current.region.toUpperCase()}</span><h1>{current.name}</h1><p>{localFaction ? `${localFaction.name} контролирует пространство. Отношение: ${localFaction.disposition}.` : 'Система находится вне устойчивого контроля. Любая находка может изменить баланс сил.'}</p><div className="hero-actions"><button className="primary-button" onClick={() => store.setScreen('system')}>Открыть систему</button><button onClick={() => store.setScreen('world')}>Что происходит в мире</button><button onClick={() => store.setScreen('laboratory')}>Лаборатория {activeResearch.length ? `· ${activeResearch.length}` : ''}</button>{localHubs[0] && <button onClick={() => void store.dockAtHub(localHubs[0].id)}>Стыковка</button>}</div></div><div className="command-ship"><div className="ship-silhouette compact"><div className="ship-core"/><div className="ship-wing left"/><div className="ship-wing right"/></div><div className="ship-vitals"><span>КОРПУС <b>{store.ship.hull}%</b></span><span>ТОПЛИВО <b>{store.ship.fuel}%</b></span><span>ЭКИПАЖ <b>{store.crew.length + 1}</b></span></div></div></section>
+    <section className="command-hero living-hero"><div><span className="eyebrow">КОМАНДНЫЙ МОСТИК · {current.region.toUpperCase()}</span><h1>{current.name}</h1><p>{localFaction ? `${localFaction.name} контролирует пространство. Отношение: ${localFaction.disposition}.` : 'Система находится вне устойчивого контроля. Любая находка может изменить баланс сил.'}</p><div className="hero-actions"><button className="primary-button" onClick={() => store.setScreen('system')}>Открыть систему</button><button onClick={() => store.setScreen('encounters')}>Сцены {activeScenes.length ? `· ${activeScenes.length}` : ''}</button><button onClick={() => store.setScreen('world')}>Что происходит в мире</button><button onClick={() => store.setScreen('laboratory')}>Лаборатория {activeResearch.length ? `· ${activeResearch.length}` : ''}</button>{localHubs[0] && <button onClick={() => void store.dockAtHub(localHubs[0].id)}>Стыковка</button>}</div></div><div className="command-ship"><div className="ship-silhouette compact"><div className="ship-core"/><div className="ship-wing left"/><div className="ship-wing right"/></div><div className="ship-vitals"><span>КОРПУС <b>{store.ship.hull}%</b></span><span>ТОПЛИВО <b>{store.ship.fuel}%</b></span><span>ЭКИПАЖ <b>{store.crew.length + 1}</b></span></div></div></section>
+
+    {activeScenes[0] && <section className="command-scene-feature"><div className="section-heading"><div><span className="eyebrow">ВХОДЯЩАЯ СЦЕНА</span><h2>Мир требует ответа</h2></div><button onClick={() => store.setScreen('encounters')}>Все сцены</button></div><SceneCard scene={activeScenes[0]} featured/></section>}
 
     <section className="command-section"><div className="section-heading"><div><span className="eyebrow">РЕШЕНИЯ СЕЙЧАС</span><h2>Куда двигаться дальше</h2></div><span>{opportunities.length} возможностей</span></div><div className="opportunity-grid">{opportunities.length ? opportunities.map((entry) => <article key={entry.title}><div className="opportunity-marker">+</div><div><h3>{entry.title}</h3><p>{entry.text}</p><button onClick={entry.action}>{entry.label}</button></div></article>) : <article className="empty-panel"><b>Срочных решений нет</b><p>Можно изучить галактику, проверить новости или подготовить корабль.</p></article>}</div></section>
 
     <section className="command-layout-live"><div className="command-main-flow"><div className="section-heading"><div><span className="eyebrow">РАЗВИВАЮЩИЕСЯ СОБЫТИЯ</span><h2>Нити мира</h2></div><button onClick={() => store.setScreen('world')}>Все процессы</button></div>{urgentThreads.length ? urgentThreads.map((thread) => <article className={`world-thread-card thread-${thread.status}`} key={thread.id}><header><span>{thread.category} · {thread.status}</span><b>{Math.round(thread.urgency)} срочность</b></header><h3>{thread.title}</h3><p>{thread.summary}</p><div className="thread-progress"><i style={{ width: `${thread.progress}%` }}/></div><small>{thread.nextAction ?? 'Ситуация развивается без участия игрока.'}</small></article>) : <article className="empty-panel"><b>Крупные процессы не обнаружены</b><p>Новые экспедиции, контакты и исследования создадут собственные линии событий.</p></article>}</div>
       <aside className="command-side-flow"><article className="living-status-card"><span className="eyebrow">ТЕКУЩАЯ СИСТЕМА</span><h2>{nearbyCivilizations.length ? nearbyCivilizations.map((entry) => entry.name).join(', ') : 'Разумная жизнь не подтверждена'}</h2><p>{localHubs.length ? `${localHubs.length} гражданских узла доступны для связи.` : 'Безопасных поселений не обнаружено.'}</p><div className="tags">{nearbyCivilizations.map((civ) => { const contact = store.civilizationContacts.find((entry) => entry.civilizationId === civ.id); return <span key={civ.id}>{civ.speciesName} · {contactStageLabel(contact?.stage ?? 'unknown')}</span>; })}</div><button onClick={() => store.setScreen('civilizations')}>Открыть досье</button></article>
       <article className="living-status-card"><span className="eyebrow">ИССЛЕДОВАНИЯ</span>{activeResearch.length ? activeResearch.map((project) => <div className="mini-research" key={project.id}><b>{project.title}</b><span>{Math.round(project.progress / project.requiredProgress * 100)}%</span><i style={{ width: `${Math.round(project.progress / project.requiredProgress * 100)}%` }}/></div>) : <p>Активных проектов нет.</p>}<button onClick={() => store.setScreen('laboratory')}>Лаборатория</button></article>
-      <article className="living-status-card"><span className="eyebrow">ПОСЛЕДНИЕ ИЗМЕНЕНИЯ</span>{store.logs.slice(0, 5).map((entry) => <div className={`bridge-log tone-${entry.tone}`} key={entry.id}><b>{entry.title}</b><small>{entry.text}</small></div>)}<button onClick={() => store.setScreen('world')}>Полная хроника</button></article></aside>
+      <article className="living-status-card objective-card"><span className="eyebrow">АКТИВНЫЕ ЦЕЛИ</span>{activeObjectives.length ? activeObjectives.map((objective) => <button className="objective-row" key={objective.id} onClick={() => objective.systemId ? store.selectSystem(objective.systemId) : undefined}><span>{objective.kind}</span><b>{objective.title}</b><small>{objective.description}</small><i style={{ width: `${objective.progress}%` }}/></button>) : <p>Целей нет. Ответь на сцену или возьми контракт.</p>}<button onClick={() => store.setScreen('encounters')}>Открыть журнал решений</button></article><article className="living-status-card"><span className="eyebrow">ПОСЛЕДНИЕ ИЗМЕНЕНИЯ</span>{store.logs.slice(0, 5).map((entry) => <div className={`bridge-log tone-${entry.tone}`} key={entry.id}><b>{entry.title}</b><small>{entry.text}</small></div>)}<button onClick={() => store.setScreen('world')}>Полная хроника</button></article></aside>
     </section>
   </main></div>;
 }
@@ -329,7 +369,7 @@ function SettingsScreen() {
     try { await forceApplicationUpdate(); }
     catch (error) { setUpdating(false); alert(error instanceof Error ? error.message : 'Ошибка обновления'); }
   };
-  return <div className="game-shell">{store.galaxy && <AppChrome/>}<main className="scroll-screen settings-screen"><header><div><span className="eyebrow">СИСТЕМА</span><h1>Настройки</h1></div>{!store.galaxy && <button onClick={() => store.setScreen('menu')}>Назад</button>}</header><section className="settings-cards"><article><h2>Версия</h2><div className="version-hero">v{APP_VERSION}</div><p>{APP_CODENAME}</p><div className="stat-row"><span>Схема сейва</span><b>v{SAVE_SCHEMA_VERSION}</b></div><div className="stat-row"><span>Сборка</span><b>{BUILD_TIME === 'development' ? 'development' : new Date(BUILD_TIME).toLocaleString('ru-RU')}</b></div></article><article><h2>Обновление PWA</h2><button className="primary-button" disabled={updating} onClick={() => void update()}>{updating ? 'Обновление…' : 'Принудительно обновить игру'}</button><small>IndexedDB и ironman не удаляются.</small></article><article><h2>Ironman</h2>{snapshot && <button onClick={() => exportSnapshot(snapshot)}>Экспортировать</button>}<button onClick={() => void store.createBackup()}>Создать backup</button></article></section></main></div>;
+  return <div className="game-shell">{store.galaxy && <AppChrome/>}<main className="scroll-screen settings-screen"><header><div><span className="eyebrow">СИСТЕМА</span><h1>Настройки</h1></div>{!store.galaxy && <button onClick={() => store.setScreen('menu')}>Назад</button>}</header><section className="settings-cards"><article><h2>Версия</h2><div className="version-hero">v{APP_VERSION}</div><p>{APP_CODENAME}</p><div className="stat-row"><span>Схема сейва</span><b>v{SAVE_SCHEMA_VERSION}</b></div><div className="stat-row"><span>Сборка</span><b>{BUILD_TIME === 'development' ? 'development' : new Date(BUILD_TIME).toLocaleString('ru-RU')}</b></div></article><article><h2>Обучение</h2><p>{store.tutorial.completed ? 'Вводный маршрут завершён.' : 'Обучение активно.'}</p><button onClick={() => void store.restartTutorial()}>Запустить обучение заново</button></article><article><h2>Обновление PWA</h2><button className="primary-button" disabled={updating} onClick={() => void update()}>{updating ? 'Обновление…' : 'Принудительно обновить игру'}</button><small>IndexedDB и ironman не удаляются.</small></article><article><h2>Ironman</h2>{snapshot && <button onClick={() => exportSnapshot(snapshot)}>Экспортировать</button>}<button onClick={() => void store.createBackup()}>Создать backup</button></article></section></main></div>;
 }
 
 const BootScreen = () => <main className="boot-screen"><div className="boot-mark">◆</div><span className="eyebrow">VOID CHRONICLES · v{APP_VERSION}</span><p>Проверка локального архива…</p></main>;
@@ -341,18 +381,21 @@ export default function App() {
   const hydrate = useGameStore((state) => state.hydrateFromStorage);
   useEffect(() => { void hydrate(); }, [hydrate]);
   if (hydration === 'idle' || hydration === 'loading') return <BootScreen/>;
-  if (screen === 'settings') return <SettingsScreen/>;
-  if (!galaxy || screen === 'menu') return <MainMenu/>;
-  if (screen === 'command') return <CommandDeckScreen/>;
-  if (screen === 'galaxy') return <GalaxyScreen/>;
-  if (screen === 'system') return <SystemScreen/>;
-  if (screen === 'hub') return <HubScreen/>;
-  if (screen === 'contracts') return <ContractsScreen/>;
-  if (screen === 'factions') return <FactionsScreen/>;
-  if (screen === 'civilizations') return <CivilizationsScreen/>;
-  if (screen === 'crew') return <CrewScreen/>;
-  if (screen === 'archive') return <ArchiveScreen/>;
-  if (screen === 'laboratory') return <LaboratoryScreen chrome={<AppChrome/>}/>;
-  if (screen === 'world') return <WorldScreen chrome={<AppChrome/>}/>;
-  return <ShipScreen/>;
+  let content;
+  if (screen === 'settings') content = <SettingsScreen/>;
+  else if (!galaxy || screen === 'menu') content = <MainMenu/>;
+  else if (screen === 'command') content = <CommandDeckScreen/>;
+  else if (screen === 'encounters') content = <EncountersScreen/>;
+  else if (screen === 'galaxy') content = <GalaxyScreen/>;
+  else if (screen === 'system') content = <SystemScreen/>;
+  else if (screen === 'hub') content = <HubScreen/>;
+  else if (screen === 'contracts') content = <ContractsScreen/>;
+  else if (screen === 'factions') content = <FactionsScreen/>;
+  else if (screen === 'civilizations') content = <CivilizationsScreen/>;
+  else if (screen === 'crew') content = <CrewScreen/>;
+  else if (screen === 'archive') content = <ArchiveScreen/>;
+  else if (screen === 'laboratory') content = <LaboratoryScreen chrome={<AppChrome/>}/>;
+  else if (screen === 'world') content = <WorldScreen chrome={<AppChrome/>}/>;
+  else content = <ShipScreen/>;
+  return <Suspense fallback={<BootScreen/>}>{content}{galaxy && <TutorialController/>}</Suspense>;
 }

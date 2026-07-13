@@ -42,7 +42,7 @@ async function makeLegacySnapshot(): Promise<GameStateSnapshot> {
     crew: [],
     crewCandidates: [],
     factions: [], hubs: [], contracts: [], news: [], locationStates: [], currentHubId: null,
-    localNpcs: [], civilizationContacts: [], archaeologyChains: [], researchProjects: [], technologyBlueprints: [], equipmentInventory: [], worldThreads: []
+    localNpcs: [], civilizationContacts: [], archaeologyChains: [], researchProjects: [], technologyBlueprints: [], equipmentInventory: [], worldThreads: [], storyScenes: [], pendingConsequences: [], objectives: [], tutorial: { enabled: false, active: false, currentStep: 0, completed: true }
   };
 }
 
@@ -51,7 +51,7 @@ describe('snapshot validation and migration', () => {
     const legacy = await makeLegacySnapshot();
     const migrated = parseSnapshot(legacy);
     expect(migrated.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
-    expect(migrated.saveMeta?.appVersion).toBe('0.6.0');
+    expect(migrated.saveMeta?.appVersion).toBe('0.7.0');
     expect(migrated.saveMeta?.checksum).toMatch(/^[0-9a-f]{8}$/);
   });
 

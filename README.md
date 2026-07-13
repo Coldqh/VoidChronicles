@@ -2,16 +2,16 @@
 
 Procedural single-player space exploration roguelike built with React, TypeScript and Canvas.
 
-## v0.6 Relics, Technology & Living World
+## v0.7 Encounters & Consequences
 
-- connected artifact recovery to laboratory research, risky experiments, blueprints and installed ship upgrades;
-- added personal equipment assignment that changes combat, analysis, healing and protection during expeditions;
-- added technology domains and civilization-specific research outcomes instead of one linear tech tree;
-- added persistent world threads that turn discoveries, political conflicts and research into ongoing situations;
-- rebuilt the Command Deck around decisions, active opportunities, urgent processes and recent consequences;
-- added dedicated Living World and Laboratory screens with direct routes to related systems;
-- upgraded civilization dossiers and expedition briefings so data explains why it matters and what the player can do;
-- migrated save schema from v6 to v7 while preserving existing ironman saves.
+- added playable narrative scenes with concrete participants, locations, risks and choices;
+- added delayed consequences that return after later jumps and years;
+- added active objectives created by scenes instead of raw data lists;
+- added travel and hub encounters that react to local factions and settlements;
+- added a modern seven-step onboarding flow with a creation-screen opt-out;
+- rebuilt the visual language around cinematic scenes, layered glass, responsive spatial navigation and animated system feedback;
+- added lazy-loaded world and laboratory screens;
+- migrated save schema from v7 to v8 while preserving existing ironman saves.
 
 ## Development
 

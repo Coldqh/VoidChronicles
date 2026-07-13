@@ -4,6 +4,7 @@ import { APP_VERSION, SAVE_SCHEMA_VERSION } from '../version';
 import { initializeLivingGalaxy } from '../world/livingGalaxy';
 import { enrichGalaxyCivilizations, initializeCivilizationLayer } from '../world/civilizations';
 import { initializeWorldThreads } from '../world/storyThreads';
+import { initializeNarrative } from '../narrative/encounters';
 
 export const CURRENT_SCHEMA_VERSION = SAVE_SCHEMA_VERSION;
 export { APP_VERSION };
@@ -130,7 +131,8 @@ const galaxySettingsSchema = z.object({
   civilizationCount: z.number().int().min(0),
   lifeFrequency: finiteNumber,
   anomalyFrequency: finiteNumber,
-  difficulty: z.enum(['explorer', 'standard', 'brutal'])
+  difficulty: z.enum(['explorer', 'standard', 'brutal']),
+  tutorialEnabled: z.boolean().optional()
 });
 
 const galaxySchema = z.object({
@@ -416,6 +418,31 @@ const locationStateSchema = z.object({
   lastOutcome: z.enum(['evacuated','resolved','failed']), lastVisitedYear: finiteNumber
 });
 
+const storyChoiceEffectSchema = z.object({
+  credits: finiteNumber.optional(), reputation: finiteNumber.optional(), factionId: z.string().optional(), factionReputation: finiteNumber.optional(),
+  crewMorale: finiteNumber.optional(), objectiveTitle: z.string().optional(), objectiveDescription: z.string().optional(), objectiveSystemId: z.string().optional(),
+  consequenceDelay: finiteNumber.optional(), consequenceTitle: z.string().optional(), consequenceText: z.string().optional(),
+  consequenceTone: z.enum(['info','good','warning','danger']).optional()
+});
+const storyChoiceSchema = z.object({
+  id: z.string(), label: z.string(), summary: z.string(), risk: z.enum(['low','medium','high','unknown']), requires: z.array(z.string()).optional(), effect: storyChoiceEffectSchema
+});
+const storySceneSchema = z.object({
+  id: z.string(), category: z.enum(['distress','negotiation','crew','mystery','travel','hub','consequence']),
+  status: z.enum(['available','resolved','expired']), title: z.string(), summary: z.string(), body: z.string(), source: z.string(), systemId: z.string(),
+  hubId: z.string().optional(), npcIds: z.array(z.string()), factionIds: z.array(z.string()), createdYear: finiteNumber, expiresYear: finiteNumber.optional(),
+  choices: z.array(storyChoiceSchema), resolvedChoiceId: z.string().optional()
+});
+const pendingConsequenceSchema = z.object({
+  id: z.string(), status: z.enum(['pending','resolved']), createdYear: finiteNumber, triggerYear: finiteNumber, title: z.string(), text: z.string(),
+  tone: z.enum(['info','good','warning','danger']), systemId: z.string().optional(), factionId: z.string().optional(), sourceSceneId: z.string().optional()
+});
+const objectiveSchema = z.object({
+  id: z.string(), title: z.string(), description: z.string(), kind: z.enum(['urgent','opportunity','story','tutorial']), status: z.enum(['active','completed','failed']),
+  createdYear: finiteNumber, deadlineYear: finiteNumber.optional(), systemId: z.string().optional(), hubId: z.string().optional(), sourceSceneId: z.string().optional(), progress: finiteNumber
+});
+const tutorialSchema = z.object({ enabled: z.boolean(), active: z.boolean(), currentStep: finiteNumber, completed: z.boolean() });
+
 const legacyPayloadSchema = z.object({
   galaxy: galaxySchema,
   captain: captainSchema,
@@ -457,6 +484,12 @@ const v7PayloadSchema = v6PayloadSchema.extend({
   equipmentInventory: z.array(equipmentItemSchema),
   worldThreads: z.array(worldThreadSchema)
 });
+const v8PayloadSchema = v7PayloadSchema.extend({
+  storyScenes: z.array(storySceneSchema),
+  pendingConsequences: z.array(pendingConsequenceSchema),
+  objectives: z.array(objectiveSchema),
+  tutorial: tutorialSchema
+});
 
 const saveMetadataSchema = z.object({
   savedAt: z.string().datetime(),
@@ -473,8 +506,9 @@ const snapshotV4Schema = v4PayloadSchema.extend({ schemaVersion: z.literal(4), s
 const snapshotV5Schema = v5PayloadSchema.extend({ schemaVersion: z.literal(5), saveMeta: saveMetadataSchema });
 const snapshotV6Schema = v6PayloadSchema.extend({ schemaVersion: z.literal(6), saveMeta: saveMetadataSchema });
 const snapshotV7Schema = v7PayloadSchema.extend({ schemaVersion: z.literal(7), saveMeta: saveMetadataSchema });
+const snapshotV8Schema = v8PayloadSchema.extend({ schemaVersion: z.literal(8), saveMeta: saveMetadataSchema });
 
-type SnapshotCurrent = z.infer<typeof snapshotV7Schema>;
+type SnapshotCurrent = z.infer<typeof snapshotV8Schema>;
 
 function hashText(value: string): string {
   let hash = 0x811c9dc5;
@@ -518,7 +552,8 @@ function livingState(galaxy: z.infer<typeof galaxySchema>) {
       { id: 'gear_field_armor', name: 'Полевой скафандр', category: 'armor' as const, rarity: 1, description: 'Изоляция от среды и лёгкая бронезащита.', effect: '-риск травмы от среды', assignedToId: 'captain_player', condition: 100 },
       { id: 'gear_multiscanner', name: 'Ручной мультисканер', category: 'tool' as const, rarity: 1, description: 'Собирает спектральные и структурные данные.', effect: '+достоверность полевого анализа', condition: 100 }
     ],
-    worldThreads: initializeWorldThreads(layer.galaxy.civilizations, living.factions, layer.archaeologyChains, galaxy.currentYear ?? 0)
+    worldThreads: initializeWorldThreads(layer.galaxy.civilizations, living.factions, layer.archaeologyChains, galaxy.currentYear ?? 0),
+    ...initializeNarrative(layer.galaxy, layer.hubs, living.factions, false)
   };
 }
 
@@ -573,7 +608,11 @@ function normalizeSnapshot(snapshot: SnapshotCurrent): SnapshotCurrent {
     researchProjects: snapshot.researchProjects.filter((entry) => snapshot.galaxy.artifacts.some((artifact) => artifact.id === entry.artifactId)).slice(0, 100),
     technologyBlueprints: snapshot.technologyBlueprints.filter((entry) => snapshot.galaxy.artifacts.some((artifact) => artifact.id === entry.sourceArtifactId)).slice(0, 100),
     equipmentInventory: snapshot.equipmentInventory.slice(0, 250),
-    worldThreads: snapshot.worldThreads.slice(0, 100)
+    worldThreads: snapshot.worldThreads.slice(0, 100),
+    storyScenes: snapshot.storyScenes.filter((scene) => systemIds.has(scene.systemId)).slice(0, 160),
+    pendingConsequences: snapshot.pendingConsequences.slice(0, 300),
+    objectives: snapshot.objectives.filter((objective) => !objective.systemId || systemIds.has(objective.systemId)).slice(0, 250),
+    tutorial: { ...snapshot.tutorial, currentStep: Math.max(0, Math.min(6, Math.floor(snapshot.tutorial.currentStep))) }
   };
 
   normalized.ship.hull = Math.max(0, Math.min(normalized.ship.maxHull, normalized.ship.hull));
@@ -607,15 +646,20 @@ export function parseSnapshot(input: unknown, options: ParseSnapshotOptions = {}
   } else if (header.schemaVersion === 5) {
     const previous = snapshotV5Schema.parse(input);
     const layer = initializeCivilizationLayer(previous.galaxy as GameStateSnapshot['galaxy'], previous.hubs as GameStateSnapshot['hubs']);
-    migrated = { ...previous, galaxy: layer.galaxy, hubs: layer.hubs, localNpcs: layer.localNpcs, civilizationContacts: layer.civilizationContacts, archaeologyChains: layer.archaeologyChains, researchProjects: [], technologyBlueprints: [], equipmentInventory: livingState(previous.galaxy).equipmentInventory, worldThreads: initializeWorldThreads(layer.galaxy.civilizations, previous.factions, layer.archaeologyChains, previous.gameYear), schemaVersion: CURRENT_SCHEMA_VERSION, saveMeta: { ...previous.saveMeta, appVersion: APP_VERSION, reason: 'migration-v5', checksum: '00000000' } };
+    migrated = { ...previous, galaxy: layer.galaxy, hubs: layer.hubs, localNpcs: layer.localNpcs, civilizationContacts: layer.civilizationContacts, archaeologyChains: layer.archaeologyChains, researchProjects: [], technologyBlueprints: [], equipmentInventory: livingState(previous.galaxy).equipmentInventory, worldThreads: initializeWorldThreads(layer.galaxy.civilizations, previous.factions, layer.archaeologyChains, previous.gameYear), ...initializeNarrative(layer.galaxy, layer.hubs, previous.factions as GameStateSnapshot['factions'], false), schemaVersion: CURRENT_SCHEMA_VERSION, saveMeta: { ...previous.saveMeta, appVersion: APP_VERSION, reason: 'migration-v5', checksum: '00000000' } };
     migrated.saveMeta.checksum = computeSnapshotChecksum(migrated);
   } else if (header.schemaVersion === 6) {
     const previous = snapshotV6Schema.parse(input);
     const threads = initializeWorldThreads(previous.galaxy.civilizations, previous.factions, previous.archaeologyChains, previous.gameYear);
-    migrated = { ...previous, researchProjects: [], technologyBlueprints: [], equipmentInventory: livingState(previous.galaxy).equipmentInventory, worldThreads: threads, schemaVersion: CURRENT_SCHEMA_VERSION, saveMeta: { ...previous.saveMeta, appVersion: APP_VERSION, reason: 'migration-v6', checksum: '00000000' } };
+    migrated = { ...previous, researchProjects: [], technologyBlueprints: [], equipmentInventory: livingState(previous.galaxy).equipmentInventory, worldThreads: threads, ...initializeNarrative(previous.galaxy as GameStateSnapshot['galaxy'], previous.hubs as GameStateSnapshot['hubs'], previous.factions as GameStateSnapshot['factions'], false), schemaVersion: CURRENT_SCHEMA_VERSION, saveMeta: { ...previous.saveMeta, appVersion: APP_VERSION, reason: 'migration-v6', checksum: '00000000' } };
+    migrated.saveMeta.checksum = computeSnapshotChecksum(migrated);
+  } else if (header.schemaVersion === 7) {
+    const previous = snapshotV7Schema.parse(input);
+    const narrative = initializeNarrative(previous.galaxy as GameStateSnapshot['galaxy'], previous.hubs as GameStateSnapshot['hubs'], previous.factions as GameStateSnapshot['factions'], false);
+    migrated = { ...previous, ...narrative, schemaVersion: CURRENT_SCHEMA_VERSION, saveMeta: { ...previous.saveMeta, appVersion: APP_VERSION, reason: 'migration-v7', checksum: '00000000' } };
     migrated.saveMeta.checksum = computeSnapshotChecksum(migrated);
   } else if (header.schemaVersion === CURRENT_SCHEMA_VERSION) {
-    migrated = snapshotV7Schema.parse(input);
+    migrated = snapshotV8Schema.parse(input);
     if (options.verifyChecksum !== false) {
       const expected = computeSnapshotChecksum(migrated);
       if (migrated.saveMeta.checksum !== expected) throw new Error('Контрольная сумма сохранения не совпадает');
