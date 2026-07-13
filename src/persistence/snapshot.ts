@@ -270,6 +270,42 @@ const artifactKnowledgeSchema = z.object({
   revealedTruth: z.string().optional()
 });
 
+const crewRoleSchema = z.enum(['pilot', 'engineer', 'doctor', 'scientist', 'archaeologist', 'soldier', 'diplomat', 'biologist', 'smuggler']);
+const crewMemorySchema = z.object({
+  id: z.string(),
+  year: finiteNumber,
+  kind: z.enum(['hired', 'expedition', 'injury', 'payment', 'betrayal', 'discovery']),
+  text: z.string(),
+  impact: finiteNumber
+});
+const crewMemberSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  species: z.string(),
+  culture: z.string(),
+  primaryRole: crewRoleSchema,
+  secondaryRole: crewRoleSchema.optional(),
+  level: finiteNumber,
+  health: finiteNumber,
+  maxHealth: finiteNumber,
+  morale: finiteNumber,
+  loyalty: finiteNumber,
+  salary: finiteNumber,
+  sharePercent: finiteNumber,
+  contractYears: finiteNumber,
+  joinedYear: finiteNumber,
+  paidUntilYear: finiteNumber,
+  traits: z.array(z.string()),
+  belief: z.string(),
+  status: z.enum(['active', 'injured', 'unpaid', 'missing']),
+  injuries: z.array(injurySchema),
+  memories: z.array(crewMemorySchema)
+});
+const crewCandidateSchema = crewMemberSchema.extend({
+  signingCost: finiteNumber,
+  originSystemId: z.string()
+});
+
 const legacyPayloadSchema = z.object({
   galaxy: galaxySchema,
   captain: captainSchema,
@@ -288,6 +324,11 @@ const v3PayloadSchema = legacyPayloadSchema.extend({
   artifactKnowledge: z.array(artifactKnowledgeSchema)
 });
 
+const v4PayloadSchema = v3PayloadSchema.extend({
+  crew: z.array(crewMemberSchema),
+  crewCandidates: z.array(crewCandidateSchema)
+});
+
 const saveMetadataSchema = z.object({
   savedAt: z.string().datetime(),
   appVersion: z.string().min(1),
@@ -299,8 +340,9 @@ const saveMetadataSchema = z.object({
 const snapshotV1Schema = legacyPayloadSchema.extend({ schemaVersion: z.literal(1) });
 const snapshotV2Schema = legacyPayloadSchema.extend({ schemaVersion: z.literal(2), saveMeta: saveMetadataSchema });
 const snapshotV3Schema = v3PayloadSchema.extend({ schemaVersion: z.literal(3), saveMeta: saveMetadataSchema });
+const snapshotV4Schema = v4PayloadSchema.extend({ schemaVersion: z.literal(4), saveMeta: saveMetadataSchema });
 
-type SnapshotV3 = z.infer<typeof snapshotV3Schema>;
+type SnapshotCurrent = z.infer<typeof snapshotV4Schema>;
 
 function hashText(value: string): string {
   let hash = 0x811c9dc5;
@@ -311,19 +353,20 @@ function hashText(value: string): string {
   return (hash >>> 0).toString(16).padStart(8, '0');
 }
 
-function checksumInput(snapshot: SnapshotV3): string {
+function checksumInput(snapshot: SnapshotCurrent): string {
   return JSON.stringify({ ...snapshot, saveMeta: { ...snapshot.saveMeta, checksum: '00000000' } });
 }
 
-export function computeSnapshotChecksum(snapshot: SnapshotV3): string {
+export function computeSnapshotChecksum(snapshot: SnapshotCurrent): string {
   return hashText(checksumInput(snapshot));
 }
 
 function emptyExploration() {
   return { scanReports: [], pointsOfInterest: [], evidence: [], hypotheses: [], artifactKnowledge: [] };
 }
+function emptyCrew() { return { crew: [], crewCandidates: [] }; }
 
-function normalizeSnapshot(snapshot: SnapshotV3): SnapshotV3 {
+function normalizeSnapshot(snapshot: SnapshotCurrent): SnapshotCurrent {
   const systemIds = new Set(snapshot.galaxy.systems.map((system) => system.id));
   const planetIds = new Set(snapshot.galaxy.systems.flatMap((system) => system.planets.map((planet) => planet.id)));
   const fallbackSystemId = systemIds.has(snapshot.galaxy.startSystemId) ? snapshot.galaxy.startSystemId : snapshot.galaxy.systems[0]?.id;
@@ -335,7 +378,20 @@ function normalizeSnapshot(snapshot: SnapshotV3): SnapshotV3 {
 
   const pointIds = new Set(snapshot.pointsOfInterest.map((point) => point.id));
   const evidenceIds = new Set(snapshot.evidence.map((entry) => entry.id));
-  const normalized: SnapshotV3 = {
+  const crewIds = new Set<string>();
+  const crew = snapshot.crew.filter((entry) => {
+    if (crewIds.has(entry.id)) return false;
+    crewIds.add(entry.id);
+    return true;
+  }).slice(0, 20).map((entry) => ({
+    ...entry,
+    health: Math.max(0, Math.min(entry.maxHealth, entry.health)),
+    morale: Math.max(0, Math.min(100, entry.morale)),
+    loyalty: Math.max(0, Math.min(100, entry.loyalty)),
+    memories: entry.memories.slice(-20)
+  }));
+
+  const normalized: SnapshotCurrent = {
     ...snapshot,
     currentSystemId: systemIds.has(snapshot.currentSystemId) ? snapshot.currentSystemId : fallbackSystemId,
     discoveries: snapshot.discoveries.filter((entry) => systemIds.has(entry.systemId)).slice(0, 7_500),
@@ -344,7 +400,9 @@ function normalizeSnapshot(snapshot: SnapshotV3): SnapshotV3 {
     pointsOfInterest: snapshot.pointsOfInterest.filter((entry) => systemIds.has(entry.systemId) && planetIds.has(entry.planetId)).slice(0, 5_000),
     evidence: snapshot.evidence.filter((entry) => pointIds.has(entry.pointOfInterestId)).slice(0, 10_000),
     hypotheses: snapshot.hypotheses.filter((entry) => pointIds.has(entry.pointOfInterestId)).map((entry) => ({ ...entry, evidenceIds: entry.evidenceIds.filter((id) => evidenceIds.has(id)) })).slice(0, 5_000),
-    artifactKnowledge: snapshot.artifactKnowledge.filter((entry) => snapshot.galaxy.artifacts.some((artifact) => artifact.id === entry.artifactId)).slice(0, 2_000)
+    artifactKnowledge: snapshot.artifactKnowledge.filter((entry) => snapshot.galaxy.artifacts.some((artifact) => artifact.id === entry.artifactId)).slice(0, 2_000),
+    crew,
+    crewCandidates: snapshot.crewCandidates.filter((entry) => systemIds.has(entry.originSystemId) && !crewIds.has(entry.id)).slice(0, 12)
   };
 
   normalized.ship.hull = Math.max(0, Math.min(normalized.ship.maxHull, normalized.ship.hull));
@@ -357,23 +415,22 @@ export interface ParseSnapshotOptions { verifyChecksum?: boolean; }
 
 export function parseSnapshot(input: unknown, options: ParseSnapshotOptions = {}): GameStateSnapshot {
   const header = z.object({ schemaVersion: z.number().int() }).passthrough().parse(input);
-  let migrated: SnapshotV3;
+  let migrated: SnapshotCurrent;
 
   if (header.schemaVersion === 1) {
     const legacy = snapshotV1Schema.parse(input);
-    migrated = {
-      ...legacy,
-      ...emptyExploration(),
-      schemaVersion: CURRENT_SCHEMA_VERSION,
-      saveMeta: { savedAt: new Date().toISOString(), appVersion: APP_VERSION, sequence: 0, reason: 'migration-v1', checksum: '00000000' }
-    };
+    migrated = { ...legacy, ...emptyExploration(), ...emptyCrew(), schemaVersion: CURRENT_SCHEMA_VERSION, saveMeta: { savedAt: new Date().toISOString(), appVersion: APP_VERSION, sequence: 0, reason: 'migration-v1', checksum: '00000000' } };
     migrated.saveMeta.checksum = computeSnapshotChecksum(migrated);
   } else if (header.schemaVersion === 2) {
     const legacy = snapshotV2Schema.parse(input);
-    migrated = { ...legacy, ...emptyExploration(), schemaVersion: CURRENT_SCHEMA_VERSION, saveMeta: { ...legacy.saveMeta, appVersion: APP_VERSION, reason: 'migration-v2', checksum: '00000000' } };
+    migrated = { ...legacy, ...emptyExploration(), ...emptyCrew(), schemaVersion: CURRENT_SCHEMA_VERSION, saveMeta: { ...legacy.saveMeta, appVersion: APP_VERSION, reason: 'migration-v2', checksum: '00000000' } };
+    migrated.saveMeta.checksum = computeSnapshotChecksum(migrated);
+  } else if (header.schemaVersion === 3) {
+    const previous = snapshotV3Schema.parse(input);
+    migrated = { ...previous, ...emptyCrew(), schemaVersion: CURRENT_SCHEMA_VERSION, saveMeta: { ...previous.saveMeta, appVersion: APP_VERSION, reason: 'migration-v3', checksum: '00000000' } };
     migrated.saveMeta.checksum = computeSnapshotChecksum(migrated);
   } else if (header.schemaVersion === CURRENT_SCHEMA_VERSION) {
-    migrated = snapshotV3Schema.parse(input);
+    migrated = snapshotV4Schema.parse(input);
     if (options.verifyChecksum !== false) {
       const expected = computeSnapshotChecksum(migrated);
       if (migrated.saveMeta.checksum !== expected) throw new Error('Контрольная сумма сохранения не совпадает');
@@ -390,7 +447,7 @@ export function parseSnapshot(input: unknown, options: ParseSnapshotOptions = {}
 }
 
 export function prepareSnapshotForSave(input: GameStateSnapshot, reason: string, previous?: SaveMetadata): GameStateSnapshot {
-  const safe = parseSnapshot(input, { verifyChecksum: false }) as SnapshotV3;
+  const safe = parseSnapshot(input, { verifyChecksum: false }) as SnapshotCurrent;
   safe.schemaVersion = CURRENT_SCHEMA_VERSION;
   safe.saveMeta = {
     savedAt: new Date().toISOString(),

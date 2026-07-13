@@ -3,6 +3,7 @@ import { GalaxyCanvas } from './components/GalaxyCanvas';
 import { ExpeditionModal } from './components/ExpeditionModal';
 import { ShipCombatModal } from './components/ShipCombatModal';
 import { SystemMap } from './components/SystemMap';
+import { roleLabel } from './crew/generateCrew';
 import type { GenerationProgress } from './generation/generateGalaxy';
 import { generateGalaxyInWorker } from './generation/generateInWorker';
 import type { Artifact, GalaxySettings, Planet, PointOfInterest } from './game/types';
@@ -13,255 +14,106 @@ import { APP_CODENAME, APP_VERSION, BUILD_TIME, SAVE_SCHEMA_VERSION } from './ve
 import './styles/app.css';
 
 const defaultSettings: GalaxySettings = {
-  seed: 'VOID-CHRONICLES-002',
-  systemCount: 300,
-  historyYears: 2_000_000,
-  civilizationCount: 12,
-  lifeFrequency: 0.34,
-  anomalyFrequency: 0.035,
-  difficulty: 'standard'
+  seed: 'VOID-CHRONICLES-003', systemCount: 300, historyYears: 2_000_000,
+  civilizationCount: 12, lifeFrequency: 0.34, anomalyFrequency: 0.035, difficulty: 'standard'
 };
 
-function formatYear(year: number): string {
-  return year < 0 ? `${Math.abs(year).toLocaleString('ru-RU')} лет до старта` : `Год ${year}`;
-}
-
-function VersionBadge() {
-  return <span className="version-badge">v{APP_VERSION}</span>;
-}
+const formatYear = (year: number) => year < 0 ? `${Math.abs(year).toLocaleString('ru-RU')} лет до старта` : `Год ${year}`;
+const VersionBadge = () => <span className="version-badge">v{APP_VERSION}</span>;
 
 function MainMenu() {
-  const startGame = useGameStore((state) => state.startGame);
-  const resumeGame = useGameStore((state) => state.resumeGame);
-  const restoreSnapshot = useGameStore((state) => state.restoreSnapshot);
-  const saveAvailable = useGameStore((state) => state.saveAvailable);
-  const saveError = useGameStore((state) => state.saveError);
-  const dismissSaveError = useGameStore((state) => state.dismissSaveError);
-  const clearGame = useGameStore((state) => state.clearGame);
-  const generationActive = useGameStore((state) => state.generationActive);
-  const setGenerationActive = useGameStore((state) => state.setGenerationActive);
-  const busyAction = useGameStore((state) => state.busyAction);
-  const recoveryNotice = useGameStore((state) => state.recoveryNotice);
-  const dismissRecoveryNotice = useGameStore((state) => state.dismissRecoveryNotice);
-  const setScreen = useGameStore((state) => state.setScreen);
+  const store = useGameStore();
   const [settings, setSettings] = useState(defaultSettings);
   const [progress, setProgress] = useState<GenerationProgress | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
-
   const create = async () => {
-    if (generationActive || busyAction) return;
-    setGenerationActive(true);
+    if (store.generationActive || store.busyAction) return;
+    store.setGenerationActive(true);
     setProgress({ stage: 'start', progress: 0.01, message: 'Инициализация генератора' });
-    try {
-      const galaxy = await generateGalaxyInWorker(settings, setProgress);
-      await startGame(galaxy);
-    } catch (error) {
-      setProgress({ stage: 'error', progress: 0, message: error instanceof Error ? error.message : 'Ошибка генерации' });
-    } finally {
-      setGenerationActive(false);
-    }
+    try { await store.startGame(await generateGalaxyInWorker(settings, setProgress)); }
+    catch (error) { setProgress({ stage: 'error', progress: 0, message: error instanceof Error ? error.message : 'Ошибка генерации' }); }
+    finally { store.setGenerationActive(false); }
   };
-
-  const importSave = async (file: File | undefined) => {
+  const importSave = async (file?: File) => {
     if (!file) return;
-    try {
-      const snapshot = await readSnapshotFile(file);
-      await restoreSnapshot(snapshot);
-    } catch (error) {
-      alert(error instanceof Error ? error.message : 'Не удалось импортировать сохранение');
-    }
+    try { await store.restoreSnapshot(await readSnapshotFile(file)); }
+    catch (error) { alert(error instanceof Error ? error.message : 'Не удалось импортировать сохранение'); }
   };
-
-  return <main className="menu-screen">
-    <div className="menu-stars" />
-    <section className="menu-panel">
-      <div className="menu-version"><VersionBadge/><span>{APP_CODENAME}</span></div>
-      <span className="eyebrow">PROCEDURAL SPACE ROGUELIKE</span>
-      <h1>VOID<br/>CHRONICLES</h1>
-      <p className="menu-subtitle">Неизвестный сигнал теперь ведёт к месту, истории, риску и доказательствам.</p>
-      {recoveryNotice && <div className="recovery-notice"><b>Система сохранений</b><p>{recoveryNotice}</p><button onClick={dismissRecoveryNotice}>Закрыть</button></div>}
-      {saveError && <div className="save-error"><b>Сейв не загружен</b><p>{saveError}</p><div className="menu-actions"><button onClick={dismissSaveError}>Скрыть</button><button className="danger-button" onClick={() => void clearGame()}>Удалить повреждённый сейв</button></div></div>}
-      {progress ? <div className="generation-panel">
-        <div className="generation-line"><span>{progress.stage.toUpperCase()}</span><strong>{Math.round(progress.progress * 100)}%</strong></div>
-        <div className="progress-track"><i style={{ width: `${progress.progress * 100}%` }} /></div>
-        <p>{progress.message}</p>
-        {progress.stage === 'error' && <button onClick={() => setProgress(null)}>Вернуться к настройкам</button>}
-      </div> : <>
-        <div className="seed-row"><label>SEED<input value={settings.seed} onChange={(event) => setSettings({ ...settings, seed: event.target.value || 'VOID' })} /></label><button onClick={() => setSettings({ ...settings, seed: `VOID-${Math.random().toString(36).slice(2, 10).toUpperCase()}` })}>Случайный</button></div>
-        <div className="settings-grid">
-          <label>Системы<input type="number" min="20" max="1500" value={settings.systemCount} onChange={(event) => setSettings({ ...settings, systemCount: Number(event.target.value) })} /></label>
-          <label>История, лет<select value={settings.historyYears} onChange={(event) => setSettings({ ...settings, historyYears: Number(event.target.value) })}><option value={100000}>100 000</option><option value={2000000}>2 000 000</option><option value={10000000}>10 000 000</option></select></label>
-          <label>Цивилизации<input type="number" min="2" max="80" value={settings.civilizationCount} onChange={(event) => setSettings({ ...settings, civilizationCount: Number(event.target.value) })} /></label>
-          <label>Сложность<select value={settings.difficulty} onChange={(event) => setSettings({ ...settings, difficulty: event.target.value as GalaxySettings['difficulty'] })}><option value="explorer">Исследователь</option><option value="standard">Стандарт</option><option value="brutal">Жестокая</option></select></label>
-        </div>
-        <div className="menu-actions">
-          <button className="primary-button large" disabled={generationActive || Boolean(busyAction)} onClick={create}>{generationActive ? 'Генерация…' : 'Создать галактику'}</button>
-          {saveAvailable && <button disabled={Boolean(busyAction)} onClick={() => void resumeGame()}>Продолжить ironman</button>}
-          <button disabled={Boolean(busyAction)} onClick={() => fileRef.current?.click()}>Импорт сохранения</button>
-          <button onClick={() => setScreen('settings')}>Настройки и обновление</button>
-          <input ref={fileRef} hidden type="file" accept="application/json" onChange={(event) => importSave(event.target.files?.[0])} />
-        </div>
-      </>}
-      <footer>v{APP_VERSION} · {APP_CODENAME}</footer>
-    </section>
-  </main>;
+  return <main className="menu-screen"><div className="menu-stars"/><section className="menu-panel">
+    <div className="menu-version"><VersionBadge/><span>{APP_CODENAME}</span></div>
+    <span className="eyebrow">PROCEDURAL SPACE ROGUELIKE</span><h1>VOID<br/>CHRONICLES</h1>
+    <p className="menu-subtitle">Корабль стал домом. Мостик — центром решений. Экипаж теперь помнит цену каждой экспедиции.</p>
+    {store.recoveryNotice && <div className="recovery-notice"><b>Система сохранений</b><p>{store.recoveryNotice}</p><button onClick={store.dismissRecoveryNotice}>Закрыть</button></div>}
+    {store.saveError && <div className="save-error"><b>Сейв не загружен</b><p>{store.saveError}</p><div className="menu-actions"><button onClick={store.dismissSaveError}>Скрыть</button><button className="danger-button" onClick={() => void store.clearGame()}>Удалить повреждённый сейв</button></div></div>}
+    {progress ? <div className="generation-panel"><div className="generation-line"><span>{progress.stage.toUpperCase()}</span><strong>{Math.round(progress.progress * 100)}%</strong></div><div className="progress-track"><i style={{width:`${progress.progress*100}%`}}/></div><p>{progress.message}</p>{progress.stage==='error'&&<button onClick={()=>setProgress(null)}>Вернуться</button>}</div> : <>
+      <div className="seed-row"><label>SEED<input value={settings.seed} onChange={(e)=>setSettings({...settings,seed:e.target.value||'VOID'})}/></label><button onClick={()=>setSettings({...settings,seed:`VOID-${Math.random().toString(36).slice(2,10).toUpperCase()}`})}>Случайный</button></div>
+      <div className="settings-grid"><label>Системы<input type="number" min="20" max="1500" value={settings.systemCount} onChange={(e)=>setSettings({...settings,systemCount:Number(e.target.value)})}/></label><label>История<select value={settings.historyYears} onChange={(e)=>setSettings({...settings,historyYears:Number(e.target.value)})}><option value={100000}>100 000</option><option value={2000000}>2 000 000</option><option value={10000000}>10 000 000</option></select></label><label>Цивилизации<input type="number" min="2" max="80" value={settings.civilizationCount} onChange={(e)=>setSettings({...settings,civilizationCount:Number(e.target.value)})}/></label><label>Сложность<select value={settings.difficulty} onChange={(e)=>setSettings({...settings,difficulty:e.target.value as GalaxySettings['difficulty']})}><option value="explorer">Исследователь</option><option value="standard">Стандарт</option><option value="brutal">Жестокая</option></select></label></div>
+      <div className="menu-actions"><button className="primary-button large" disabled={store.generationActive||Boolean(store.busyAction)} onClick={create}>{store.generationActive?'Генерация…':'Создать галактику'}</button>{store.saveAvailable&&<button onClick={()=>void store.resumeGame()}>Продолжить ironman</button>}<button onClick={()=>fileRef.current?.click()}>Импорт сохранения</button><button onClick={()=>store.setScreen('settings')}>Настройки</button><input ref={fileRef} hidden type="file" accept="application/json" onChange={(e)=>void importSave(e.target.files?.[0])}/></div>
+    </>}
+    <footer>v{APP_VERSION} · {APP_CODENAME}</footer>
+  </section></main>;
 }
 
 function TopBar() {
-  const { captain, ship, gameYear, screen, setScreen, saveStatus, busyAction } = useGameStore();
-  if (!captain || !ship) return null;
-  return <header className="topbar">
-    <button className="brand-button" onClick={() => setScreen('galaxy')}><b>VOID</b><span>CHRONICLES</span><VersionBadge/></button>
-    <nav>
-      <button className={screen === 'galaxy' ? 'active' : ''} onClick={() => setScreen('galaxy')}>Карта</button>
-      <button className={screen === 'ship' ? 'active' : ''} onClick={() => setScreen('ship')}>Корабль</button>
-      <button className={screen === 'archive' ? 'active' : ''} onClick={() => setScreen('archive')}>Архив</button>
-      <button className={screen === 'settings' ? 'active' : ''} onClick={() => setScreen('settings')}>Настройки</button>
-    </nav>
-    <div className="top-stats"><span className={`save-state save-${saveStatus}`}>{saveStatus === 'saving' || saveStatus === 'pending' ? 'СОХРАНЕНИЕ…' : saveStatus === 'error' ? 'ОШИБКА СЕЙВА' : saveStatus === 'saved' ? 'IRONMAN СОХРАНЁН' : 'IRONMAN'}</span><span>{busyAction ? `ОПЕРАЦИЯ: ${busyAction.toUpperCase()}` : formatYear(gameYear)}</span><span>₡ {captain.credits}</span><span>ТОПЛИВО {ship.fuel}/{ship.maxFuel}</span><span>КОРПУС {ship.hull}/{ship.maxHull}</span></div>
-  </header>;
+  const store = useGameStore();
+  if (!store.captain || !store.ship) return null;
+  const nav = [['command','Мостик'],['galaxy','Галактика'],['system','Система'],['crew','Экипаж'],['ship','Корабль'],['archive','Архив'],['settings','Настройки']] as const;
+  return <><header className="topbar"><button className="brand-button" onClick={()=>store.setScreen('command')}><b>VOID</b><span>CHRONICLES</span><VersionBadge/></button><nav>{nav.map(([id,label])=><button key={id} className={store.screen===id?'active':''} onClick={()=>store.setScreen(id)}>{label}</button>)}</nav><div className="top-stats"><span className={`save-state save-${store.saveStatus}`}>{store.saveStatus==='saving'||store.saveStatus==='pending'?'СОХРАНЕНИЕ…':store.saveStatus==='error'?'ОШИБКА СЕЙВА':'IRONMAN'}</span><span>{formatYear(store.gameYear)}</span><span>₡ {store.captain.credits}</span><span>ТОПЛИВО {store.ship.fuel}/{store.ship.maxFuel}</span></div></header><nav className="mobile-bottom-nav">{nav.slice(0,6).map(([id,label])=><button key={id} className={store.screen===id?'active':''} onClick={()=>store.setScreen(id)}>{label}</button>)}</nav></>;
 }
 
-function artifactForPoint(point: PointOfInterest, artifacts: Artifact[]): Artifact | undefined {
-  return artifacts.find((entry) => entry.civilizationId === point.civilizationId && !entry.discovered)
-    ?? artifacts.find((entry) => !entry.discovered);
+function CommandDeckScreen() {
+  const store = useGameStore();
+  if (!store.galaxy || !store.ship || !store.captain || !store.currentSystemId) return null;
+  const system = store.galaxy.systems.find((entry)=>entry.id===store.currentSystemId)!;
+  const localPoints = store.pointsOfInterest.filter((entry)=>entry.systemId===system.id && entry.status!=='resolved');
+  const payroll = store.crew.reduce((sum,member)=>sum+member.salary,0);
+  const alerts = [store.ship.hull<50?'Корпус требует ремонта':null,store.ship.fuel<25?'Низкий запас топлива':null,store.crew.some((entry)=>entry.status==='unpaid')?'Экипаж требует выплаты':null,localPoints.length?`${localPoints.length} активных сигналов`:null].filter(Boolean);
+  return <div className="game-shell"><TopBar/><main className="command-deck">
+    <section className="command-hero"><div><span className="eyebrow">КОМАНДНЫЙ МОСТИК · {system.region.toUpperCase()}</span><h1>{store.ship.name}</h1><p>Текущая система: <b>{system.name}</b>. Угроза: {system.danger}. Скан: {system.scanned?'выполнен':'не выполнен'}.</p></div><div className="command-ship"><div className="ship-silhouette compact"><div className="ship-core"/><div className="ship-wing left"/><div className="ship-wing right"/></div></div></section>
+    <section className="command-grid">
+      <article className="command-card status-card"><span className="eyebrow">СОСТОЯНИЕ</span><h2>Корабль</h2><div className="meter"><span>Корпус</span><strong>{store.ship.hull}%</strong><i style={{width:`${store.ship.hull}%`}}/></div><div className="meter"><span>Топливо</span><strong>{store.ship.fuel}%</strong><i style={{width:`${store.ship.fuel}%`}}/></div><button onClick={()=>store.setScreen('ship')}>Открыть корабль</button></article>
+      <article className="command-card"><span className="eyebrow">ЭКИПАЖ</span><h2>{store.crew.length}/4</h2><p>{store.crew.length?store.crew.map((entry)=>`${entry.name} · ${roleLabel(entry.primaryRole)}`).join(', '):'Ты пока летишь один.'}</p><div className="stat-row"><span>Жалование</span><b>₡ {payroll}</b></div><button onClick={()=>store.setScreen('crew')}>{store.crew.length?'Управлять':'Найти людей'}</button></article>
+      <article className="command-card"><span className="eyebrow">ЛОКАЛЬНЫЕ СИГНАЛЫ</span><h2>{localPoints.length}</h2><p>{localPoints.slice(0,3).map((entry)=>entry.name).join(' · ')||'Значимых сигналов нет.'}</p><button onClick={()=>store.setScreen('system')}>Карта системы</button></article>
+      <article className="command-card"><span className="eyebrow">МАРШРУТ</span><h2>{system.neighbors.length} направлений</h2><p>Дальность двигателя: {store.ship.jumpRange}. Известных систем: {store.galaxy.systems.filter((entry)=>entry.known).length}.</p><button className="primary-button" onClick={()=>store.setScreen('galaxy')}>Карта галактики</button></article>
+      <article className="command-card command-log"><span className="eyebrow">ПОСЛЕДНИЕ СОБЫТИЯ</span>{store.logs.slice(0,5).map((entry)=><div key={entry.id}><b>{entry.title}</b><p>{entry.text}</p></div>)}</article>
+      <article className="command-card alerts-card"><span className="eyebrow">ТРЕВОГИ</span>{alerts.length?alerts.map((entry)=><p key={String(entry)}>● {entry}</p>):<p>Критических проблем нет.</p>}</article>
+    </section>
+  </main></div>;
 }
 
 function GalaxyScreen() {
-  const store = useGameStore();
-  const [selectedPlanetId, setSelectedPlanetId] = useState<string | null>(null);
-  const [expeditionPoint, setExpeditionPoint] = useState<PointOfInterest | null>(null);
-  const [shipCombat, setShipCombat] = useState(false);
-  const [notice, setNotice] = useState('');
-  if (!store.galaxy || !store.ship || !store.captain || !store.currentSystemId) return null;
-  const selectedSystem = store.galaxy.systems.find((system) => system.id === store.selectedSystemId) ?? store.galaxy.systems.find((system) => system.id === store.currentSystemId);
-  const current = store.galaxy.systems.find((system) => system.id === store.currentSystemId);
-  if (!selectedSystem || !current) return null;
-  const selectedPlanet = selectedSystem.planets.find((planet) => planet.id === selectedPlanetId) ?? selectedSystem.planets[0] ?? null;
-  const systemPoints = store.pointsOfInterest.filter((entry) => entry.systemId === selectedSystem.id);
-  const planetPoints = selectedPlanet ? systemPoints.filter((entry) => entry.planetId === selectedPlanet.id) : [];
-  const latestReport = selectedPlanet ? store.scanReports.find((entry) => entry.planetId === selectedPlanet.id) : undefined;
-  const jumpDistance = Math.hypot(selectedSystem.coordinates.x - current.coordinates.x, selectedSystem.coordinates.y - current.coordinates.y);
-  const direct = current.neighbors.includes(selectedSystem.id);
-  const canTravel = selectedSystem.id !== current.id && direct && jumpDistance <= store.ship.jumpRange && !store.busyAction && store.ship.hull > 0;
-
-  const doTravel = async () => {
-    const result = await store.travelTo(selectedSystem.id);
-    setNotice(result.message);
-    setSelectedPlanetId(null);
-    if (result.encounter === 'shipCombat') setShipCombat(true);
-  };
-
-  const detailScan = async (planet: Planet) => {
-    const result = await store.detailedScanPlanet(planet.id);
-    setNotice(result.message);
-  };
-
-  return <div className="game-shell">
-    <TopBar />
-    <div className="galaxy-layout deep-discovery-layout">
-      <section className="map-panel galaxy-mini-panel">
-        <GalaxyCanvas systems={store.galaxy.systems} currentSystemId={store.currentSystemId} selectedSystemId={store.selectedSystemId} jumpRange={store.ship.jumpRange} onSelect={(id) => { store.selectSystem(id); setSelectedPlanetId(null); }} />
-        <div className="map-legend"><span><i className="dot safe"/> известная</span><span><i className="dot danger"/> опасная</span><span><i className="dot anomaly"/> аномалия</span></div>
-        {notice && <button className="notice" onClick={() => setNotice('')}>{notice}</button>}
-      </section>
-
-      <main className="system-explorer">
-        <header className="system-explorer-header">
-          <div><span className="eyebrow">{selectedSystem.region.toUpperCase()} · {selectedSystem.starClass}</span><h1>{selectedSystem.name}</h1><p>{selectedSystem.starCount} звезда · {selectedSystem.planets.length} планет · угроза {selectedSystem.danger}</p></div>
-          <div className="action-row">
-            {selectedSystem.id === current.id
-              ? <button className="primary-button" disabled={Boolean(store.busyAction)} onClick={() => store.scanSystem(selectedSystem.id)}>{selectedSystem.scanned ? 'Обновить системный скан' : 'Системный скан'}</button>
-              : <button className="primary-button" disabled={!canTravel} onClick={doTravel}>Прыжок · {Math.max(7, Math.ceil(jumpDistance / 14))} топлива</button>}
-          </div>
-        </header>
-        {!direct && selectedSystem.id !== current.id && <p className="warning-text">Прямой маршрут отсутствует.</p>}
-        <SystemMap system={selectedSystem} selectedPlanetId={selectedPlanet?.id ?? null} pointsOfInterest={systemPoints} onSelectPlanet={(planet) => setSelectedPlanetId(planet.id)} />
-      </main>
-
-      <aside className="discovery-panel">
-        {selectedPlanet ? <>
-          <div className="planet-inspector"><div className={`planet-orb large planet-${selectedPlanet.type}`}><span /></div><div><span className="eyebrow">ОРБИТА {selectedPlanet.orbit} · СКАН {selectedPlanet.scanLevel ?? 0}/3</span><h2>{selectedPlanet.scanLevel ? selectedPlanet.name : 'НЕИЗВЕСТНЫЙ ОБЪЕКТ'}</h2><p>{selectedPlanet.scanLevel ? `${selectedPlanet.type} · пригодность ${selectedPlanet.habitability}% · ${selectedPlanet.moons} спутн.` : 'Выполните системный скан.'}</p></div></div>
-          {selectedSystem.id === current.id && selectedSystem.scanned && <button className="primary-button full" disabled={Boolean(store.busyAction)} onClick={() => void detailScan(selectedPlanet)}>{(selectedPlanet.scanLevel ?? 0) >= 2 ? 'Повторить детальный скан' : 'Детальный скан планеты'}</button>}
-          {latestReport && <article className="scan-report"><span>ДОСТОВЕРНОСТЬ {Math.round(latestReport.confidence)}%</span><p>{latestReport.summary}</p>{latestReport.warnings.map((warning) => <small key={warning}>{warning}</small>)}</article>}
-          <div className="poi-list">
-            {planetPoints.length === 0 ? <p className="empty-state">Точки интереса не определены. Требуется детальный скан.</p> : planetPoints.map((point) => <article className={`poi-card poi-${point.status}`} key={point.id}>
-              <div><span className="eyebrow">{point.type} · {point.danger} · {point.status}</span><h3>{point.name}</h3><p>{point.publicSummary}</p><div className="tags"><span>скан {point.scanConfidence}%</span><span>визитов {point.visits}</span>{point.requiredEquipment.slice(0, 2).map((item) => <span key={item}>{item}</span>)}</div></div>
-              {selectedSystem.id === current.id && selectedPlanet.type !== 'gas' && <button disabled={Boolean(store.busyAction)} onClick={() => setExpeditionPoint(point)}>{point.status === 'resolved' ? 'Вернуться' : 'Высадка'}</button>}
-            </article>)}
-          </div>
-        </> : <p className="empty-state">Выберите планету на карте системы.</p>}
-      </aside>
-
-      <aside className="log-panel"><span className="eyebrow">ЖУРНАЛ КОРАБЛЯ</span>{store.logs.slice(0, 8).map((entry) => <article className={`log-entry ${entry.tone}`} key={entry.id}><b>{entry.title}</b><p>{entry.text}</p><small>{formatYear(entry.year)}</small></article>)}</aside>
-    </div>
-    {expeditionPoint && selectedPlanet && <ExpeditionModal
-      seed={`${store.galaxy.seed}:${selectedPlanet.id}`}
-      planet={selectedPlanet}
-      point={expeditionPoint}
-      artifact={artifactForPoint(expeditionPoint, store.galaxy.artifacts)}
-      onClose={() => setExpeditionPoint(null)}
-      onComplete={async (result) => { await store.completeExpedition(result); }}
-    />}
-    {shipCombat && <ShipCombatModal playerHull={store.ship.hull} onDamage={store.damageShip} onVictory={async () => { await store.earnCredits(620, 'Победа в корабельном бою'); setShipCombat(false); }} onEscape={() => setShipCombat(false)} onDefeat={() => { setShipCombat(false); store.setScreen('ship'); }} />}
-  </div>;
+  const store = useGameStore(); const [notice,setNotice]=useState(''); const [combat,setCombat]=useState(false);
+  if(!store.galaxy||!store.ship||!store.currentSystemId) return null;
+  const current=store.galaxy.systems.find((entry)=>entry.id===store.currentSystemId)!;
+  const selected=store.galaxy.systems.find((entry)=>entry.id===store.selectedSystemId)??current;
+  const dist=Math.hypot(selected.coordinates.x-current.coordinates.x,selected.coordinates.y-current.coordinates.y);
+  const direct=current.neighbors.includes(selected.id); const can=selected.id!==current.id&&direct&&dist<=store.ship.jumpRange&&store.ship.hull>0;
+  const travel=async()=>{const result=await store.travelTo(selected.id);setNotice(result.message);if(result.encounter==='shipCombat')setCombat(true);};
+  return <div className="game-shell"><TopBar/><main className="galaxy-screen-separated"><section className="galaxy-map-full"><GalaxyCanvas systems={store.galaxy.systems} currentSystemId={store.currentSystemId} selectedSystemId={store.selectedSystemId} jumpRange={store.ship.jumpRange} onSelect={store.selectSystem}/>{notice&&<button className="notice" onClick={()=>setNotice('')}>{notice}</button>}</section><aside className="galaxy-route-panel"><span className="eyebrow">МЕЖЗВЁЗДНАЯ НАВИГАЦИЯ</span><h1>{selected.name}</h1><p>{selected.region} · {selected.starClass} · угроза {selected.danger}</p><div className="stat-row"><span>Дистанция</span><b>{Math.round(dist)}</b></div><div className="stat-row"><span>Топливо</span><b>{selected.id===current.id?0:Math.max(7,Math.ceil(dist/14))}</b></div><div className="stat-row"><span>Маршрут</span><b>{selected.id===current.id?'текущая':direct?'прямой':'нет связи'}</b></div>{selected.id===current.id?<button className="primary-button" onClick={()=>store.setScreen('system')}>Открыть систему</button>:<button className="primary-button" disabled={!can||Boolean(store.busyAction)} onClick={()=>void travel()}>Совершить прыжок</button>}<button onClick={()=>store.selectSystem(current.id)}>Вернуться к текущей</button></aside>{combat&&<ShipCombatModal playerHull={store.ship.hull} onDamage={store.damageShip} onVictory={async()=>{await store.earnCredits(620,'Победа в корабельном бою');setCombat(false);}} onEscape={()=>setCombat(false)} onDefeat={()=>{setCombat(false);store.setScreen('ship');}}/>}</main></div>;
 }
 
-function ArchiveScreen() {
-  const { galaxy, discoveries, logs, evidence, hypotheses, pointsOfInterest } = useGameStore();
-  const [tab, setTab] = useState<'discoveries' | 'evidence' | 'hypotheses' | 'history' | 'civilizations'>('discoveries');
-  const [query, setQuery] = useState('');
-  if (!galaxy) return null;
-  const normalized = query.toLowerCase();
-  return <div className="game-shell"><TopBar/><main className="archive-screen"><header><div><span className="eyebrow">ИССЛЕДОВАТЕЛЬСКИЙ АРХИВ</span><h1>Архив экспедиции</h1></div><input placeholder="Поиск по архиву" value={query} onChange={(event) => setQuery(event.target.value)} /></header><nav className="tabs"><button className={tab==='discoveries'?'active':''} onClick={()=>setTab('discoveries')}>Открытия {discoveries.length}</button><button className={tab==='evidence'?'active':''} onClick={()=>setTab('evidence')}>Улики {evidence.length}</button><button className={tab==='hypotheses'?'active':''} onClick={()=>setTab('hypotheses')}>Гипотезы {hypotheses.length}</button><button className={tab==='history'?'active':''} onClick={()=>setTab('history')}>История</button><button className={tab==='civilizations'?'active':''} onClick={()=>setTab('civilizations')}>Цивилизации</button></nav><section className="archive-grid">
-    {tab === 'discoveries' && discoveries.filter((entry)=>`${entry.name} ${entry.description}`.toLowerCase().includes(normalized)).map((entry)=><article key={entry.id}><span className="eyebrow">{entry.kind} · достоверность {entry.confidence}%</span><h3>{entry.name}</h3><p>{entry.description}</p><div className="tags">{entry.tags.map((tag)=><span key={tag}>{tag}</span>)}</div></article>)}
-    {tab === 'evidence' && evidence.filter((entry)=>`${entry.title} ${entry.description}`.toLowerCase().includes(normalized)).map((entry)=><article key={entry.id}><span className="eyebrow">{entry.kind} · надёжность {entry.reliability}%</span><h3>{entry.title}</h3><p>{entry.description}</p><small>{pointsOfInterest.find((point)=>point.id===entry.pointOfInterestId)?.name}</small></article>)}
-    {tab === 'hypotheses' && hypotheses.filter((entry)=>`${entry.title} ${entry.summary}`.toLowerCase().includes(normalized)).map((entry)=><article key={entry.id}><span className="eyebrow">{entry.status} · уверенность {entry.confidence}%</span><h3>{entry.title}</h3><p>{entry.summary}</p><div className="hypothesis-meter"><i style={{width:`${entry.confidence}%`}}/></div><small>Улик: {entry.evidenceIds.length}</small></article>)}
-    {tab === 'history' && galaxy.history.filter((entry)=>`${entry.title} ${entry.summary}`.toLowerCase().includes(normalized)).slice(-120).reverse().map((entry)=><article key={entry.id}><span className="eyebrow">{formatYear(entry.year)}</span><h3>{entry.title}</h3><p>{entry.summary}</p><small>{entry.consequences.join(' · ')}</small></article>)}
-    {tab === 'civilizations' && galaxy.civilizations.filter((entry)=>`${entry.name} ${entry.speciesName}`.toLowerCase().includes(normalized)).map((entry)=><article key={entry.id}><span className="eyebrow">{entry.status} · tech {entry.techLevel}</span><h3>{entry.name}</h3><p>{entry.speciesName}. {entry.ideology}.</p><div className="tags">{entry.traits.map((tag)=><span key={tag}>{tag}</span>)}</div></article>)}
-  </section><aside className="archive-summary"><b>Последние записи</b>{logs.slice(0,5).map((entry)=><p key={entry.id}>{entry.title}</p>)}</aside></main></div>;
+function artifactForPoint(point: PointOfInterest, artifacts: Artifact[]) { return artifacts.find((entry)=>entry.civilizationId===point.civilizationId&&!entry.discovered)??artifacts.find((entry)=>!entry.discovered); }
+
+function SystemScreen() {
+  const store=useGameStore(); const [planetId,setPlanetId]=useState<string|null>(null); const [point,setPoint]=useState<PointOfInterest|null>(null); const [notice,setNotice]=useState('');
+  if(!store.galaxy||!store.currentSystemId) return null;
+  const system=store.galaxy.systems.find((entry)=>entry.id===store.currentSystemId)!;
+  const planet=system.planets.find((entry)=>entry.id===planetId)??system.planets[0]??null;
+  const points=store.pointsOfInterest.filter((entry)=>entry.systemId===system.id); const planetPoints=planet?points.filter((entry)=>entry.planetId===planet.id):[]; const report=planet?store.scanReports.find((entry)=>entry.planetId===planet.id):undefined;
+  return <div className="game-shell"><TopBar/><main className="system-screen-separated"><section className="system-map-shell"><header><div><span className="eyebrow">ЛОКАЛЬНАЯ НАВИГАЦИЯ · {system.starClass}</span><h1>{system.name}</h1><p>{system.planets.length} планет · угроза {system.danger}</p></div><button className="primary-button" disabled={Boolean(store.busyAction)} onClick={()=>void store.scanSystem(system.id)}>{system.scanned?'Обновить скан':'Сканировать систему'}</button></header><SystemMap system={system} selectedPlanetId={planet?.id??null} pointsOfInterest={points} onSelectPlanet={(entry)=>setPlanetId(entry.id)}/>{notice&&<button className="notice" onClick={()=>setNotice('')}>{notice}</button>}</section><aside className="system-object-panel">{planet?<><div className="planet-inspector"><div className={`planet-orb large planet-${planet.type}`}><span/></div><div><span className="eyebrow">ОРБИТА {planet.orbit} · СКАН {planet.scanLevel??0}/3</span><h2>{planet.scanLevel?planet.name:'НЕИЗВЕСТНЫЙ ОБЪЕКТ'}</h2><p>{planet.type} · пригодность {planet.habitability}%</p></div></div><button className="primary-button full" disabled={!system.scanned||Boolean(store.busyAction)} onClick={async()=>{const result=await store.detailedScanPlanet(planet.id);setNotice(result.message);}}>Детальный скан</button>{report&&<article className="scan-report"><span>ДОСТОВЕРНОСТЬ {Math.round(report.confidence)}%</span><p>{report.summary}</p></article>}<div className="poi-list">{planetPoints.length?planetPoints.map((entry)=><article className={`poi-card poi-${entry.status}`} key={entry.id}><div><span className="eyebrow">{entry.type} · {entry.danger} · {entry.status}</span><h3>{entry.name}</h3><p>{entry.publicSummary}</p></div>{planet.type!=='gas'&&<button onClick={()=>setPoint(entry)}>Высадка</button>}</article>):<p className="empty-state">Точки интереса не определены.</p>}</div></>:<p>Выберите планету.</p>}</aside>{point&&planet&&<ExpeditionModal seed={`${store.galaxy.seed}:${planet.id}`} planet={planet} point={point} artifact={artifactForPoint(point,store.galaxy.artifacts)} crew={store.crew} onClose={()=>setPoint(null)} onComplete={store.completeExpedition}/>}</main></div>;
 }
 
-function ShipScreen() {
-  const { ship, captain, repairShip, refuelShip, sellCargo, analyzeArtifact, artifactKnowledge, getSnapshot, clearGame, createBackup, backupCount, busyAction, saveMeta, saveStatus } = useGameStore();
-  if (!ship || !captain) return null;
-  const snapshot = getSnapshot();
-  return <div className="game-shell"><TopBar/><main className="ship-screen"><section className="ship-hero"><span className="eyebrow">ЛИЧНЫЙ ИССЛЕДОВАТЕЛЬСКИЙ КОРАБЛЬ</span><h1>{ship.name}</h1><div className="ship-silhouette"><div className="ship-core"/><div className="ship-wing left"/><div className="ship-wing right"/></div><div className="ship-actions"><button disabled={Boolean(busyAction)} onClick={repairShip}>Полный ремонт</button><button disabled={Boolean(busyAction)} onClick={refuelShip}>Заправить</button>{snapshot && <button disabled={Boolean(busyAction)} onClick={()=>exportSnapshot(snapshot)}>Экспорт сейва</button>}<button disabled={Boolean(busyAction)} onClick={()=>void createBackup()}>Резервная копия ({backupCount})</button><button className="danger-button" disabled={Boolean(busyAction)} onClick={clearGame}>Удалить ironman</button></div><p className={`save-details save-${saveStatus}`}>{saveMeta ? `Сейв #${saveMeta.sequence} · ${new Date(saveMeta.savedAt).toLocaleString('ru-RU')} · ${saveMeta.reason}` : 'Сохранение ещё не создано'}</p></section><section className="ship-data"><article><h2>Состояние</h2><div className="meter"><span>Корпус</span><strong>{ship.hull}/{ship.maxHull}</strong><i style={{width:`${ship.hull}%`}}/></div><div className="meter"><span>Топливо</span><strong>{ship.fuel}/{ship.maxFuel}</strong><i style={{width:`${ship.fuel}%`}}/></div><div className="stat-row"><span>Дальность</span><b>{ship.jumpRange}</b></div><div className="stat-row"><span>Груз</span><b>{ship.cargo.length}/{ship.cargoCapacity}</b></div></article><article><h2>Модули</h2>{ship.modules.map((module)=><div className="module-row" key={module.id}><span>{module.slot}</span><div><b>{module.name}</b><p>{module.effect}</p></div><em>R{module.rarity}</em></div>)}</article><article><h2>Капитан</h2><div className="stat-row"><span>Имя</span><b>{captain.name}</b></div><div className="stat-row"><span>Уровень</span><b>{captain.level}</b></div><div className="stat-row"><span>Здоровье</span><b>{captain.health}/{captain.maxHealth}</b></div><h3>Травмы</h3>{captain.injuries.length===0?<p>Травм нет.</p>:captain.injuries.map((injury)=><p key={injury.id}>{injury.bodyPart}: {injury.type} ({injury.severity}/10)</p>)}</article><article><h2>Груз и анализ</h2>{ship.cargo.length===0?<p>Трюм пуст.</p>:ship.cargo.map((item)=>{const knowledge=item.artifactId?artifactKnowledge.find((entry)=>entry.artifactId===item.artifactId):undefined;return <div className="module-row cargo-analysis" key={item.id}><span>{item.kind}</span><div><b>{item.name}</b><p>Оценка: ₡ {item.value} · знания {knowledge?.level ?? 0}/4</p><div><button disabled={Boolean(busyAction)||!item.artifactId||(knowledge?.level??0)>=4} onClick={()=>item.artifactId&&analyzeArtifact(item.artifactId)}>Анализ ₡120</button><button disabled={Boolean(busyAction)} onClick={()=>sellCargo(item.id)}>Продать ₡{Math.round(item.value*.72)}</button></div>{knowledge?.revealedTruth&&<small>{knowledge.revealedTruth}</small>}</div><em>x{item.quantity}</em></div>})}</article></section></main></div>;
+function CrewScreen() {
+  const store=useGameStore();
+  return <div className="game-shell"><TopBar/><main className="crew-screen"><header><div><span className="eyebrow">ЛЮДИ КОРАБЛЯ</span><h1>Экипаж</h1><p>Полноценные напарники редки. Максимум активного состава в этой версии — четыре.</p></div><div><button disabled={Boolean(store.busyAction)} onClick={()=>void store.refreshCrewCandidates()}>Найти кандидатов · ₡40</button><button disabled={Boolean(store.busyAction)||store.crew.length===0} onClick={()=>void store.settlePayroll()}>Выплатить жалование</button></div></header><section className="crew-columns"><div><h2>На борту · {store.crew.length}/4</h2><div className="crew-grid">{store.crew.length?store.crew.map((member)=><article className="crew-card" key={member.id}><span className={`crew-status status-${member.status}`}>{member.status}</span><div className="crew-avatar">{member.name.slice(0,1)}</div><h3>{member.name}</h3><p>{member.species} · {member.culture}</p><b>{roleLabel(member.primaryRole)}{member.secondaryRole?` / ${roleLabel(member.secondaryRole)}`:''}</b><div className="stat-row"><span>Здоровье</span><b>{member.health}</b></div><div className="stat-row"><span>Мораль</span><b>{member.morale}</b></div><div className="stat-row"><span>Верность</span><b>{member.loyalty}</b></div><div className="tags">{member.traits.map((trait)=><span key={trait}>{trait}</span>)}</div><small>Убеждение: {member.belief}</small><small>Зарплата: ₡{member.salary} · доля {member.sharePercent}%</small><button className="danger-button" onClick={()=>void store.dismissCrew(member.id)}>Расторгнуть контракт</button></article>):<p className="empty-state">Ты пока один. Найди кандидатов в текущей системе.</p>}</div></div><div><h2>Кандидаты</h2><div className="crew-grid">{store.crewCandidates.length?store.crewCandidates.map((candidate)=><article className="crew-card candidate" key={candidate.id}><div className="crew-avatar">{candidate.name.slice(0,1)}</div><h3>{candidate.name}</h3><p>{candidate.species} · {candidate.culture}</p><b>{roleLabel(candidate.primaryRole)} · уровень {candidate.level}</b><div className="tags">{candidate.traits.map((trait)=><span key={trait}>{trait}</span>)}</div><small>{candidate.belief}</small><div className="stat-row"><span>Подписание</span><b>₡{candidate.signingCost}</b></div><div className="stat-row"><span>Зарплата</span><b>₡{candidate.salary}</b></div><button className="primary-button" disabled={store.crew.length>=4||(store.captain?.credits??0)<candidate.signingCost} onClick={()=>void store.hireCrew(candidate.id)}>Нанять</button></article>):<p className="empty-state">Список пуст. Запроси новые анкеты.</p>}</div></div></section></main></div>;
 }
 
-function SettingsScreen() {
-  const { galaxy, getSnapshot, createBackup, backupCount, clearGame, setScreen, busyAction } = useGameStore();
-  const [updating, setUpdating] = useState(false);
-  const snapshot = getSnapshot();
-  const update = async () => {
-    if (updating) return;
-    setUpdating(true);
-    try {
-      await forceApplicationUpdate();
-    } catch (error) {
-      setUpdating(false);
-      alert(error instanceof Error ? error.message : 'Не удалось принудительно обновить приложение');
-    }
-  };
-  return <div className="game-shell">{galaxy && <TopBar/>}<main className="settings-screen"><header><div><span className="eyebrow">СИСТЕМА</span><h1>Настройки</h1></div>{!galaxy&&<button onClick={()=>setScreen('menu')}>Назад</button>}</header><section className="settings-cards"><article><h2>Версия</h2><div className="version-hero">v{APP_VERSION}</div><p>{APP_CODENAME}</p><div className="stat-row"><span>Схема сейва</span><b>v{SAVE_SCHEMA_VERSION}</b></div><div className="stat-row"><span>Сборка</span><b>{BUILD_TIME === 'development' ? 'development' : new Date(BUILD_TIME).toLocaleString('ru-RU')}</b></div></article><article><h2>Обновление PWA</h2><p>Проверяет новый service worker, очищает старый кэш и загружает свежую сборку с GitHub Pages.</p><button className="primary-button" disabled={updating} onClick={()=>void update()}>{updating?'Обновление…':'Принудительно обновить'}</button><small>Сейв хранится в IndexedDB и при очистке Cache Storage не удаляется.</small></article><article><h2>Ironman</h2><p>Резервные копии создаются перед миграциями и вручную.</p><div className="settings-actions">{snapshot&&<button disabled={Boolean(busyAction)} onClick={()=>exportSnapshot(snapshot)}>Экспортировать сейв</button>}<button disabled={Boolean(busyAction)||!galaxy} onClick={()=>void createBackup()}>Создать backup ({backupCount})</button><button className="danger-button" disabled={Boolean(busyAction)||!galaxy} onClick={()=>void clearGame()}>Удалить локальную партию</button></div></article></section></main></div>;
-}
+function ArchiveScreen(){const {galaxy,discoveries,logs,evidence,hypotheses,pointsOfInterest}=useGameStore();const[tab,setTab]=useState<'discoveries'|'evidence'|'hypotheses'|'history'|'civilizations'>('discoveries');const[query,setQuery]=useState('');if(!galaxy)return null;const q=query.toLowerCase();return <div className="game-shell"><TopBar/><main className="archive-screen"><header><div><span className="eyebrow">ИССЛЕДОВАТЕЛЬСКИЙ АРХИВ</span><h1>Архив экспедиции</h1></div><input placeholder="Поиск" value={query} onChange={(e)=>setQuery(e.target.value)}/></header><nav className="tabs">{(['discoveries','evidence','hypotheses','history','civilizations'] as const).map((id)=><button key={id} className={tab===id?'active':''} onClick={()=>setTab(id)}>{id}</button>)}</nav><section className="archive-grid">{tab==='discoveries'&&discoveries.filter((x)=>`${x.name} ${x.description}`.toLowerCase().includes(q)).map((x)=><article key={x.id}><span>{x.kind} · {x.confidence}%</span><h3>{x.name}</h3><p>{x.description}</p></article>)}{tab==='evidence'&&evidence.filter((x)=>`${x.title} ${x.description}`.toLowerCase().includes(q)).map((x)=><article key={x.id}><span>{x.kind} · {x.reliability}%</span><h3>{x.title}</h3><p>{x.description}</p><small>{pointsOfInterest.find((p)=>p.id===x.pointOfInterestId)?.name}</small></article>)}{tab==='hypotheses'&&hypotheses.map((x)=><article key={x.id}><span>{x.status} · {x.confidence}%</span><h3>{x.title}</h3><p>{x.summary}</p></article>)}{tab==='history'&&galaxy.history.slice(-120).reverse().map((x)=><article key={x.id}><span>{formatYear(x.year)}</span><h3>{x.title}</h3><p>{x.summary}</p></article>)}{tab==='civilizations'&&galaxy.civilizations.map((x)=><article key={x.id}><span>{x.status} · tech {x.techLevel}</span><h3>{x.name}</h3><p>{x.speciesName}. {x.ideology}.</p></article>)}</section><aside className="archive-summary"><b>Последние записи</b>{logs.slice(0,5).map((x)=><p key={x.id}>{x.title}</p>)}</aside></main></div>}
 
-function BootScreen() {
-  return <main className="boot-screen"><div className="boot-mark">◆</div><span className="eyebrow">VOID CHRONICLES · v{APP_VERSION}</span><p>Проверка локального архива…</p></main>;
-}
+function ShipScreen(){const s=useGameStore();if(!s.ship||!s.captain)return null;const snap=s.getSnapshot();return <div className="game-shell"><TopBar/><main className="ship-screen"><section className="ship-hero"><span className="eyebrow">ЛИЧНЫЙ КОРАБЛЬ</span><h1>{s.ship.name}</h1><div className="ship-silhouette"><div className="ship-core"/><div className="ship-wing left"/><div className="ship-wing right"/></div><div className="ship-actions"><button onClick={()=>void s.repairShip()}>Ремонт</button><button onClick={()=>void s.refuelShip()}>Заправка</button>{snap&&<button onClick={()=>exportSnapshot(snap)}>Экспорт</button>}<button onClick={()=>void s.createBackup()}>Backup ({s.backupCount})</button><button className="danger-button" onClick={()=>void s.clearGame()}>Удалить ironman</button></div></section><section className="ship-data"><article><h2>Состояние</h2><div className="meter"><span>Корпус</span><strong>{s.ship.hull}</strong><i style={{width:`${s.ship.hull}%`}}/></div><div className="meter"><span>Топливо</span><strong>{s.ship.fuel}</strong><i style={{width:`${s.ship.fuel}%`}}/></div></article><article><h2>Модули</h2>{s.ship.modules.map((m)=><div className="module-row" key={m.id}><span>{m.slot}</span><div><b>{m.name}</b><p>{m.effect}</p></div></div>)}</article><article><h2>Капитан</h2><p>{s.captain.name} · уровень {s.captain.level}</p><p>Здоровье {s.captain.health}/{s.captain.maxHealth}</p></article><article><h2>Груз и анализ</h2>{s.ship.cargo.length===0?<p>Трюм пуст.</p>:s.ship.cargo.map((item)=>{const knowledge=item.artifactId?s.artifactKnowledge.find((entry)=>entry.artifactId===item.artifactId):undefined;return <div className="module-row cargo-analysis" key={item.id}><div><b>{item.name}</b><p>Оценка ₡{item.value} · знания {knowledge?.level??0}/4</p><button disabled={!item.artifactId||(knowledge?.level??0)>=4} onClick={()=>item.artifactId&&void s.analyzeArtifact(item.artifactId)}>Анализ ₡120</button><button onClick={()=>void s.sellCargo(item.id)}>Продать ₡{Math.round(item.value*.72)}</button></div></div>})}</article></section></main></div>}
 
-export default function App() {
-  const screen = useGameStore((state) => state.screen);
-  const galaxy = useGameStore((state) => state.galaxy);
-  const hydrationStatus = useGameStore((state) => state.hydrationStatus);
-  const hydrateFromStorage = useGameStore((state) => state.hydrateFromStorage);
+function SettingsScreen(){const s=useGameStore();const[updating,setUpdating]=useState(false);const snap=s.getSnapshot();const update=async()=>{setUpdating(true);try{await forceApplicationUpdate();}catch(error){setUpdating(false);alert(error instanceof Error?error.message:'Ошибка обновления');}};return <div className="game-shell">{s.galaxy&&<TopBar/>}<main className="settings-screen"><header><div><span className="eyebrow">СИСТЕМА</span><h1>Настройки</h1></div>{!s.galaxy&&<button onClick={()=>s.setScreen('menu')}>Назад</button>}</header><section className="settings-cards"><article><h2>Версия</h2><div className="version-hero">v{APP_VERSION}</div><p>{APP_CODENAME}</p><div className="stat-row"><span>Схема сейва</span><b>v{SAVE_SCHEMA_VERSION}</b></div><div className="stat-row"><span>Сборка</span><b>{BUILD_TIME==='development'?'development':new Date(BUILD_TIME).toLocaleString('ru-RU')}</b></div></article><article><h2>Обновление PWA</h2><button className="primary-button" disabled={updating} onClick={()=>void update()}>{updating?'Обновление…':'Принудительно обновить игру'}</button><small>IndexedDB и ironman не удаляются.</small></article><article><h2>Ironman</h2>{snap&&<button onClick={()=>exportSnapshot(snap)}>Экспортировать</button>}<button onClick={()=>void s.createBackup()}>Создать backup</button></article></section></main></div>}
 
-  useEffect(() => { void hydrateFromStorage(); }, [hydrateFromStorage]);
+const BootScreen=()=> <main className="boot-screen"><div className="boot-mark">◆</div><span className="eyebrow">VOID CHRONICLES · v{APP_VERSION}</span><p>Проверка локального архива…</p></main>;
 
-  if (hydrationStatus === 'idle' || hydrationStatus === 'loading') return <BootScreen/>;
-  if (screen === 'settings') return <SettingsScreen/>;
-  if (!galaxy || screen === 'menu') return <MainMenu/>;
-  if (screen === 'archive') return <ArchiveScreen/>;
-  if (screen === 'ship') return <ShipScreen/>;
-  return <GalaxyScreen/>;
-}
+export default function App(){const screen=useGameStore((s)=>s.screen);const galaxy=useGameStore((s)=>s.galaxy);const hydration=useGameStore((s)=>s.hydrationStatus);const hydrate=useGameStore((s)=>s.hydrateFromStorage);useEffect(()=>{void hydrate();},[hydrate]);if(hydration==='idle'||hydration==='loading')return <BootScreen/>;if(screen==='settings')return <SettingsScreen/>;if(!galaxy||screen==='menu')return <MainMenu/>;if(screen==='command')return <CommandDeckScreen/>;if(screen==='galaxy')return <GalaxyScreen/>;if(screen==='system')return <SystemScreen/>;if(screen==='crew')return <CrewScreen/>;if(screen==='archive')return <ArchiveScreen/>;return <ShipScreen/>;}

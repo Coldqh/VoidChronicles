@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import type {
   Artifact,
+  CrewMember,
   EquipmentId,
   EvidenceDraft,
   ExpeditionResult,
@@ -8,6 +9,7 @@ import type {
   PointOfInterest
 } from '../game/types';
 import { EQUIPMENT, equipmentWeight } from '../exploration/equipment';
+import { crewRoleBonus, roleLabel } from '../crew/generateCrew';
 import { generateSurface, type SurfaceMap, type SurfaceObject } from '../generation/surface';
 
 interface Props {
@@ -15,6 +17,7 @@ interface Props {
   planet: Planet;
   point: PointOfInterest;
   artifact?: Artifact;
+  crew: CrewMember[];
   onClose(): void;
   onComplete(result: ExpeditionResult): void | Promise<void>;
 }
@@ -22,9 +25,10 @@ interface Props {
 type Phase = 'loadout' | 'field' | 'debrief';
 const DEFAULT_LOADOUT: EquipmentId[] = ['pistol', 'armor', 'scanner', 'medkit', 'oxygen'];
 
-export function ExpeditionModal({ seed, planet, point, artifact, onClose, onComplete }: Props) {
+export function ExpeditionModal({ seed, planet, point, artifact, crew, onClose, onComplete }: Props) {
   const [phase, setPhase] = useState<Phase>('loadout');
   const [selected, setSelected] = useState<EquipmentId[]>(DEFAULT_LOADOUT);
+  const [selectedCrewIds, setSelectedCrewIds] = useState<string[]>([]);
   const initial = useMemo(() => generateSurface(seed, planet, point), [seed, planet, point]);
   const [map, setMap] = useState<SurfaceMap>(initial);
   const [playerHealth, setPlayerHealth] = useState(100);
@@ -36,13 +40,22 @@ export function ExpeditionModal({ seed, planet, point, artifact, onClose, onComp
   const [medkitUsed, setMedkitUsed] = useState(false);
   const [isLeaving, setIsLeaving] = useState(false);
 
-  const capacity = 9;
+  const selectedCrew = crew.filter((member) => selectedCrewIds.includes(member.id));
+  const roleBonuses = selectedCrew.flatMap((member) => [crewRoleBonus(member.primaryRole), ...(member.secondaryRole ? [crewRoleBonus(member.secondaryRole)] : [])]);
+  const equipmentSubstitutes = new Set(roleBonuses.map((bonus) => bonus.equipment).filter(Boolean));
+  const combatBonus = roleBonuses.reduce((sum, bonus) => sum + (bonus.combat ?? 0), 0);
+  const evidenceBonus = roleBonuses.reduce((sum, bonus) => sum + (bonus.evidence ?? 0), 0);
+  const healingBonus = roleBonuses.reduce((sum, bonus) => sum + (bonus.healing ?? 0), 0);
+  const crewTurnBonus = roleBonuses.reduce((sum, bonus) => sum + (bonus.turns ?? 0), 0);
+  const capacity = 9 + selectedCrew.length * 2;
   const usedWeight = equipmentWeight(selected);
-  const has = (id: EquipmentId) => selected.includes(id);
-  const turnsLimit = map.baseTurns + (has('oxygen') ? 12 : 0);
+  const has = (id: EquipmentId) => selected.includes(id) || equipmentSubstitutes.has(id);
+  const turnsLimit = map.baseTurns + (has('oxygen') ? 12 : 0) + crewTurnBonus;
   const turnsLeft = Math.max(0, turnsLimit - turns);
   const tileAt = (state: SurfaceMap, x: number, y: number) => state.tiles.find((tile) => tile.x === x && tile.y === y);
   const distance = (a: {x:number;y:number}, b:{x:number;y:number}) => Math.abs(a.x-b.x)+Math.abs(a.y-b.y);
+
+  const toggleCrew = (id: string) => setSelectedCrewIds((current) => current.includes(id) ? current.filter((entry) => entry !== id) : current.length < 3 ? [...current, id] : current);
 
   const toggle = (id: EquipmentId) => {
     setSelected((current) => {
@@ -68,7 +81,7 @@ export function ExpeditionModal({ seed, planet, point, artifact, onClose, onComp
     if (tile) tile.resolved = true;
     if (object.evidence) {
       const reliabilityPenalty = canForceDoor && !has('cutter') ? 22 : has('scanner') ? 0 : 12;
-      const evidence = { ...object.evidence, reliability: Math.max(20, object.evidence.reliability - reliabilityPenalty) };
+      const evidence = { ...object.evidence, reliability: Math.min(100, Math.max(20, object.evidence.reliability - reliabilityPenalty + evidenceBonus)) };
       setCollectedEvidence((current) => current.some((entry) => entry.key === evidence.key) ? current : [...current, evidence]);
       nextLog.unshift(`Улика получена: ${evidence.title}.`);
     }
@@ -96,7 +109,7 @@ export function ExpeditionModal({ seed, planet, point, artifact, onClose, onComp
     const occupying = nextMap.enemies.find((enemy) => enemy.x === x && enemy.y === y && enemy.health > 0);
 
     if (occupying) {
-      const baseDamage = has('rifle') ? 46 : has('pistol') ? 32 : 18;
+      const baseDamage = (has('rifle') ? 46 : has('pistol') ? 32 : 18) + combatBonus;
       occupying.health -= baseDamage;
       nextLog.unshift(`Атака: ${occupying.name} получает ${baseDamage} урона.`);
       if (occupying.health <= 0) nextLog.unshift(`${occupying.name} уничтожен.`);
@@ -156,7 +169,7 @@ export function ExpeditionModal({ seed, planet, point, artifact, onClose, onComp
   const heal = () => {
     if (!has('medkit') || medkitUsed || playerHealth >= 100) return;
     setMedkitUsed(true);
-    setPlayerHealth((value) => Math.min(100, value + 32));
+    setPlayerHealth((value) => Math.min(100, value + 32 + healingBonus));
     setLog((entries) => ['Использована аптечка: +32 здоровья.', ...entries].slice(0, 10));
   };
 
@@ -170,6 +183,7 @@ export function ExpeditionModal({ seed, planet, point, artifact, onClose, onComp
       const resolved = collectedEvidence.length >= 2 && (hasArtifact || point.type === 'biosphere' || point.type === 'settlement');
       const result: ExpeditionResult = {
         pointOfInterestId: point.id,
+        crewIds: selectedCrewIds,
         artifact: hasArtifact ? artifact : undefined,
         injury,
         evidence: collectedEvidence,
@@ -188,15 +202,16 @@ export function ExpeditionModal({ seed, planet, point, artifact, onClose, onComp
     return <div className="modal-backdrop"><section className="modal expedition-modal loadout-modal">
       <header><div><span className="eyebrow">ПОДГОТОВКА ЭКСПЕДИЦИИ</span><h2>{point.name}</h2><p>{point.publicSummary}</p></div><button className="icon-button" onClick={onClose}>×</button></header>
       <div className="mission-brief"><div><b>Среда</b><span>{planet.type} · {planet.danger}</span></div><div><b>Оценка угрозы</b><span>{point.danger}</span></div><div><b>Скан</b><span>{point.scanConfidence}%</span></div><div><b>Возможная добыча</b><span>{point.possibleRewards.join(', ')}</span></div></div>
+      <section className="crew-selection"><h3>Экспедиционная группа · капитан + {selectedCrew.length}</h3><div className="crew-selection-grid">{crew.length === 0 ? <p>Напарников нет. Высадка будет одиночной.</p> : crew.map((member) => <button key={member.id} className={selectedCrewIds.includes(member.id) ? 'selected' : ''} onClick={() => toggleCrew(member.id)}><b>{member.name}</b><span>{roleLabel(member.primaryRole)} · мораль {member.morale}</span></button>)}</div></section>
       <div className="loadout-grid">{EQUIPMENT.map((item) => <button key={item.id} className={selected.includes(item.id) ? 'selected' : ''} onClick={() => toggle(item.id)}><b>{item.name}</b><span>{item.description}</span><em>{item.weight} ед.</em></button>)}</div>
-      <footer className="loadout-footer"><span>Масса: {usedWeight}/{capacity}</span><button className="primary-button" onClick={() => setPhase('field')}>Начать высадку</button></footer>
+      <footer className="loadout-footer"><span>Масса: {usedWeight}/{capacity} · группа {selectedCrew.length + 1}</span><button className="primary-button" onClick={() => setPhase('field')}>Начать высадку</button></footer>
     </section></div>;
   }
 
   if (phase === 'debrief') {
     return <div className="modal-backdrop"><section className="modal expedition-modal debrief-modal">
       <header><div><span className="eyebrow">ОТЧЁТ ЭКСПЕДИЦИИ</span><h2>{point.name}</h2></div></header>
-      <div className="debrief-summary"><div><b>Улики</b><strong>{collectedEvidence.length}</strong></div><div><b>Находка</b><strong>{hasArtifact ? artifact?.name ?? 'получена' : 'не извлечена'}</strong></div><div><b>Ходы</b><strong>{turns}</strong></div><div><b>Здоровье</b><strong>{playerHealth}</strong></div></div>
+      <div className="debrief-summary"><div><b>Улики</b><strong>{collectedEvidence.length}</strong></div><div><b>Находка</b><strong>{hasArtifact ? artifact?.name ?? 'получена' : 'не извлечена'}</strong></div><div><b>Ходы</b><strong>{turns}</strong></div><div><b>Здоровье</b><strong>{playerHealth}</strong></div><div><b>Группа</b><strong>{selectedCrew.length + 1}</strong></div></div>
       <div className="evidence-list">{collectedEvidence.length === 0 ? <p>Значимых доказательств не получено.</p> : collectedEvidence.map((entry) => <article key={entry.key}><span>{entry.kind} · надёжность {entry.reliability}%</span><b>{entry.title}</b><p>{entry.description}</p></article>)}</div>
       <button className="primary-button" onClick={onClose}>Вернуться на корабль</button>
     </section></div>;
@@ -223,6 +238,7 @@ export function ExpeditionModal({ seed, planet, point, artifact, onClose, onComp
         <aside className="expedition-sidebar">
           <div className="meter"><span>Здоровье</span><strong>{playerHealth}</strong><i style={{ width: `${playerHealth}%` }} /></div>
           <div className="meter warning"><span>Безопасное время</span><strong>{turnsLeft}</strong><i style={{ width: `${Math.max(0, turnsLeft / turnsLimit * 100)}%` }} /></div>
+          <div className="stat-row"><span>Группа</span><b>{selectedCrew.length + 1}</b></div>
           <div className="stat-row"><span>Угрозы</span><b>{map.enemies.filter((enemy) => enemy.health > 0).length}</b></div>
           <div className="stat-row"><span>Улики</span><b>{collectedEvidence.length}</b></div>
           <div className="stat-row"><span>Находка</span><b>{hasArtifact ? 'извлечена' : 'нет'}</b></div>

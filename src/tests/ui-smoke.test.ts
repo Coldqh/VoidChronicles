@@ -10,7 +10,7 @@ import { generatePointsOfInterest } from '../exploration/pointsOfInterest';
 describe('application rendering smoke tests', () => {
   it('renders the boot shell with the current version', () => {
     const html = renderToString(React.createElement(App));
-    expect(html).toContain('0.2.0');
+    expect(html).toContain('0.3.0');
     expect(html).toContain('Проверка локального архива');
   });
 
@@ -26,7 +26,7 @@ describe('application rendering smoke tests', () => {
       system, selectedPlanetId: planet.id, pointsOfInterest: [point], onSelectPlanet: () => undefined
     }));
     const expeditionHtml = renderToString(React.createElement(ExpeditionModal, {
-      seed: galaxy.seed, planet, point, onClose: () => undefined, onComplete: () => undefined
+      seed: galaxy.seed, planet, point, crew: [], onClose: () => undefined, onComplete: () => undefined
     }));
     expect(mapHtml).toContain('system-map');
     expect(expeditionHtml).toContain('ПОДГОТОВКА ЭКСПЕДИЦИИ');

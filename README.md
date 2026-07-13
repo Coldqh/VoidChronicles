@@ -2,7 +2,7 @@
 
 Procedural single-player space exploration roguelike built with React, TypeScript and Canvas.
 
-## v0.2 — Deep Discovery
+## v0.3 — Deep Discovery
 
 - orbital star-system screen;
 - multi-stage system and planet scanning;
@@ -24,3 +24,11 @@ npm run typecheck
 npm test
 npm run build
 ```
+
+## v0.3 Command Deck
+
+- dedicated bridge/home screen;
+- separate galaxy and star-system maps;
+- crew recruitment, contracts, payroll, morale and memories;
+- expedition team selection with role bonuses;
+- save schema v4 with v3 migration.

@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.3.0 — Command Deck
+
+- added a dedicated Command Deck home screen for the active run;
+- separated galaxy navigation from the current star-system map;
+- added dedicated Galaxy, System and Crew screens;
+- added deterministic crew candidates, hiring, contracts, salaries and dismissal;
+- added crew morale, loyalty, memories, beliefs, injuries and status;
+- added expedition team selection and profession bonuses;
+- added schema v4 migration preserving existing v0.2 ironman saves;
+- added responsive mobile bottom navigation;
+- kept forced PWA refresh and permanent version display;
+- added crew generation tests; total suite: 16 tests.
+
 ## v0.2.0 — Deep Discovery
 
 - added orbital star-system exploration screen;

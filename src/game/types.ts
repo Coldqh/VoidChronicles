@@ -9,6 +9,8 @@ export type PointOfInterestStatus = 'detected' | 'visited' | 'blocked' | 'resolv
 export type EquipmentId = 'pistol' | 'rifle' | 'armor' | 'medkit' | 'scanner' | 'cutter' | 'translator' | 'sampleContainer' | 'explosives' | 'oxygen';
 export type EvidenceKind = 'record' | 'body' | 'weapon' | 'architecture' | 'sample' | 'terminal' | 'damage' | 'signal';
 export type HypothesisStatus = 'tentative' | 'supported' | 'confirmed' | 'disproved';
+export type CrewRole = 'pilot' | 'engineer' | 'doctor' | 'scientist' | 'archaeologist' | 'soldier' | 'diplomat' | 'biologist' | 'smuggler';
+export type CrewStatus = 'active' | 'injured' | 'unpaid' | 'missing';
 
 export interface GalaxySettings {
   seed: string;
@@ -144,6 +146,44 @@ export interface Captain {
   alive: boolean;
 }
 
+
+export interface CrewMemory {
+  id: string;
+  year: number;
+  kind: 'hired' | 'expedition' | 'injury' | 'payment' | 'betrayal' | 'discovery';
+  text: string;
+  impact: number;
+}
+
+export interface CrewMember {
+  id: string;
+  name: string;
+  species: string;
+  culture: string;
+  primaryRole: CrewRole;
+  secondaryRole?: CrewRole;
+  level: number;
+  health: number;
+  maxHealth: number;
+  morale: number;
+  loyalty: number;
+  salary: number;
+  sharePercent: number;
+  contractYears: number;
+  joinedYear: number;
+  paidUntilYear: number;
+  traits: string[];
+  belief: string;
+  status: CrewStatus;
+  injuries: Injury[];
+  memories: CrewMemory[];
+}
+
+export interface CrewCandidate extends CrewMember {
+  signingCost: number;
+  originSystemId: string;
+}
+
 export interface ShipModule {
   id: string;
   name: string;
@@ -270,6 +310,7 @@ export interface ArtifactKnowledge {
 
 export interface ExpeditionResult {
   pointOfInterestId: string;
+  crewIds: string[];
   artifact?: Artifact;
   injury?: { bodyPart: 'head' | 'torso' | 'leftArm' | 'rightArm' | 'leftLeg' | 'rightLeg'; severity: number };
   evidence: EvidenceDraft[];
@@ -309,4 +350,6 @@ export interface GameStateSnapshot {
   evidence: Evidence[];
   hypotheses: Hypothesis[];
   artifactKnowledge: ArtifactKnowledge[];
+  crew: CrewMember[];
+  crewCandidates: CrewCandidate[];
 }

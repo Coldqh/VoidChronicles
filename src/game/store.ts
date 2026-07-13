@@ -3,6 +3,8 @@ import type {
   Artifact,
   ArtifactKnowledge,
   Captain,
+  CrewCandidate,
+  CrewMember,
   Discovery,
   Evidence,
   ExpeditionResult,
@@ -34,8 +36,9 @@ import { createRng } from '../generation/rng';
 import { recordDiagnostic } from '../runtime/diagnostics';
 import { generatePointsOfInterest } from '../exploration/pointsOfInterest';
 import { buildHypothesis } from '../exploration/hypotheses';
+import { generateCrewCandidates } from '../crew/generateCrew';
 
-export type MainScreen = 'menu' | 'galaxy' | 'archive' | 'ship' | 'settings';
+export type MainScreen = 'menu' | 'command' | 'galaxy' | 'system' | 'crew' | 'archive' | 'ship' | 'settings';
 export type HydrationStatus = 'idle' | 'loading' | 'ready' | 'error';
 export type SaveStatus = 'idle' | 'pending' | 'saving' | 'saved' | 'error';
 
@@ -54,6 +57,8 @@ interface GameStore {
   evidence: Evidence[];
   hypotheses: Hypothesis[];
   artifactKnowledge: ArtifactKnowledge[];
+  crew: CrewMember[];
+  crewCandidates: CrewCandidate[];
   generationActive: boolean;
   hydrationStatus: HydrationStatus;
   saveAvailable: boolean;
@@ -83,6 +88,10 @@ interface GameStore {
   refuelShip(): Promise<void>;
   earnCredits(amount: number, reason: string): Promise<void>;
   sellCargo(itemId: string): Promise<void>;
+  refreshCrewCandidates(): Promise<void>;
+  hireCrew(candidateId: string): Promise<void>;
+  dismissCrew(crewId: string): Promise<void>;
+  settlePayroll(): Promise<void>;
   restoreSnapshot(snapshot: GameStateSnapshot): Promise<void>;
   getSnapshot(): GameStateSnapshot | null;
 }
@@ -208,6 +217,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
   evidence: [],
   hypotheses: [],
   artifactKnowledge: [],
+  crew: [],
+  crewCandidates: [],
   generationActive: false,
   hydrationStatus: 'idle',
   saveAvailable: false,
@@ -249,6 +260,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
           evidence: safe.evidence,
           hypotheses: safe.hypotheses,
           artifactKnowledge: safe.artifactKnowledge,
+          crew: safe.crew,
+          crewCandidates: safe.crewCandidates,
           saveMeta: safe.saveMeta ?? null,
           hydrationStatus: 'ready',
           saveAvailable: true,
@@ -283,7 +296,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       const start = galaxy.systems.find((system) => system.id === galaxy.startSystemId);
       if (!start) throw new Error('Стартовая система не найдена');
       set({
-        screen: 'galaxy',
+        screen: 'command',
         galaxy,
         captain: initialCaptain(),
         ship: initialShip(),
@@ -296,6 +309,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
         evidence: [],
         hypotheses: [],
         artifactKnowledge: [],
+        crew: [],
+        crewCandidates: [],
         logs: [makeLog(0, 'Новая экспедиция', `Корабль «Странник-01» начинает путь из системы ${start.name}.`, 'good')],
         hydrationStatus: 'ready',
         saveAvailable: true,
@@ -310,7 +325,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     return runExclusive('resume', set, get, async () => {
       if (!get().galaxy) await get().hydrateFromStorage();
       if (!get().galaxy || !get().captain || !get().ship || !get().currentSystemId) return false;
-      set({ screen: 'galaxy', saveAvailable: true, saveError: null });
+      set({ screen: 'command', saveAvailable: true, saveError: null });
       return true;
     }, false);
   },
@@ -324,7 +339,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
         set({
           screen: 'menu', galaxy: null, captain: null, ship: null, currentSystemId: null,
           selectedSystemId: null, gameYear: 0, discoveries: [], logs: [], scanReports: [],
-          pointsOfInterest: [], evidence: [], hypotheses: [], artifactKnowledge: [],
+          pointsOfInterest: [], evidence: [], hypotheses: [], artifactKnowledge: [], crew: [], crewCandidates: [],
           hydrationStatus: 'ready', saveAvailable: false, saveError: null,
           saveStatus: 'idle', saveMeta: null, backupCount: 0, recoveryNotice: null
         });
@@ -569,6 +584,33 @@ export const useGameStore = create<GameStore>((set, get) => ({
       }
       logs.unshift(makeLog(gameYear, `Экспедиция: ${point.name}`, `Получено улик: ${newEvidence.length}. Статус гипотезы: ${hypothesis.status}.`, result.outcome === 'resolved' ? 'good' : 'warning'));
 
+      let updatedCrew = get().crew.map((member) => {
+        if (!result.crewIds.includes(member.id)) return member;
+        const impact = result.outcome === 'resolved' ? 7 : result.outcome === 'failed' ? -10 : 2;
+        const memory = {
+          id: `memory_expedition_${member.id}_${point.id}_${gameYear}_${member.memories.length}`,
+          year: gameYear,
+          kind: result.artifact ? 'discovery' as const : 'expedition' as const,
+          text: `${point.name}: ${result.outcome === 'resolved' ? 'задача выполнена' : result.outcome === 'failed' ? 'экспедиция провалена' : 'группа эвакуирована'}.`,
+          impact
+        };
+        return {
+          ...member,
+          morale: Math.max(0, Math.min(100, member.morale + impact)),
+          loyalty: Math.max(0, Math.min(100, member.loyalty + Math.sign(impact) * 2)),
+          memories: [...member.memories, memory].slice(-20)
+        };
+      });
+      if (result.outcome === 'failed' && result.crewIds.length > 0) {
+        const woundedId = result.crewIds[0];
+        updatedCrew = updatedCrew.map((member) => member.id === woundedId ? {
+          ...member,
+          health: Math.max(1, member.health - 24),
+          status: 'injured' as const,
+          memories: [...member.memories, { id: `memory_injury_${member.id}_${gameYear}`, year: gameYear, kind: 'injury' as const, text: 'Получил травму при аварийной эвакуации.', impact: -8 }].slice(-20)
+        } : member);
+      }
+
       let knowledge = get().artifactKnowledge;
       if (result.artifact) {
         const existingKnowledge = knowledge.find((entry) => entry.artifactId === result.artifact?.id);
@@ -586,6 +628,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
         hypotheses,
         discoveries: newDiscoveries,
         artifactKnowledge: knowledge,
+        crew: updatedCrew,
         logs
       });
       await persist(set, get, 'expedition');
@@ -676,11 +719,81 @@ export const useGameStore = create<GameStore>((set, get) => ({
       await persist(set, get, 'sell-cargo');
     }, undefined);
   },
+  async refreshCrewCandidates() {
+    return runExclusive('crew-search', set, get, async () => {
+      const { galaxy, currentSystemId, gameYear, captain } = get();
+      if (!galaxy || !currentSystemId || !captain) return;
+      const system = galaxy.systems.find((entry) => entry.id === currentSystemId);
+      if (!system) return;
+      const cost = 40;
+      if (captain.credits < cost) return;
+      const candidates = generateCrewCandidates(galaxy.seed, system, gameYear, 4);
+      set({
+        crewCandidates: candidates,
+        captain: { ...captain, credits: captain.credits - cost },
+        logs: [makeLog(gameYear, 'Поиск экипажа', `Получено ${candidates.length} новых анкет. Потрачено ${cost} кредитов.`, 'info'), ...get().logs]
+      });
+      await persist(set, get, 'crew-search');
+    }, undefined);
+  },
+  async hireCrew(candidateId) {
+    return runExclusive('crew-hire', set, get, async () => {
+      const { crew, crewCandidates, captain, gameYear } = get();
+      if (!captain || crew.length >= 4) return;
+      const candidate = crewCandidates.find((entry) => entry.id === candidateId);
+      if (!candidate || captain.credits < candidate.signingCost) return;
+      const { signingCost: _signingCost, originSystemId: _originSystemId, ...memberData } = candidate;
+      const member: CrewMember = {
+        ...memberData,
+        joinedYear: gameYear,
+        paidUntilYear: gameYear,
+        memories: [{ id: `memory_hired_${candidate.id}_${gameYear}`, year: gameYear, kind: 'hired', text: `Нанят капитаном в год ${gameYear}.`, impact: 8 }]
+      };
+      set({
+        crew: [...crew, member],
+        crewCandidates: crewCandidates.filter((entry) => entry.id !== candidateId),
+        captain: { ...captain, credits: captain.credits - candidate.signingCost },
+        logs: [makeLog(gameYear, 'Новый член экипажа', `${member.name}, ${member.primaryRole}. Контракт подписан.`, 'good'), ...get().logs]
+      });
+      await persist(set, get, 'crew-hire');
+    }, undefined);
+  },
+  async dismissCrew(crewId) {
+    return runExclusive('crew-dismiss', set, get, async () => {
+      const member = get().crew.find((entry) => entry.id === crewId);
+      if (!member) return;
+      set({
+        crew: get().crew.filter((entry) => entry.id !== crewId),
+        logs: [makeLog(get().gameYear, 'Контракт расторгнут', `${member.name} покидает корабль.`, member.loyalty < 35 ? 'warning' : 'info'), ...get().logs]
+      });
+      await persist(set, get, 'crew-dismiss');
+    }, undefined);
+  },
+  async settlePayroll() {
+    return runExclusive('crew-payroll', set, get, async () => {
+      const { crew, captain, gameYear } = get();
+      if (!captain || crew.length === 0) return;
+      const due = crew.reduce((sum, member) => sum + member.salary, 0);
+      if (captain.credits < due) {
+        set({
+          crew: crew.map((member) => ({ ...member, status: 'unpaid', morale: Math.max(0, member.morale - 12), loyalty: Math.max(0, member.loyalty - 8), memories: [...member.memories, { id: `memory_unpaid_${member.id}_${gameYear}`, year: gameYear, kind: 'betrayal' as const, text: 'Капитан не выплатил жалование.', impact: -12 }].slice(-20) })),
+          logs: [makeLog(gameYear, 'Жалование не выплачено', `Требуется ${due} кредитов. Экипаж недоволен.`, 'danger'), ...get().logs]
+        });
+      } else {
+        set({
+          captain: { ...captain, credits: captain.credits - due },
+          crew: crew.map((member) => ({ ...member, status: member.health < member.maxHealth * 0.5 ? 'injured' : 'active', paidUntilYear: gameYear + 1, morale: Math.min(100, member.morale + 5), loyalty: Math.min(100, member.loyalty + 3), memories: [...member.memories, { id: `memory_paid_${member.id}_${gameYear}`, year: gameYear, kind: 'payment' as const, text: `Получено жалование: ${member.salary}.`, impact: 4 }].slice(-20) })),
+          logs: [makeLog(gameYear, 'Жалование выплачено', `Экипаж получил ${due} кредитов.`, 'good'), ...get().logs]
+        });
+      }
+      await persist(set, get, 'crew-payroll');
+    }, undefined);
+  },
   async restoreSnapshot(snapshot) {
     return runExclusive('import-save', set, get, async () => {
       const safe = parseSnapshot(snapshot);
       set({
-        screen: 'galaxy',
+        screen: 'command',
         galaxy: safe.galaxy,
         captain: safe.captain,
         ship: safe.ship,
@@ -694,6 +807,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
         evidence: safe.evidence,
         hypotheses: safe.hypotheses,
         artifactKnowledge: safe.artifactKnowledge,
+        crew: safe.crew,
+        crewCandidates: safe.crewCandidates,
         saveMeta: safe.saveMeta ?? null,
         hydrationStatus: 'ready',
         saveAvailable: true,
@@ -707,7 +822,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   getSnapshot() {
     const {
       galaxy, captain, ship, currentSystemId, gameYear, discoveries, logs, saveMeta,
-      scanReports, pointsOfInterest, evidence, hypotheses, artifactKnowledge
+      scanReports, pointsOfInterest, evidence, hypotheses, artifactKnowledge, crew, crewCandidates
     } = get();
     if (!galaxy || !captain || !ship || !currentSystemId) return null;
     return {
@@ -724,7 +839,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
       pointsOfInterest,
       evidence,
       hypotheses,
-      artifactKnowledge
+      artifactKnowledge,
+      crew,
+      crewCandidates
     };
   }
 }));
