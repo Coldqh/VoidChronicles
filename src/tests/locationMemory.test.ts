@@ -26,11 +26,11 @@ describe('persistent expedition locations', () => {
     };
     const revisit = generateSurface('MEMORY-SEED', planet, point, state);
     expect(revisit.enemies.some((enemy) => killed.some((entry) => entry.id === enemy.id))).toBe(false);
-    expect(baseline.enemies).toHaveLength(5);
-    expect(revisit.enemies).toHaveLength(2);
+    expect(baseline.enemies.length).toBeGreaterThanOrEqual(3);
     expect(revisit.enemies.length).toBe(survivors.length);
     expect(revisit.objects.find((object) => object.id === resolvedId)?.resolved).toBe(true);
-    expect(revisit.objects.find((object) => object.kind === 'artifact')?.resolved).toBe(true);
+    const artifactObject = revisit.objects.find((object) => object.kind === 'artifact');
+    if (artifactObject) expect(artifactObject.resolved).toBe(true);
     expect(revisit.tiles.find((tile) => tile.x === 10 && tile.y === 10)?.revealed).toBe(true);
   });
 
@@ -51,5 +51,28 @@ describe('persistent expedition locations', () => {
     const second = generateSurface('MEMORY-SEED', planet, { ...point, visits: 99 });
     expect(first.tiles.map((tile) => tile.kind)).toEqual(second.tiles.map((tile) => tile.kind));
     expect(first.objects.map((object) => [object.id, object.x, object.y])).toEqual(second.objects.map((object) => [object.id, object.x, object.y]));
+  });
+
+  it('varies reward counts and positions between different locations', () => {
+    const samples = Array.from({ length: 8 }, (_, index) => {
+      const variedPoint = { ...point, id: `poi-varied-${index}`, possibleRewards: index % 2 ? ['data'] : ['data', 'artifact', 'sample'] };
+      const map = generateSurface('VARIATION-SEED', planet, variedPoint);
+      return {
+        count: map.objects.length,
+        signature: map.objects.map((object) => `${object.x}:${object.y}:${object.kind}`).join('|')
+      };
+    });
+    expect(new Set(samples.map((sample) => sample.signature)).size).toBeGreaterThan(5);
+    expect(new Set(samples.map((sample) => sample.count)).size).toBeGreaterThan(1);
+  });
+
+  it('creates a stable readable tutorial location with nearby data', () => {
+    const tutorialPlanet = { ...planet, id: 'tutorial-planet', imageKey: 'tutorial-target' };
+    const tutorialPoint = { ...point, id: 'tutorial-point', danger: 'caution' as const };
+    const map = generateSurface('TUTORIAL-SEED', tutorialPlanet, tutorialPoint);
+    expect(map.width).toBe(16);
+    expect(map.height).toBe(11);
+    expect(map.objects).toHaveLength(2);
+    expect(map.objects.some((object) => Math.abs(object.x - map.player.x) + Math.abs(object.y - map.player.y) <= 5)).toBe(true);
   });
 });

@@ -5,12 +5,24 @@ import type { GameStateSnapshot } from '../game/types';
 import {
   createManualBackup,
   db,
+  flushPendingSave,
   deleteSnapshot,
   loadSnapshot,
   saveSnapshotImmediately,
   scheduleSnapshotSave
 } from '../persistence/db';
 import { parseSnapshot } from '../persistence/snapshot';
+
+
+class MemoryStorage implements Storage {
+  private values = new Map<string, string>();
+  get length() { return this.values.size; }
+  clear() { this.values.clear(); }
+  getItem(key: string) { return this.values.get(key) ?? null; }
+  key(index: number) { return Array.from(this.values.keys())[index] ?? null; }
+  removeItem(key: string) { this.values.delete(key); }
+  setItem(key: string, value: string) { this.values.set(key, String(value)); }
+}
 
 async function makeSnapshot(): Promise<GameStateSnapshot> {
   const galaxy = await generateGalaxy({
@@ -44,6 +56,7 @@ async function makeSnapshot(): Promise<GameStateSnapshot> {
 
 describe.sequential('IndexedDB save coordinator', () => {
   beforeEach(async () => {
+    Object.defineProperty(globalThis, 'localStorage', { value: new MemoryStorage(), configurable: true });
     db.close();
     await db.delete();
   });
@@ -85,4 +98,33 @@ describe.sequential('IndexedDB save coordinator', () => {
     expect(recovered?.snapshot.captain.credits).toBe(777);
     await deleteSnapshot();
   });
+
+  it('restores the party from the browser rescue copy when IndexedDB is empty', async () => {
+    const snapshot = await makeSnapshot();
+    snapshot.captain.credits = 913;
+    await saveSnapshotImmediately(snapshot, 'rescue-test');
+    await db.saves.clear();
+
+    const recovered = await loadSnapshot();
+    expect(recovered?.recoveredFromBackup).toBe(true);
+    expect(recovered?.snapshot.captain.credits).toBe(913);
+    expect(await db.saves.get('ironman')).toBeTruthy();
+  });
+
+
+  it('prefers a newer synchronous rescue copy over an older valid IndexedDB record', async () => {
+    const initial = await makeSnapshot();
+    initial.captain.credits = 100;
+    await saveSnapshotImmediately(initial, 'initial-primary');
+
+    const newest = structuredClone(initial);
+    newest.captain.credits = 444;
+    const pending = scheduleSnapshotSave(newest, 'latest-action', 60_000);
+    const loaded = await loadSnapshot();
+    expect(loaded?.recoveredFromBackup).toBe(true);
+    expect(loaded?.snapshot.captain.credits).toBe(444);
+    await flushPendingSave();
+    await pending;
+  });
+
 });

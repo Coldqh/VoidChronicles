@@ -109,7 +109,7 @@ interface GameStore {
   busyAction: string | null;
   setScreen(screen: MainScreen): void;
   setGenerationActive(active: boolean): void;
-  advanceTutorial(): Promise<void>;
+  advanceTutorial(expectedStep?: number): Promise<void>;
   skipTutorial(): Promise<void>;
   restartTutorial(): Promise<void>;
   resolveStoryScene(sceneId: string, choiceId: string): Promise<{ ok: boolean; message: string }>;
@@ -194,6 +194,46 @@ const initialEquipment = (): EquipmentItem[] => ([
   { id: 'gear_field_armor', name: 'Полевой скафандр', category: 'armor', rarity: 1, description: 'Изоляция от среды и лёгкая бронезащита.', effect: '-риск травмы от среды', assignedToId: 'captain_player', condition: 100 },
   { id: 'gear_multiscanner', name: 'Ручной мультисканер', category: 'tool', rarity: 1, description: 'Собирает спектральные и структурные данные.', effect: '+достоверность полевого анализа', condition: 100 }
 ]);
+
+
+function prepareStartingGalaxy(galaxy: Galaxy, tutorialEnabled: boolean): { galaxy: Galaxy; tutorialPlanetId?: string } {
+  const prepared = structuredClone(galaxy);
+  for (const system of prepared.systems) {
+    system.known = false;
+    system.visited = false;
+    system.scanned = false;
+    for (const planet of system.planets) {
+      planet.scanned = false;
+      planet.scanLevel = 0;
+      planet.lastScanYear = undefined;
+    }
+  }
+  const start = prepared.systems.find((system) => system.id === prepared.startSystemId) ?? prepared.systems[0];
+  if (!start) return { galaxy: prepared };
+  start.known = true;
+  start.visited = true;
+  start.scanned = false;
+  start.danger = 'safe';
+  start.anomaly = false;
+
+  if (!tutorialEnabled) return { galaxy: prepared };
+  start.name = 'Предел-7';
+  start.starClass = 'K';
+  start.starCount = 1;
+  start.region = 'core';
+  let planet = start.planets.find((entry) => entry.type !== 'gas');
+  if (!planet) planet = start.planets[0];
+  if (!planet) return { galaxy: prepared };
+  planet.name = 'К-1 «Эхо»';
+  planet.type = 'rocky';
+  planet.danger = 'caution';
+  planet.habitability = 4;
+  planet.hasLife = false;
+  planet.civilizationId = undefined;
+  planet.pointsOfInterest = 1;
+  planet.imageKey = 'tutorial-target';
+  return { galaxy: prepared, tutorialPlanetId: planet.id };
+}
 
 const emptySaveMeta = (): SaveMetadata => ({
   savedAt: new Date(0).toISOString(),
@@ -360,23 +400,29 @@ export const useGameStore = create<GameStore>((set, get) => ({
   recoveryNotice: null,
   busyAction: null,
   setScreen: (screen) => {
-    if (!get().busyAction) set({ screen });
+    if (get().busyAction) return;
+    const tutorial = get().tutorial;
+    const advance = tutorial.active && tutorial.currentStep === 0 && screen === 'system';
+    set({ screen, ...(advance ? { tutorial: { ...tutorial, currentStep: 1 } } : {}) });
+    if (advance) void persist(set, get, 'tutorial-open-system');
   },
   setGenerationActive: (generationActive) => set({ generationActive }),
-  async advanceTutorial() {
+  async advanceTutorial(expectedStep) {
     const tutorial = get().tutorial;
     if (!tutorial.active || tutorial.completed) return;
+    if (expectedStep !== undefined && tutorial.currentStep !== expectedStep) return;
     const nextStep = tutorial.currentStep + 1;
-    const completed = nextStep >= 7;
+    const completed = nextStep >= 8;
     set({
-      tutorial: { ...tutorial, currentStep: completed ? 6 : nextStep, active: !completed, completed },
-      objectives: get().objectives.map((objective) => objective.id === 'objective_tutorial_bridge' ? { ...objective, status: completed ? 'completed' as const : objective.status, progress: completed ? 100 : Math.round(nextStep / 7 * 100) } : objective)
+      tutorial: { ...tutorial, currentStep: completed ? 7 : nextStep, active: !completed, completed },
+      objectives: get().objectives.map((objective) => objective.id === 'objective_tutorial_bridge' ? { ...objective, status: completed ? 'completed' as const : objective.status, progress: completed ? 100 : Math.round(nextStep / 8 * 100) } : objective),
+      logs: completed ? [makeLog(get().gameYear, 'Первый маршрут завершён', 'Навигация, сканирование и полевая эвакуация освоены.', 'good'), ...get().logs] : get().logs
     });
     await persist(set, get, completed ? 'tutorial-complete' : 'tutorial-step');
   },
   async skipTutorial() {
     set({
-      tutorial: { enabled: false, active: false, currentStep: 6, completed: true },
+      tutorial: { ...get().tutorial, enabled: false, active: false, currentStep: 7, completed: true },
       objectives: get().objectives.map((objective) => objective.id === 'objective_tutorial_bridge' ? { ...objective, status: 'completed' as const, progress: 100 } : objective),
       logs: [makeLog(get().gameYear, 'Обучение отключено', 'Корабельный помощник больше не показывает вводные подсказки.', 'info'), ...get().logs]
     });
@@ -385,7 +431,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   async restartTutorial() {
     const existing = get().objectives.some((objective) => objective.id === 'objective_tutorial_bridge');
     set({
-      tutorial: { enabled: true, active: true, currentStep: 0, completed: false },
+      tutorial: { ...get().tutorial, enabled: true, active: true, currentStep: 0, completed: false },
       objectives: existing
         ? get().objectives.map((objective) => objective.id === 'objective_tutorial_bridge' ? { ...objective, status: 'active' as const, progress: 0 } : objective)
         : [{ id: 'objective_tutorial_bridge', title: 'Освоиться на мостике', description: 'Завершить короткое обучение и выбрать первую цель.', kind: 'tutorial' as const, status: 'active' as const, createdYear: get().gameYear, progress: 0 }, ...get().objectives]
@@ -454,7 +500,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
         }
         const safe = result.snapshot;
         set({
-          screen: 'menu',
+          screen: 'command',
           galaxy: safe.galaxy,
           captain: safe.captain,
           ship: safe.ship,
@@ -518,8 +564,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
   dismissRecoveryNotice() { set({ recoveryNotice: null }); },
   async startGame(galaxy) {
     return runExclusive('new-game', set, get, async () => {
-      const living = initializeLivingGalaxy(galaxy);
-      const civilizationLayer = initializeCivilizationLayer(galaxy, living.hubs);
+      const preparedStart = prepareStartingGalaxy(galaxy, galaxy.settings.tutorialEnabled !== false);
+      const living = initializeLivingGalaxy(preparedStart.galaxy);
+      const civilizationLayer = initializeCivilizationLayer(preparedStart.galaxy, living.hubs);
       const enrichedGalaxy = civilizationLayer.galaxy;
       const narrative = initializeNarrative(enrichedGalaxy, civilizationLayer.hubs, living.factions, galaxy.settings.tutorialEnabled !== false);
       const start = enrichedGalaxy.systems.find((system) => system.id === enrichedGalaxy.startSystemId);
@@ -556,8 +603,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
         storyScenes: narrative.storyScenes,
         pendingConsequences: narrative.pendingConsequences,
         objectives: narrative.objectives,
-        tutorial: narrative.tutorial,
-        logs: [makeLog(0, 'Новая экспедиция', `Корабль «Странник-01» начинает путь из системы ${start.name}.`, 'good')],
+        tutorial: { ...narrative.tutorial, targetPlanetId: preparedStart.tutorialPlanetId },
+        logs: [],
         hydrationStatus: 'ready',
         saveAvailable: true,
         saveError: null,
@@ -675,6 +722,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       if (!system) return;
       system.scanned = true;
       system.known = true;
+      system.neighbors.forEach((neighborId) => { const neighbor = updatedGalaxy.systems.find((entry) => entry.id === neighborId); if (neighbor) neighbor.known = true; });
       system.planets.forEach((planet) => {
         planet.scanned = true;
         planet.scanLevel = Math.max(planet.scanLevel ?? 0, 1) as 1;
@@ -696,8 +744,11 @@ export const useGameStore = create<GameStore>((set, get) => ({
         warnings: system.anomaly ? ['В системе присутствуют нестабильные показания.'] : [],
         detectedPointOfInterestIds: []
       };
+      const tutorial = get().tutorial;
+      const tutorialUpdate = tutorial.active && tutorial.currentStep === 1 ? { ...tutorial, currentStep: 2 } : tutorial;
       set({
         galaxy: updatedGalaxy,
+        tutorial: tutorialUpdate,
         scanReports: [report, ...get().scanReports.filter((entry) => entry.id !== report.id)],
         civilizationContacts,
         logs: [makeLog(gameYear, `Система ${system.name} просканирована`, 'Получены орбиты, первичные характеристики планет и признаки разумной активности.', 'good'), ...get().logs]
@@ -760,8 +811,14 @@ export const useGameStore = create<GameStore>((set, get) => ({
         return completedContract(contract, gameYear);
       });
       if (captain && reward > 0) captain = { ...captain, credits: captain.credits + reward, reputation: captain.reputation + 2 };
+      const tutorial = get().tutorial;
+      const tutorialPoint = generated.find((entry) => entry.planetId === tutorial.targetPlanetId) ?? generated[0];
+      const tutorialUpdate = tutorial.active && tutorial.currentStep === 3
+        ? { ...tutorial, currentStep: 4, targetPointOfInterestId: tutorialPoint?.id ?? tutorial.targetPointOfInterestId }
+        : tutorial;
       set({
         galaxy: updatedGalaxy,
+        tutorial: tutorialUpdate,
         pointsOfInterest: allPoints,
         scanReports: [report, ...get().scanReports],
         discoveries: [...unique, ...get().discoveries],

@@ -24,12 +24,13 @@ interface Props {
   locationState?: LocationState;
   onClose(): void;
   onComplete(result: ExpeditionResult): void | Promise<void>;
+  onTutorialAction?(action: 'launch-expedition' | 'collect-data' | 'evacuate'): void;
 }
 
 type Phase = 'loadout' | 'field' | 'debrief';
 const DEFAULT_LOADOUT: EquipmentId[] = ['pistol', 'armor', 'scanner', 'medkit', 'oxygen'];
 
-export function ExpeditionModal({ seed, planet, point, artifact, crew, personalEquipment, locationState, onClose, onComplete }: Props) {
+export function ExpeditionModal({ seed, planet, point, artifact, crew, personalEquipment, locationState, onClose, onComplete, onTutorialAction }: Props) {
   const [phase, setPhase] = useState<Phase>('loadout');
   const [selected, setSelected] = useState<EquipmentId[]>(DEFAULT_LOADOUT);
   const [selectedCrewIds, setSelectedCrewIds] = useState<string[]>([]);
@@ -92,6 +93,7 @@ export function ExpeditionModal({ seed, planet, point, artifact, crew, personalE
       const reliabilityPenalty = canForceDoor && !has('cutter') ? 22 : has('scanner') ? 0 : 12;
       const evidence = { ...object.evidence, reliability: Math.min(100, Math.max(20, object.evidence.reliability - reliabilityPenalty + evidenceBonus)) };
       setCollectedEvidence((current) => current.some((entry) => entry.key === evidence.key) ? current : [...current, evidence]);
+      onTutorialAction?.('collect-data');
       nextLog.unshift(`Улика получена: ${evidence.title}.`);
     }
     if (object.kind === 'artifact') {
@@ -217,6 +219,7 @@ export function ExpeditionModal({ seed, planet, point, artifact, crew, personalE
         locationState: nextLocationState,
         defeatedEnemyIds
       };
+      onTutorialAction?.('evacuate');
       await onComplete(result);
       setPhase('debrief');
     } finally {
@@ -231,7 +234,7 @@ export function ExpeditionModal({ seed, planet, point, artifact, crew, personalE
       <section className="crew-selection"><h3>Экспедиционная группа · капитан + {selectedCrew.length}</h3><div className="crew-selection-grid">{crew.length === 0 ? <p>Напарников нет. Высадка будет одиночной.</p> : crew.map((member) => <button key={member.id} className={selectedCrewIds.includes(member.id) ? 'selected' : ''} onClick={() => toggleCrew(member.id)}><b>{member.name}</b><span>{roleLabel(member.primaryRole)} · мораль {member.morale}</span></button>)}</div></section>
       <section className="issued-equipment"><h3>Выданное личное снаряжение</h3>{issuedEquipment.length === 0 ? <p>Закреплённого снаряжения нет. Используется стандартный экспедиционный комплект.</p> : <div className="issued-equipment-grid">{issuedEquipment.map((item) => <article key={item.id}><span className="eyebrow">{item.category} · R{item.rarity}</span><b>{item.name}</b><p>{item.description}</p></article>)}</div>}<small>Бонусы: бой +{personalCombatBonus} · анализ +{personalEvidenceBonus} · лечение +{personalHealingBonus} · защита +{personalArmorBonus}</small></section>
       <div className="loadout-grid">{EQUIPMENT.map((item) => <button key={item.id} className={selected.includes(item.id) ? 'selected' : ''} onClick={() => toggle(item.id)}><b>{item.name}</b><span>{item.description}</span><em>{item.weight} ед.</em></button>)}</div>
-      <footer className="loadout-footer"><span>Масса: {usedWeight}/{capacity} · группа {selectedCrew.length + 1}</span><button className="primary-button" onClick={() => setPhase('field')}>Начать высадку</button></footer>
+      <footer className="loadout-footer"><span>Масса: {usedWeight}/{capacity} · группа {selectedCrew.length + 1}</span><button data-tutorial="launch-expedition" className="primary-button" onClick={() => { setPhase('field'); onTutorialAction?.('launch-expedition'); }}>Начать высадку</button></footer>
     </section></div>;
   }
 
@@ -244,6 +247,7 @@ export function ExpeditionModal({ seed, planet, point, artifact, crew, personalE
     </section></div>;
   }
 
+  const tutorialObjectId = map.objects.find((entry) => !entry.resolved && entry.evidence)?.id;
   return <div className="modal-backdrop">
     <section className="modal expedition-modal">
       <header><div><span className="eyebrow">{map.biome.toUpperCase()}</span><h2>{point.name}</h2><p>{map.hazardName} · безопасное окно {turnsLeft} ходов</p></div><button className="icon-button" disabled={isLeaving} onClick={onClose}>×</button></header>
@@ -256,6 +260,7 @@ export function ExpeditionModal({ seed, planet, point, artifact, crew, personalE
             return <button
               key={`${tile.x}-${tile.y}`}
               aria-label={`${tile.x},${tile.y}`}
+              data-tutorial={tile.revealed && object?.id === tutorialObjectId ? 'collect-data' : undefined}
               disabled={isLeaving || playerHealth <= 0}
               className={`tile tile-${tile.revealed ? tile.kind : 'hidden'} ${player ? 'tile-player' : ''} ${enemy ? 'tile-enemy' : ''} ${object ? 'tile-object' : ''}`}
               onClick={() => move(tile.x, tile.y)}
@@ -271,7 +276,7 @@ export function ExpeditionModal({ seed, planet, point, artifact, crew, personalE
           <div className="stat-row"><span>Находка</span><b>{hasArtifact ? 'извлечена' : 'нет'}</b></div>
           {blockedReason && <p className="warning-text">{blockedReason}</p>}
           <div className="field-log">{log.map((entry, index) => <p key={`${entry}-${index}`}>{entry}</p>)}</div>
-          <div className="field-actions">{has('medkit') && <button disabled={medkitUsed || playerHealth >= 100} onClick={heal}>{medkitUsed ? 'Аптечка использована' : 'Использовать аптечку'}</button>}<button className="primary-button" disabled={isLeaving} onClick={() => void leave()}>{isLeaving ? 'Сохранение…' : playerHealth <= 0 ? 'Аварийная эвакуация' : 'Эвакуация'}</button></div>
+          <div className="field-actions">{has('medkit') && <button disabled={medkitUsed || playerHealth >= 100} onClick={heal}>{medkitUsed ? 'Аптечка использована' : 'Использовать аптечку'}</button>}<button data-tutorial="evacuate" className="primary-button" disabled={isLeaving} onClick={() => void leave()}>{isLeaving ? 'Сохранение…' : playerHealth <= 0 ? 'Аварийная эвакуация' : 'Эвакуация'}</button></div>
         </aside>
       </div>
     </section>

@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.7.1 — Clarity & Persistence
+
+- mirrored every ironman autosave into a synchronous browser rescue copy;
+- restored saves automatically after refresh, PWA replacement or temporary IndexedDB loss;
+- forced updates now flush pending writes before reloading;
+- varied expedition map dimensions, terrain, enemy counts, reward counts and reward positions;
+- preserved defeated enemies, collected data, opened objects and revealed terrain across visits;
+- removed omniscient starting data and hidden unknown factions, civilizations, news and history;
+- replaced slideshow onboarding with contextual interface tasks;
+- added a stable tutorial start system and first expedition;
+- reduced command deck, system map and navigation density.
+
 ## v0.7.0 — Encounters & Consequences
 
 - added a reusable scene engine for distress calls, negotiations, crew moments, mysteries, travel and hub encounters;

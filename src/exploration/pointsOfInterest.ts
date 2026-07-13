@@ -90,6 +90,26 @@ function chooseCivilization(galaxy: Galaxy, planet: Planet, system: StarSystem, 
 }
 
 export function generatePointsOfInterest(galaxy: Galaxy, system: StarSystem, planet: Planet): PointOfInterest[] {
+  if (planet.imageKey === 'tutorial-target') {
+    return [{
+      id: `poi_${stableHash(`${galaxy.seed}:${planet.id}:tutorial`)}`,
+      systemId: system.id,
+      planetId: planet.id,
+      name: 'Аварийный ретранслятор «Эхо»',
+      type: 'wreck',
+      status: 'detected',
+      danger: 'caution',
+      age: 17,
+      origin: 'ретранслятор потерял связь после аварии сервисного дрона',
+      publicSummary: 'Слабый гражданский сигнал. Внутри могут сохраниться навигационные данные. Угроза оценивается как низкая.',
+      truth: 'Ретранслятор повреждён, но его архив содержит первый подтверждённый маршрут за пределы стартовой системы.',
+      requiredEquipment: ['scanner'],
+      possibleRewards: ['навигационные данные', 'технический образец'],
+      scanConfidence: 88,
+      visits: 0,
+      discoveredYear: galaxy.currentYear
+    }];
+  }
   const count = Math.max(1, Math.min(8, planet.pointsOfInterest));
   const rng = createRng(`${galaxy.seed}:poi:${system.id}:${planet.id}`);
   const pool = typesByPlanet[planet.type];

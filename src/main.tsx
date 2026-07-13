@@ -4,8 +4,13 @@ import { registerSW } from 'virtual:pwa-register';
 import App from './App';
 import { RuntimeErrorBoundary } from './components/RuntimeErrorBoundary';
 import { installGlobalDiagnostics } from './runtime/diagnostics';
+import { flushPendingSave } from './persistence/db';
 
 installGlobalDiagnostics();
+
+const flushBeforeLeave = () => { void flushPendingSave(); };
+window.addEventListener('pagehide', flushBeforeLeave);
+window.addEventListener('beforeunload', flushBeforeLeave);
 
 let serviceWorkerReloading = false;
 if ('serviceWorker' in navigator) {

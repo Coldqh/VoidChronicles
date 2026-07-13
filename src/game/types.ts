@@ -527,6 +527,8 @@ export interface TutorialState {
   active: boolean;
   currentStep: number;
   completed: boolean;
+  targetPlanetId?: string;
+  targetPointOfInterestId?: string;
 }
 
 export interface FactionMemory {

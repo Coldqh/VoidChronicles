@@ -46,8 +46,44 @@ class VoidDatabase extends Dexie {
 export const db = new VoidDatabase();
 
 const SAVE_ID = 'ironman';
+const RESCUE_STORAGE_KEY = 'void-chronicles:ironman-rescue-v1';
 const MAX_BACKUPS = 5;
 const SAVE_TIMEOUT_MS = 8_000;
+
+
+function rescueStorage(): Storage | null {
+  try {
+    return typeof localStorage !== 'undefined' ? localStorage : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeRescueCopy(snapshot: GameStateSnapshot): void {
+  const storage = rescueStorage();
+  if (!storage) return;
+  try {
+    storage.setItem(RESCUE_STORAGE_KEY, JSON.stringify(snapshot));
+  } catch (error) {
+    console.warn('Failed to write rescue save copy', error);
+  }
+}
+
+function readRescueCopy(): unknown | null {
+  const storage = rescueStorage();
+  if (!storage) return null;
+  try {
+    const raw = storage.getItem(RESCUE_STORAGE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch (error) {
+    console.warn('Failed to read rescue save copy', error);
+    return null;
+  }
+}
+
+function deleteRescueCopy(): void {
+  try { rescueStorage()?.removeItem(RESCUE_STORAGE_KEY); } catch { /* ignore */ }
+}
 
 function withTimeout<T>(promise: Promise<T>, milliseconds: number, message: string): Promise<T> {
   return new Promise<T>((resolve, reject) => {
@@ -108,6 +144,7 @@ async function writeSnapshotNow(
     SAVE_TIMEOUT_MS,
     'Не удалось записать ironman-сохранение'
   );
+  writeRescueCopy(safeSnapshot);
   return safeSnapshot;
 }
 
@@ -148,6 +185,9 @@ export function scheduleSnapshotSave(
   reason = 'autosave',
   delayMs = 180
 ): Promise<GameStateSnapshot> {
+  // The rescue copy is synchronous, so a refresh cannot erase the newest player action
+  // while the IndexedDB write is still waiting in the debounce queue.
+  try { writeRescueCopy(prepareSnapshotForSave(snapshot, `${reason}-rescue`, snapshot.saveMeta)); } catch { /* IndexedDB remains primary */ }
   return new Promise<GameStateSnapshot>((resolve, reject) => {
     if (pendingSave) {
       pendingSave.snapshot = snapshot;
@@ -185,42 +225,61 @@ export async function loadSnapshot(): Promise<LoadSnapshotResult | null> {
     SAVE_TIMEOUT_MS,
     'Не удалось прочитать локальное сохранение'
   );
-  if (!record) return null;
+  const rescue = readRescueCopy();
 
-  const sourceVersion = getSnapshotVersion(record.snapshot);
-  try {
-    const safe = parseSnapshot(record.snapshot);
-    const migrated = sourceVersion !== CURRENT_SCHEMA_VERSION;
-    if (migrated) {
-      await addBackup(record, `migration-v${sourceVersion ?? 'unknown'}`);
-      const saved = await writeSnapshotNow(safe, 'schema-migration', false);
-      return {
-        snapshot: saved,
-        migrated: true,
-        recoveredFromBackup: false,
-        warning: `Сохранение обновлено с версии ${sourceVersion ?? '?'} до ${CURRENT_SCHEMA_VERSION}`
-      };
-    }
-    return { snapshot: safe, migrated: false, recoveredFromBackup: false, warning: null };
-  } catch (primaryError) {
-    const backups = await db.backups.orderBy('createdAt').reverse().toArray();
-    for (const backup of backups) {
-      try {
-        const recovered = parseSnapshot(backup.snapshot);
-        await addBackup(record, 'corrupted-primary');
-        const saved = await writeSnapshotNow(recovered, 'automatic-recovery', false);
-        return {
-          snapshot: saved,
-          migrated: getSnapshotVersion(backup.snapshot) !== CURRENT_SCHEMA_VERSION,
-          recoveredFromBackup: true,
-          warning: `Основной сейв повреждён. Восстановлена резервная копия от ${new Date(backup.createdAt).toLocaleString('ru-RU')}`
-        };
-      } catch {
-        // Try the next backup.
+  if (!record && !rescue) return null;
+
+  if (record) {
+    const sourceVersion = getSnapshotVersion(record.snapshot);
+    try {
+      const safe = parseSnapshot(record.snapshot);
+      const migrated = sourceVersion !== CURRENT_SCHEMA_VERSION;
+      if (migrated) {
+        await addBackup(record, `migration-v${sourceVersion ?? 'unknown'}`);
+        const saved = await writeSnapshotNow(safe, 'schema-migration', false);
+        return { snapshot: saved, migrated: true, recoveredFromBackup: false, warning: `Сохранение обновлено с версии ${sourceVersion ?? '?'} до ${CURRENT_SCHEMA_VERSION}` };
       }
+      if (rescue) {
+        try {
+          const rescueSnapshot = parseSnapshot(rescue, { verifyChecksum: false });
+          const rescueSequence = rescueSnapshot.saveMeta?.sequence ?? 0;
+          const primarySequence = safe.saveMeta?.sequence ?? 0;
+          const rescueTime = Date.parse(rescueSnapshot.saveMeta?.savedAt ?? '') || 0;
+          const primaryTime = Date.parse(safe.saveMeta?.savedAt ?? '') || 0;
+          if (rescueSequence > primarySequence || (rescueSequence === primarySequence && rescueTime > primaryTime)) {
+            const saved = await writeSnapshotNow(rescueSnapshot, 'newer-rescue-recovery', true);
+            return { snapshot: saved, migrated: false, recoveredFromBackup: true, warning: 'Восстановлено более новое действие из аварийной копии браузера.' };
+          }
+        } catch { /* The validated IndexedDB record remains authoritative. */ }
+      }
+      writeRescueCopy(safe);
+      return { snapshot: safe, migrated: false, recoveredFromBackup: false, warning: null };
+    } catch (primaryError) {
+      const backups = await db.backups.orderBy('createdAt').reverse().toArray();
+      for (const backup of backups) {
+        try {
+          const recovered = parseSnapshot(backup.snapshot);
+          await addBackup(record, 'corrupted-primary');
+          const saved = await writeSnapshotNow(recovered, 'automatic-recovery', false);
+          return { snapshot: saved, migrated: getSnapshotVersion(backup.snapshot) !== CURRENT_SCHEMA_VERSION, recoveredFromBackup: true, warning: `Основной сейв повреждён. Восстановлена резервная копия от ${new Date(backup.createdAt).toLocaleString('ru-RU')}` };
+        } catch { /* Try the next backup. */ }
+      }
+      if (rescue) {
+        try {
+          const recovered = parseSnapshot(rescue, { verifyChecksum: false });
+          const saved = await writeSnapshotNow(recovered, 'local-rescue-recovery', true);
+          return { snapshot: saved, migrated: true, recoveredFromBackup: true, warning: 'IndexedDB-сейв не прочитан. Партия восстановлена из аварийной копии браузера.' };
+        } catch { /* rethrow the primary error below */ }
+      }
+      throw primaryError;
     }
-    throw primaryError;
   }
+
+  // Some browser/PWA updates can temporarily expose an empty IndexedDB connection.
+  // A mirrored rescue copy keeps the ironman party alive and repopulates IndexedDB.
+  const recovered = parseSnapshot(rescue, { verifyChecksum: false });
+  const saved = await writeSnapshotNow(recovered, 'local-rescue-restore', false);
+  return { snapshot: saved, migrated: true, recoveredFromBackup: true, warning: 'Партия восстановлена из аварийной копии браузера.' };
 }
 
 export async function createManualBackup(source = 'manual'): Promise<boolean> {
@@ -244,6 +303,7 @@ export async function deleteSnapshot(): Promise<void> {
     await db.saves.clear();
     await db.backups.clear();
   });
+  deleteRescueCopy();
 }
 
 export function exportSnapshot(snapshot: GameStateSnapshot): void {

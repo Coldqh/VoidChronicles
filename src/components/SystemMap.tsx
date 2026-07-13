@@ -5,6 +5,7 @@ interface Props {
   selectedPlanetId: string | null;
   pointsOfInterest: PointOfInterest[];
   onSelectPlanet(planet: Planet): void;
+  tutorialPlanetId?: string;
 }
 
 function orbitSize(index: number, count: number): number {
@@ -13,7 +14,7 @@ function orbitSize(index: number, count: number): number {
   return min + (count <= 1 ? 0 : index / (count - 1)) * (max - min);
 }
 
-export function SystemMap({ system, selectedPlanetId, pointsOfInterest, onSelectPlanet }: Props) {
+export function SystemMap({ system, selectedPlanetId, pointsOfInterest, onSelectPlanet, tutorialPlanetId }: Props) {
   return <section className="system-map" aria-label={`Система ${system.name}`}>
     <div className={`system-star star-${system.starClass.toLowerCase()}`}><span>{system.starClass}</span></div>
     {system.planets.map((planet, index) => {
@@ -25,6 +26,7 @@ export function SystemMap({ system, selectedPlanetId, pointsOfInterest, onSelect
       const signals = pointsOfInterest.filter((entry) => entry.planetId === planet.id).length;
       return <div className="orbit" key={planet.id} style={{ width: size, height: size }}>
         <button
+          data-tutorial={planet.id === tutorialPlanetId ? 'tutorial-planet' : undefined}
           className={`system-planet planet-${planet.type} ${selectedPlanetId === planet.id ? 'selected' : ''}`}
           style={{ transform: `translate(calc(-50% + ${x}px), calc(-50% + ${y}px))` }}
           onClick={() => onSelectPlanet(planet)}

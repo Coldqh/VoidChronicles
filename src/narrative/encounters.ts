@@ -84,15 +84,16 @@ function initialScene(galaxy: Galaxy, hubs: Hub[], factions: Faction[]): StorySc
   };
 }
 
-export function initializeNarrative(galaxy: Galaxy, hubs: Hub[], factions: Faction[], tutorialEnabled: boolean): NarrativeState {
-  const firstScene = initialScene(galaxy, hubs, factions);
+export function initializeNarrative(_galaxy: Galaxy, _hubs: Hub[], _factions: Faction[], tutorialEnabled: boolean): NarrativeState {
   return {
-    storyScenes: [firstScene],
+    // A new captain begins with no omniscient inbox. Scenes appear only after scans,
+    // travel, docking or field discoveries create a believable source for them.
+    storyScenes: [],
     pendingConsequences: [],
     objectives: tutorialEnabled ? [{
       id: 'objective_tutorial_bridge',
-      title: 'Освоиться на мостике',
-      description: 'Завершить короткое обучение и выбрать первую цель.',
+      title: 'Первый маршрут',
+      description: 'Открыть систему, просканировать учебную цель и вернуться с первыми данными.',
       kind: 'tutorial',
       status: 'active',
       createdYear: 0,

@@ -5,7 +5,7 @@ import { initializeCivilizationLayer } from '../world/civilizations';
 import { generateTravelScene, initializeNarrative, processDueConsequences } from '../narrative/encounters';
 
 describe('encounters and consequences', () => {
-  it('creates a first playable scene and optional tutorial objective', async () => {
+  it('starts without omniscient scenes and creates an optional tutorial objective', async () => {
     const galaxy = await generateGalaxy({
       seed: 'NARRATIVE-START', systemCount: 24, historyYears: 100_000,
       civilizationCount: 4, lifeFrequency: .3, anomalyFrequency: .04,
@@ -14,8 +14,7 @@ describe('encounters and consequences', () => {
     const living = initializeLivingGalaxy(galaxy);
     const layer = initializeCivilizationLayer(galaxy, living.hubs);
     const narrative = initializeNarrative(layer.galaxy, layer.hubs, living.factions, true);
-    expect(narrative.storyScenes).toHaveLength(1);
-    expect(narrative.storyScenes[0]?.choices.length).toBeGreaterThanOrEqual(3);
+    expect(narrative.storyScenes).toHaveLength(0);
     expect(narrative.tutorial.active).toBe(true);
     expect(narrative.objectives.some((objective) => objective.kind === 'tutorial')).toBe(true);
   });

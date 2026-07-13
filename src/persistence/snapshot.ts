@@ -441,7 +441,7 @@ const objectiveSchema = z.object({
   id: z.string(), title: z.string(), description: z.string(), kind: z.enum(['urgent','opportunity','story','tutorial']), status: z.enum(['active','completed','failed']),
   createdYear: finiteNumber, deadlineYear: finiteNumber.optional(), systemId: z.string().optional(), hubId: z.string().optional(), sourceSceneId: z.string().optional(), progress: finiteNumber
 });
-const tutorialSchema = z.object({ enabled: z.boolean(), active: z.boolean(), currentStep: finiteNumber, completed: z.boolean() });
+const tutorialSchema = z.object({ enabled: z.boolean(), active: z.boolean(), currentStep: finiteNumber, completed: z.boolean(), targetPlanetId: z.string().optional(), targetPointOfInterestId: z.string().optional() });
 
 const legacyPayloadSchema = z.object({
   galaxy: galaxySchema,
@@ -612,7 +612,7 @@ function normalizeSnapshot(snapshot: SnapshotCurrent): SnapshotCurrent {
     storyScenes: snapshot.storyScenes.filter((scene) => systemIds.has(scene.systemId)).slice(0, 160),
     pendingConsequences: snapshot.pendingConsequences.slice(0, 300),
     objectives: snapshot.objectives.filter((objective) => !objective.systemId || systemIds.has(objective.systemId)).slice(0, 250),
-    tutorial: { ...snapshot.tutorial, currentStep: Math.max(0, Math.min(6, Math.floor(snapshot.tutorial.currentStep))) }
+    tutorial: { ...snapshot.tutorial, currentStep: Math.max(0, Math.min(7, Math.floor(snapshot.tutorial.currentStep))) }
   };
 
   normalized.ship.hull = Math.max(0, Math.min(normalized.ship.maxHull, normalized.ship.hull));

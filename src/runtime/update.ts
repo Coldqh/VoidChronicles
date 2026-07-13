@@ -1,3 +1,4 @@
+import { flushPendingSave } from '../persistence/db';
 import { APP_VERSION } from '../version';
 
 export interface UpdateResult {
@@ -6,6 +7,8 @@ export interface UpdateResult {
 }
 
 export async function forceApplicationUpdate(): Promise<UpdateResult> {
+  // Commit the newest ironman state before the service worker can reload the page.
+  await flushPendingSave();
   const registrations = 'serviceWorker' in navigator
     ? await navigator.serviceWorker.getRegistrations()
     : [];

@@ -30,3 +30,12 @@ npm run build
 - crew recruitment, contracts, payroll, morale and memories;
 - expedition team selection with role bonuses;
 - save schema v4 with v3 migration.
+
+
+### v0.7.1 corrective layer
+
+- resilient IndexedDB + localStorage ironman rescue;
+- contextual interface onboarding with real actions;
+- unknown-by-default knowledge model;
+- varied persistent expedition locations;
+- simplified command and navigation surfaces.

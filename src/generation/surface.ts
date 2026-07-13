@@ -21,7 +21,7 @@ export interface SurfaceMap {
   player: { x: number; y: number };
   enemies: SurfaceEnemy[];
   objects: SurfaceObject[];
-  artifactPosition: { x: number; y: number };
+  artifactPosition?: { x: number; y: number };
   biome: string;
   hazardName: string;
   baseTurns: number;
@@ -42,27 +42,21 @@ const enemyNames: Record<PointOfInterest['type'], readonly string[]> = {
 };
 
 const biomeNames: Record<Planet['type'], readonly string[]> = {
-  rocky: ['базальтовая равнина', 'каменный разлом'],
-  ocean: ['плавающая платформа', 'приливный риф'],
-  desert: ['песчаное плато', 'соляная пустошь'],
-  ice: ['ледяная трещина', 'замёрзший каньон'],
-  gas: ['орбитальная платформа', 'атмосферный коллектор'],
-  toxic: ['кислотная низина', 'ядовитое болото'],
-  jungle: ['плотные заросли', 'живой лес'],
-  artificial: ['искусственный сектор', 'машинная поверхность'],
-  anomalous: ['искажённая зона', 'пространственный карман']
+  rocky: ['базальтовая равнина', 'каменный разлом', 'вулканический уступ'],
+  ocean: ['плавающая платформа', 'приливный риф', 'затопленный купол'],
+  desert: ['песчаное плато', 'соляная пустошь', 'каменное море'],
+  ice: ['ледяная трещина', 'замёрзший каньон', 'подлёдная полость'],
+  gas: ['орбитальная платформа', 'атмосферный коллектор', 'дрейфующий узел'],
+  toxic: ['кислотная низина', 'ядовитое болото', 'серная котловина'],
+  jungle: ['плотные заросли', 'живой лес', 'споровая долина'],
+  artificial: ['искусственный сектор', 'машинная поверхность', 'сервисный лабиринт'],
+  anomalous: ['искажённая зона', 'пространственный карман', 'поле обратной тени']
 };
 
 const hazardNames: Record<Planet['type'], string> = {
-  rocky: 'каменный обвал',
-  ocean: 'прилив и давление',
-  desert: 'пылевая буря',
-  ice: 'переохлаждение',
-  gas: 'разгерметизация',
-  toxic: 'токсичная атмосфера',
-  jungle: 'агрессивная биосфера',
-  artificial: 'нестабильная энергетика',
-  anomalous: 'аномальное воздействие'
+  rocky: 'каменный обвал', ocean: 'прилив и давление', desert: 'пылевая буря', ice: 'переохлаждение',
+  gas: 'разгерметизация', toxic: 'токсичная атмосфера', jungle: 'агрессивная биосфера',
+  artificial: 'нестабильная энергетика', anomalous: 'аномальное воздействие'
 };
 
 function evidenceFor(point: PointOfInterest, kind: EvidenceDraft['kind'], index: number): EvidenceDraft {
@@ -87,99 +81,147 @@ function evidenceFor(point: PointOfInterest, kind: EvidenceDraft['kind'], index:
   };
 }
 
-export function generateSurface(seed: string, planet: Planet, point: PointOfInterest, locationState?: LocationState, width = 22, height = 15): SurfaceMap {
-  const rng = createRng(`${seed}:surface:${point.id}`);
+function tileAt(tiles: SurfaceTile[], width: number, x: number, y: number): SurfaceTile | undefined {
+  if (x < 0 || y < 0 || x >= width) return undefined;
+  return tiles[y * width + x];
+}
+
+function carvePath(tiles: SurfaceTile[], width: number, start: { x: number; y: number }, end: { x: number; y: number }, rng: ReturnType<typeof createRng>) {
+  let x = start.x;
+  let y = start.y;
+  let guard = width * tiles.length;
+  while ((x !== end.x || y !== end.y) && guard-- > 0) {
+    const tile = tileAt(tiles, width, x, y);
+    if (tile) tile.kind = 'floor';
+    const horizontal = x !== end.x && (y === end.y || rng.chance(0.58));
+    if (horizontal) x += Math.sign(end.x - x);
+    else if (y !== end.y) y += Math.sign(end.y - y);
+  }
+  const last = tileAt(tiles, width, end.x, end.y);
+  if (last) last.kind = 'floor';
+}
+
+function chooseDistinct<T>(items: T[], count: number, rng: ReturnType<typeof createRng>): T[] {
+  const pool = [...items];
+  const selected: T[] = [];
+  while (pool.length && selected.length < count) {
+    selected.push(pool.splice(rng.int(0, pool.length - 1), 1)[0]!);
+  }
+  return selected;
+}
+
+function edgeStart(width: number, height: number, rng: ReturnType<typeof createRng>) {
+  const side = rng.int(0, 3);
+  if (side === 0) return { x: 1, y: rng.int(1, height - 2) };
+  if (side === 1) return { x: width - 2, y: rng.int(1, height - 2) };
+  if (side === 2) return { x: rng.int(1, width - 2), y: 1 };
+  return { x: rng.int(1, width - 2), y: height - 2 };
+}
+
+export function generateSurface(seed: string, planet: Planet, point: PointOfInterest, locationState?: LocationState, width?: number, height?: number): SurfaceMap {
+  const rng = createRng(`${seed}:surface:v2:${point.id}`);
+  const tutorialMap = planet.imageKey === 'tutorial-target';
+  const mapWidth = width ?? (tutorialMap ? 16 : rng.int(17, point.type === 'cave' ? 25 : 29));
+  const mapHeight = height ?? (tutorialMap ? 11 : rng.int(12, point.type === 'ancientFactory' ? 20 : 18));
   const tiles: SurfaceTile[] = [];
-  const centerY = Math.floor(height / 2);
-  for (let y = 0; y < height; y += 1) {
-    for (let x = 0; x < width; x += 1) {
-      let kind: SurfaceTileKind = 'floor';
+  const rockChance = point.type === 'cave' ? 0.27 : point.type === 'ancientFactory' || point.type === 'laboratory' ? 0.18 : 0.12;
+  const hazardChance = planet.danger === 'extreme' ? 0.16 : planet.danger === 'danger' ? 0.11 : 0.07;
+
+  for (let y = 0; y < mapHeight; y += 1) {
+    for (let x = 0; x < mapWidth; x += 1) {
+      const border = x === 0 || y === 0 || x === mapWidth - 1 || y === mapHeight - 1;
       const roll = rng.next();
-      if (roll < 0.13) kind = 'rock';
-      else if (roll < 0.21) kind = 'hazard';
-      else if (roll < 0.27) kind = 'cover';
-      else if (roll < 0.34) kind = 'ruin';
-      tiles.push({ x, y, kind, revealed: Math.hypot(x - 1, y - centerY) < 4 || Boolean(locationState?.revealedTileKeys.includes(`${x}:${y}`)) });
+      let kind: SurfaceTileKind = border ? 'rock' : roll < rockChance ? 'rock' : roll < rockChance + hazardChance ? 'hazard' : roll < rockChance + hazardChance + 0.08 ? 'cover' : roll < rockChance + hazardChance + 0.15 ? 'ruin' : 'floor';
+      tiles.push({ x, y, kind, revealed: Boolean(locationState?.revealedTileKeys.includes(`${x}:${y}`)) });
     }
   }
 
-  // Guaranteed traversable spine so random generation never creates an unwinnable map.
-  for (let x = 0; x < width; x += 1) {
-    const tile = tiles.find((entry) => entry.x === x && entry.y === centerY);
-    if (tile) tile.kind = x === 1 ? 'exit' : 'floor';
-  }
-  for (let y = 2; y <= centerY; y += 1) {
-    const tile = tiles.find((entry) => entry.x === width - 3 && entry.y === y);
-    if (tile) tile.kind = 'floor';
-  }
+  const player = tutorialMap ? { x: 1, y: Math.floor(mapHeight / 2) } : edgeStart(mapWidth, mapHeight, rng);
+  const exitTile = tileAt(tiles, mapWidth, player.x, player.y);
+  if (exitTile) exitTile.kind = 'exit';
 
-  const artifactPosition = { x: width - 3, y: 2 };
-  const positions = [
-    { x: Math.floor(width * 0.3), y: centerY },
-    { x: Math.floor(width * 0.52), y: centerY },
-    { x: Math.floor(width * 0.73), y: centerY },
-    artifactPosition
-  ];
-  const objectKinds: SurfaceObject['kind'][] = ['door', 'terminal', 'sample', 'artifact'];
-  const evidenceKinds: EvidenceDraft['kind'][] = ['architecture', 'terminal', 'sample', 'damage'];
-  const objects: SurfaceObject[] = positions.map((position, index) => {
-    const kind = objectKinds[index] ?? 'evidence';
-    const tile = tiles.find((entry) => entry.x === position.x && entry.y === position.y);
-    if (tile) tile.kind = kind === 'door' ? 'door' : kind === 'terminal' ? 'terminal' : kind === 'sample' ? 'sample' : 'artifact';
-    const requiredEquipment: EquipmentId | undefined = kind === 'door'
-      ? 'cutter'
-      : kind === 'terminal'
-        ? 'translator'
-        : kind === 'sample'
-          ? 'sampleContainer'
-          : 'scanner';
+  const interior = tiles.filter((tile) => tile.x > 1 && tile.y > 1 && tile.x < mapWidth - 2 && tile.y < mapHeight - 2);
+  const farCandidates = interior.filter((tile) => Math.abs(tile.x - player.x) + Math.abs(tile.y - player.y) > Math.floor((mapWidth + mapHeight) * 0.28));
+  const rewardCount = tutorialMap ? 2 : rng.int(1, Math.min(6, Math.max(2, point.possibleRewards.length + 2)));
+  const objectPositions = tutorialMap
+    ? [
+        { x: Math.min(mapWidth - 3, player.x + 4), y: player.y },
+        { x: mapWidth - 3, y: Math.max(2, player.y - 2) }
+      ]
+    : chooseDistinct(farCandidates.length ? farCandidates : interior, rewardCount, rng);
+  objectPositions.forEach((position) => carvePath(tiles, mapWidth, player, position, rng));
+
+  const objectKindPool: SurfaceObject['kind'][] = tutorialMap
+    ? ['terminal', 'sample']
+    : point.type === 'biosphere' ? ['sample', 'evidence', 'sample', 'terminal']
+      : point.type === 'smugglerCamp' ? ['door', 'terminal', 'evidence', 'artifact']
+        : point.type === 'cave' ? ['sample', 'evidence', 'artifact']
+          : ['door', 'terminal', 'sample', 'evidence', 'artifact'];
+  const evidenceKinds: EvidenceDraft['kind'][] = ['architecture', 'terminal', 'sample', 'damage', 'record', 'signal'];
+  let artifactPlaced = false;
+  const objects: SurfaceObject[] = objectPositions.map((position, index) => {
+    let kind = tutorialMap ? objectKindPool[index] ?? 'evidence' : rng.pick(objectKindPool);
+    if (kind === 'artifact' && (artifactPlaced || rng.chance(0.42))) kind = rng.pick(['terminal', 'sample', 'evidence'] as const);
+    if (index === objectPositions.length - 1 && !tutorialMap && !artifactPlaced && point.possibleRewards.some((reward) => reward.includes('артефакт')) && rng.chance(0.72)) kind = 'artifact';
+    if (kind === 'artifact') artifactPlaced = true;
+    const tile = tileAt(tiles, mapWidth, position.x, position.y);
+    if (tile) tile.kind = kind === 'door' ? 'door' : kind === 'terminal' ? 'terminal' : kind === 'sample' ? 'sample' : kind === 'artifact' ? 'artifact' : 'evidence';
+    const requiredEquipment: EquipmentId | undefined = kind === 'door' ? 'cutter' : kind === 'terminal' ? 'translator' : kind === 'sample' ? 'sampleContainer' : kind === 'artifact' ? 'scanner' : 'scanner';
+    const id = `object_${point.id}_${index}`;
     return {
-      id: `object_${point.id}_${index}`,
+      id,
       ...position,
       kind,
-      title: kind === 'artifact' ? 'Центральная находка' : kind === 'door' ? 'Запечатанный проход' : kind === 'terminal' ? 'Архивный терминал' : 'Неизвестный образец',
+      title: kind === 'artifact' ? 'Неизвестная находка' : kind === 'door' ? 'Запечатанный проход' : kind === 'terminal' ? 'Узел данных' : kind === 'sample' ? 'Полевой образец' : 'След события',
       requiredEquipment,
-      evidence: kind === 'door' ? evidenceFor(point, 'architecture', index) : evidenceFor(point, evidenceKinds[index] ?? 'signal', index),
-      resolved: Boolean(locationState?.resolvedObjectIds.includes(`object_${point.id}_${index}`))
+      evidence: kind === 'door' ? evidenceFor(point, 'architecture', index) : evidenceFor(point, evidenceKinds[index % evidenceKinds.length]!, index),
+      resolved: Boolean(locationState?.resolvedObjectIds.includes(id))
     };
   });
 
   const friendlySettlement = point.type === 'settlement' && Boolean(point.civilizationId);
-  const dangerCount = friendlySettlement ? 0 : point.danger === 'extreme' ? 5 : point.danger === 'danger' ? 4 : point.danger === 'caution' ? 3 : 1;
-  const enemies = Array.from({ length: dangerCount }, (_, index) => {
+  const dangerRange: Record<PointOfInterest['danger'], [number, number]> = { safe: [0, 1], caution: [0, 3], danger: [2, 6], extreme: [4, 9] };
+  const [minEnemies, maxEnemies] = friendlySettlement || tutorialMap ? [0, tutorialMap ? 1 : 0] : dangerRange[point.danger];
+  const enemyCount = rng.int(minEnemies, maxEnemies);
+  const enemyPositions = chooseDistinct(interior.filter((tile) => tile.kind !== 'rock' && Math.abs(tile.x - player.x) + Math.abs(tile.y - player.y) > 5), enemyCount, rng);
+  const enemies = enemyPositions.map((position, index) => {
     const id = `enemy_${point.id}_${index}`;
     const saved = locationState?.enemyStates.find((entry) => entry.id === id);
     return {
       id,
-      x: saved?.x ?? rng.int(Math.floor(width / 2), width - 2),
-      y: saved?.y ?? rng.int(1, height - 2),
-      health: saved?.health ?? rng.int(35, 70),
-      damage: rng.int(8, 15),
-      name: rng.pick(enemyNames[point.type])
+      x: saved?.x ?? position.x,
+      y: saved?.y ?? position.y,
+      health: saved?.health ?? (tutorialMap ? 28 : rng.int(30, 78)),
+      damage: tutorialMap ? 5 : rng.int(7, 16),
+      name: tutorialMap ? 'повреждённый сервисный дрон' : rng.pick(enemyNames[point.type])
     };
   }).filter((enemy) => enemy.health > 0);
 
+  const revealRadius = tutorialMap ? 5 : 3;
+  for (const tile of tiles) {
+    if (Math.hypot(tile.x - player.x, tile.y - player.y) <= revealRadius) tile.revealed = true;
+  }
   if (locationState?.artifactTaken) {
     const artifactObject = objects.find((entry) => entry.kind === 'artifact');
     if (artifactObject) artifactObject.resolved = true;
   }
   for (const object of objects) {
     if (object.resolved) {
-      const tile = tiles.find((entry) => entry.x === object.x && entry.y === object.y);
+      const tile = tileAt(tiles, mapWidth, object.x, object.y);
       if (tile) tile.resolved = true;
     }
   }
 
   return {
-    width,
-    height,
+    width: mapWidth,
+    height: mapHeight,
     tiles,
-    player: { x: 1, y: centerY },
+    player,
     enemies,
     objects,
-    artifactPosition,
+    artifactPosition: objects.find((entry) => entry.kind === 'artifact'),
     biome: rng.pick(biomeNames[planet.type]),
     hazardName: hazardNames[planet.type],
-    baseTurns: point.danger === 'extreme' ? 28 : point.danger === 'danger' ? 34 : 42
+    baseTurns: tutorialMap ? 60 : point.danger === 'extreme' ? rng.int(26, 34) : point.danger === 'danger' ? rng.int(32, 42) : rng.int(40, 55)
   };
 }
