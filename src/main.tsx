@@ -3,6 +3,9 @@ import ReactDOM from 'react-dom/client';
 import { registerSW } from 'virtual:pwa-register';
 import App from './App';
 import { RuntimeErrorBoundary } from './components/RuntimeErrorBoundary';
+import { installGlobalDiagnostics } from './runtime/diagnostics';
+
+installGlobalDiagnostics();
 
 let serviceWorkerReloading = false;
 if ('serviceWorker' in navigator) {

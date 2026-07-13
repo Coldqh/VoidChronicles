@@ -1,4 +1,5 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react';
+import { downloadDiagnostics, recordDiagnostic } from '../runtime/diagnostics';
 
 interface Props { children: ReactNode; }
 interface State { error: Error | null; }
@@ -12,6 +13,7 @@ export class RuntimeErrorBoundary extends Component<Props, State> {
 
   componentDidCatch(error: Error, info: ErrorInfo): void {
     console.error('Void Chronicles runtime crash', error, info.componentStack);
+    recordDiagnostic('react', error, info.componentStack ?? undefined);
   }
 
   private reload = (): void => window.location.reload();
@@ -46,6 +48,7 @@ export class RuntimeErrorBoundary extends Component<Props, State> {
       <details><summary>Технические данные</summary><pre>{this.state.error.stack}</pre></details>
       <div className="menu-actions">
         <button className="primary-button" onClick={this.reload}>Перезапустить интерфейс</button>
+        <button onClick={() => downloadDiagnostics(this.state.error ?? undefined)}>Скачать диагностику</button>
         <button className="danger-button" onClick={() => void this.clearLocalData()}>Удалить локальный сейв и кэш</button>
       </div>
     </main>;
