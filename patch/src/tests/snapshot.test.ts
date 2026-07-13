@@ -1,0 +1,73 @@
+import { describe, expect, it } from 'vitest';
+import { generateGalaxy } from '../generation/generateGalaxy';
+import type { GameStateSnapshot } from '../game/types';
+import {
+  CURRENT_SCHEMA_VERSION,
+  parseSnapshot,
+  prepareSnapshotForSave
+} from '../persistence/snapshot';
+
+async function makeLegacySnapshot(): Promise<GameStateSnapshot> {
+  const galaxy = await generateGalaxy({
+    seed: 'SAVE-TEST',
+    systemCount: 20,
+    historyYears: 100_000,
+    civilizationCount: 3,
+    lifeFrequency: 0.3,
+    anomalyFrequency: 0.03,
+    difficulty: 'standard'
+  });
+  return {
+    schemaVersion: 1,
+    galaxy,
+    captain: {
+      id: 'captain', name: 'Test', level: 1, xp: 0, health: 100, maxHealth: 100,
+      credits: 10, reputation: 0,
+      skills: { research: 1, archaeology: 1, trade: 1, combat: 1, crime: 0 },
+      injuries: [], alive: true
+    },
+    ship: {
+      id: 'ship', name: 'Test Ship', hull: 100, maxHull: 100, fuel: 100, maxFuel: 100,
+      jumpRange: 200, cargoCapacity: 10, cargo: [], modules: [], statuses: []
+    },
+    currentSystemId: galaxy.startSystemId,
+    gameYear: 0,
+    discoveries: [],
+    logs: []
+  };
+}
+
+describe('snapshot validation and migration', () => {
+  it('migrates schema v1 to the current schema and creates integrity metadata', async () => {
+    const legacy = await makeLegacySnapshot();
+    const migrated = parseSnapshot(legacy);
+    expect(migrated.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
+    expect(migrated.saveMeta?.appVersion).toBe('0.1.1');
+    expect(migrated.saveMeta?.checksum).toMatch(/^[0-9a-f]{8}$/);
+  });
+
+  it('repairs a missing current system reference', async () => {
+    const snapshot = await makeLegacySnapshot();
+    snapshot.currentSystemId = 'missing-system';
+    expect(parseSnapshot(snapshot).currentSystemId).toBe(snapshot.galaxy.startSystemId);
+  });
+
+  it('rejects a structurally broken save instead of crashing the UI later', async () => {
+    const snapshot = await makeLegacySnapshot();
+    const broken = { ...snapshot, ship: { ...snapshot.ship, cargo: undefined } };
+    expect(() => parseSnapshot(broken)).toThrow();
+  });
+
+  it('detects data corruption through checksum verification', async () => {
+    const legacy = await makeLegacySnapshot();
+    const saved = prepareSnapshotForSave(parseSnapshot(legacy), 'test');
+    const corrupted = structuredClone(saved);
+    corrupted.captain.credits += 999;
+    expect(() => parseSnapshot(corrupted)).toThrow(/Контрольная сумма/);
+  });
+
+  it('rejects saves created by a future unsupported schema', async () => {
+    const legacy = await makeLegacySnapshot();
+    expect(() => parseSnapshot({ ...legacy, schemaVersion: 99 })).toThrow(/более новой версией/);
+  });
+});
