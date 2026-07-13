@@ -1,4 +1,4 @@
-import type { EquipmentId, EvidenceDraft, Planet, PointOfInterest } from '../game/types';
+import type { EquipmentId, EvidenceDraft, LocationState, Planet, PointOfInterest } from '../game/types';
 import { createRng } from './rng';
 
 export type SurfaceTileKind = 'floor' | 'rock' | 'hazard' | 'ruin' | 'exit' | 'artifact' | 'evidence' | 'door' | 'terminal' | 'sample' | 'cover';
@@ -87,8 +87,8 @@ function evidenceFor(point: PointOfInterest, kind: EvidenceDraft['kind'], index:
   };
 }
 
-export function generateSurface(seed: string, planet: Planet, point: PointOfInterest, width = 22, height = 15): SurfaceMap {
-  const rng = createRng(`${seed}:surface:${point.id}:${point.visits}`);
+export function generateSurface(seed: string, planet: Planet, point: PointOfInterest, locationState?: LocationState, width = 22, height = 15): SurfaceMap {
+  const rng = createRng(`${seed}:surface:${point.id}`);
   const tiles: SurfaceTile[] = [];
   const centerY = Math.floor(height / 2);
   for (let y = 0; y < height; y += 1) {
@@ -99,7 +99,7 @@ export function generateSurface(seed: string, planet: Planet, point: PointOfInte
       else if (roll < 0.21) kind = 'hazard';
       else if (roll < 0.27) kind = 'cover';
       else if (roll < 0.34) kind = 'ruin';
-      tiles.push({ x, y, kind, revealed: Math.hypot(x - 1, y - centerY) < 4 });
+      tiles.push({ x, y, kind, revealed: Math.hypot(x - 1, y - centerY) < 4 || Boolean(locationState?.revealedTileKeys.includes(`${x}:${y}`)) });
     }
   }
 
@@ -140,19 +140,35 @@ export function generateSurface(seed: string, planet: Planet, point: PointOfInte
       title: kind === 'artifact' ? 'Центральная находка' : kind === 'door' ? 'Запечатанный проход' : kind === 'terminal' ? 'Архивный терминал' : 'Неизвестный образец',
       requiredEquipment,
       evidence: kind === 'door' ? evidenceFor(point, 'architecture', index) : evidenceFor(point, evidenceKinds[index] ?? 'signal', index),
-      resolved: false
+      resolved: Boolean(locationState?.resolvedObjectIds.includes(`object_${point.id}_${index}`))
     };
   });
 
-  const dangerCount = point.danger === 'extreme' ? 5 : point.danger === 'danger' ? 4 : point.danger === 'caution' ? 3 : 1;
-  const enemies = Array.from({ length: dangerCount }, (_, index) => ({
-    id: `enemy_${point.id}_${index}`,
-    x: rng.int(Math.floor(width / 2), width - 2),
-    y: rng.int(1, height - 2),
-    health: rng.int(35, 70),
-    damage: rng.int(8, 15),
-    name: rng.pick(enemyNames[point.type])
-  }));
+  const friendlySettlement = point.type === 'settlement' && Boolean(point.civilizationId);
+  const dangerCount = friendlySettlement ? 0 : point.danger === 'extreme' ? 5 : point.danger === 'danger' ? 4 : point.danger === 'caution' ? 3 : 1;
+  const enemies = Array.from({ length: dangerCount }, (_, index) => {
+    const id = `enemy_${point.id}_${index}`;
+    const saved = locationState?.enemyStates.find((entry) => entry.id === id);
+    return {
+      id,
+      x: saved?.x ?? rng.int(Math.floor(width / 2), width - 2),
+      y: saved?.y ?? rng.int(1, height - 2),
+      health: saved?.health ?? rng.int(35, 70),
+      damage: rng.int(8, 15),
+      name: rng.pick(enemyNames[point.type])
+    };
+  }).filter((enemy) => enemy.health > 0);
+
+  if (locationState?.artifactTaken) {
+    const artifactObject = objects.find((entry) => entry.kind === 'artifact');
+    if (artifactObject) artifactObject.resolved = true;
+  }
+  for (const object of objects) {
+    if (object.resolved) {
+      const tile = tiles.find((entry) => entry.x === object.x && entry.y === object.y);
+      if (tile) tile.resolved = true;
+    }
+  }
 
   return {
     width,

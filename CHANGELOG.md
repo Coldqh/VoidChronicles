@@ -1,5 +1,20 @@
 # Changelog
 
+## v0.4.0 — Living Galaxy
+
+- added governments, corporations, universities, trade houses, cartels, religious groups and pirates;
+- added friendly, neutral, wary and hostile faction dispositions with concrete action memories;
+- added orbital hubs, civilian settlements, ports, research stations, black markets and trade services;
+- added contracts for surveys, recovery, delivery, rescue, bounties and smuggling;
+- added faction reputation, contract deadlines, rewards, contraband inspections and confiscation;
+- added regional markets, legal goods, drugs and restricted cargo;
+- added local news generated from visited regions and world events;
+- added persistent expedition locations: defeated enemies stay dead, surviving enemies retain damage and position, looted terminals and artifacts remain empty, opened areas remain revealed;
+- made living settlements non-hostile by default;
+- migrated save schema from v4 to v5 while preserving existing ironman saves;
+- expanded bridge, system, hub, contracts, factions, trade and archive interfaces;
+- added deterministic living-galaxy and location-memory tests.
+
 ## v0.3.0 — Command Deck
 
 - added a dedicated Command Deck home screen for the active run;

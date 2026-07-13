@@ -5,13 +5,19 @@ import type {
   Captain,
   CrewCandidate,
   CrewMember,
+  Contract,
   Discovery,
+  Faction,
   Evidence,
   ExpeditionResult,
   Galaxy,
   GameLogEntry,
   GameStateSnapshot,
+  Hub,
   Hypothesis,
+  LocationState,
+  MarketGood,
+  NewsItem,
   PointOfInterest,
   SaveMetadata,
   ScanReport,
@@ -37,8 +43,9 @@ import { recordDiagnostic } from '../runtime/diagnostics';
 import { generatePointsOfInterest } from '../exploration/pointsOfInterest';
 import { buildHypothesis } from '../exploration/hypotheses';
 import { generateCrewCandidates } from '../crew/generateCrew';
+import { generateContracts, generateMarket, generateNews, initializeLivingGalaxy } from '../world/livingGalaxy';
 
-export type MainScreen = 'menu' | 'command' | 'galaxy' | 'system' | 'crew' | 'archive' | 'ship' | 'settings';
+export type MainScreen = 'menu' | 'command' | 'galaxy' | 'system' | 'hub' | 'contracts' | 'factions' | 'crew' | 'archive' | 'ship' | 'settings';
 export type HydrationStatus = 'idle' | 'loading' | 'ready' | 'error';
 export type SaveStatus = 'idle' | 'pending' | 'saving' | 'saved' | 'error';
 
@@ -59,6 +66,12 @@ interface GameStore {
   artifactKnowledge: ArtifactKnowledge[];
   crew: CrewMember[];
   crewCandidates: CrewCandidate[];
+  factions: Faction[];
+  hubs: Hub[];
+  contracts: Contract[];
+  news: NewsItem[];
+  locationStates: LocationState[];
+  currentHubId: string | null;
   generationActive: boolean;
   hydrationStatus: HydrationStatus;
   saveAvailable: boolean;
@@ -92,6 +105,12 @@ interface GameStore {
   hireCrew(candidateId: string): Promise<void>;
   dismissCrew(crewId: string): Promise<void>;
   settlePayroll(): Promise<void>;
+  dockAtHub(hubId: string): Promise<{ ok: boolean; message: string }>;
+  leaveHub(): Promise<void>;
+  acceptContract(contractId: string): Promise<{ ok: boolean; message: string }>;
+  refreshContracts(): Promise<void>;
+  buyMarketGood(hubId: string, good: MarketGood): Promise<{ ok: boolean; message: string }>;
+  sellCommodity(itemId: string, hubId: string): Promise<void>;
   restoreSnapshot(snapshot: GameStateSnapshot): Promise<void>;
   getSnapshot(): GameStateSnapshot | null;
 }
@@ -150,6 +169,19 @@ const makeLog = (year: number, title: string, text: string, tone: GameLogEntry['
 
 function distance(a: StarSystem, b: StarSystem): number {
   return Math.hypot(a.coordinates.x - b.coordinates.x, a.coordinates.y - b.coordinates.y);
+}
+
+function adjustFactionStanding(factions: Faction[], factionId: string, year: number, action: string, impact: number, text: string): Faction[] {
+  return factions.map((faction) => faction.id === factionId ? {
+    ...faction,
+    reputation: Math.max(-100, Math.min(100, faction.reputation + impact)),
+    disposition: faction.reputation + impact <= -45 ? 'hostile' : faction.reputation + impact < -5 ? 'wary' : faction.reputation + impact >= 25 ? 'friendly' : 'neutral',
+    memories: [{ id: `fmemory_${faction.id}_${year}_${faction.memories.length}`, year, action, impact, text }, ...faction.memories].slice(0, 40)
+  } : faction);
+}
+
+function completedContract(contract: Contract, gameYear: number): Contract {
+  return { ...contract, status: 'completed', progress: contract.requiredProgress, completedYear: gameYear };
 }
 
 async function persist(
@@ -219,6 +251,12 @@ export const useGameStore = create<GameStore>((set, get) => ({
   artifactKnowledge: [],
   crew: [],
   crewCandidates: [],
+  factions: [],
+  hubs: [],
+  contracts: [],
+  news: [],
+  locationStates: [],
+  currentHubId: null,
   generationActive: false,
   hydrationStatus: 'idle',
   saveAvailable: false,
@@ -262,6 +300,12 @@ export const useGameStore = create<GameStore>((set, get) => ({
           artifactKnowledge: safe.artifactKnowledge,
           crew: safe.crew,
           crewCandidates: safe.crewCandidates,
+          factions: safe.factions,
+          hubs: safe.hubs,
+          contracts: safe.contracts,
+          news: safe.news,
+          locationStates: safe.locationStates,
+          currentHubId: safe.currentHubId,
           saveMeta: safe.saveMeta ?? null,
           hydrationStatus: 'ready',
           saveAvailable: true,
@@ -293,6 +337,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   dismissRecoveryNotice() { set({ recoveryNotice: null }); },
   async startGame(galaxy) {
     return runExclusive('new-game', set, get, async () => {
+      const living = initializeLivingGalaxy(galaxy);
       const start = galaxy.systems.find((system) => system.id === galaxy.startSystemId);
       if (!start) throw new Error('Стартовая система не найдена');
       set({
@@ -311,6 +356,12 @@ export const useGameStore = create<GameStore>((set, get) => ({
         artifactKnowledge: [],
         crew: [],
         crewCandidates: [],
+        factions: living.factions,
+        hubs: living.hubs,
+        contracts: living.contracts,
+        news: living.news,
+        locationStates: [],
+        currentHubId: null,
         logs: [makeLog(0, 'Новая экспедиция', `Корабль «Странник-01» начинает путь из системы ${start.name}.`, 'good')],
         hydrationStatus: 'ready',
         saveAvailable: true,
@@ -339,7 +390,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
         set({
           screen: 'menu', galaxy: null, captain: null, ship: null, currentSystemId: null,
           selectedSystemId: null, gameYear: 0, discoveries: [], logs: [], scanReports: [],
-          pointsOfInterest: [], evidence: [], hypotheses: [], artifactKnowledge: [], crew: [], crewCandidates: [],
+          pointsOfInterest: [], evidence: [], hypotheses: [], artifactKnowledge: [], crew: [], crewCandidates: [], factions: [], hubs: [], contracts: [], news: [], locationStates: [], currentHubId: null,
           hydrationStatus: 'ready', saveAvailable: false, saveError: null,
           saveStatus: 'idle', saveMeta: null, backupCount: 0, recoveryNotice: null
         });
@@ -388,14 +439,24 @@ export const useGameStore = create<GameStore>((set, get) => ({
       const nextYear = gameYear + Math.max(1, Math.round(jumpDistance / 50));
       const logs = [makeLog(nextYear, 'Прыжок завершён', `${current.name} → ${target.name}. Потрачено ${fuelCost} топлива.`, 'info'), ...get().logs];
       let encounter: 'shipCombat' | undefined;
-      const combatChance = target.danger === 'extreme' ? 0.5 : target.danger === 'danger' ? 0.28 : target.danger === 'caution' ? 0.12 : 0.03;
+      const targetFaction = get().factions.find((entry) => entry.id === target.factionId);
+      const hasCivilianHub = get().hubs.some((hub) => hub.systemId === target.id && hub.safety !== 'danger');
+      const baseCombatChance = target.danger === 'extreme' ? 0.5 : target.danger === 'danger' ? 0.28 : target.danger === 'caution' ? 0.12 : 0.03;
+      const combatChance = targetFaction?.disposition === 'hostile' ? Math.min(0.8, baseCombatChance * 1.35)
+        : targetFaction?.disposition === 'friendly' || hasCivilianHub ? 0
+          : targetFaction?.disposition === 'wary' ? baseCombatChance * 0.65
+            : baseCombatChance * 0.38;
       if (rng.chance(combatChance)) {
         encounter = 'shipCombat';
-        logs.unshift(makeLog(nextYear, 'Неопознанный корабль', 'Контакт блокирует безопасный выход из прыжка.', 'danger'));
+        logs.unshift(makeLog(nextYear, 'Враждебный перехват', 'Контакт открыл огонь после проваленного запроса связи.', 'danger'));
+      } else if (targetFaction?.disposition === 'friendly' || hasCivilianHub) {
+        logs.unshift(makeLog(nextYear, 'Гражданский контроль', 'Диспетчер передал коридор движения и список открытых портов.', 'good'));
       } else if (rng.chance(0.18)) {
         logs.unshift(makeLog(nextYear, 'Слабый сигнал', 'Во время перелёта зафиксирован короткий сигнал неизвестного происхождения.', 'warning'));
       }
-      set({ galaxy: updatedGalaxy, ship: updatedShip, currentSystemId: target.id, selectedSystemId: target.id, gameYear: nextYear, logs });
+      const contracts = get().contracts.map((contract) => contract.status === 'active' && nextYear > contract.deadlineYear ? { ...contract, status: 'expired' as const } : contract);
+      const newsItem = generateNews(updatedGalaxy.seed, updatedGalaxy.systems, get().hubs, nextYear, get().news.length);
+      set({ galaxy: updatedGalaxy, ship: updatedShip, currentSystemId: target.id, selectedSystemId: target.id, currentHubId: null, gameYear: nextYear, logs, contracts, news: [newsItem, ...get().news].slice(0, 500) });
       await persist(set, get, 'travel');
       return { ok: true, message: 'Перелёт завершён', encounter };
     }, { ok: false, message: 'Другое действие ещё выполняется' });
@@ -470,12 +531,25 @@ export const useGameStore = create<GameStore>((set, get) => ({
         tags: [entry.type, entry.danger]
       }));
       const unique = signalDiscoveries.filter((entry) => !get().discoveries.some((existingEntry) => existingEntry.id === entry.id));
+      let captain = get().captain;
+      let factions = get().factions;
+      let reward = 0;
+      const contracts = get().contracts.map((contract) => {
+        if (contract.status !== 'active' || contract.type !== 'survey' || contract.targetSystemId !== system.id) return contract;
+        reward += contract.reward;
+        factions = adjustFactionStanding(factions, contract.issuerFactionId, gameYear, 'contract-complete', 6, `Выполнен контракт «${contract.title}».`);
+        return completedContract(contract, gameYear);
+      });
+      if (captain && reward > 0) captain = { ...captain, credits: captain.credits + reward, reputation: captain.reputation + 2 };
       set({
         galaxy: updatedGalaxy,
         pointsOfInterest: allPoints,
         scanReports: [report, ...get().scanReports],
         discoveries: [...unique, ...get().discoveries],
-        logs: [makeLog(gameYear, `Детальный скан: ${planet.name}`, `Обнаружено ${generated.length} точек интереса.`, 'good'), ...get().logs]
+        contracts,
+        factions,
+        captain,
+        logs: [makeLog(gameYear, `Детальный скан: ${planet.name}`, `Обнаружено ${generated.length} точек интереса.${reward ? ` Контракт закрыт: +${reward} кредитов.` : ''}`, 'good'), ...get().logs]
       });
       await persist(set, get, 'detail-scan');
       return { ok: true, message: `Обнаружено сигналов: ${generated.length}` };
@@ -619,6 +693,27 @@ export const useGameStore = create<GameStore>((set, get) => ({
         }
       }
 
+      const locationState = { ...result.locationState, lastVisitedYear: gameYear };
+      const locationStates = [locationState, ...get().locationStates.filter((entry) => entry.pointOfInterestId !== point.id)];
+      let factions = get().factions;
+      let contractReward = 0;
+      const contracts = get().contracts.map((contract) => {
+        if (contract.status !== 'active' || contract.targetSystemId !== point.systemId) return contract;
+        let progress = contract.progress;
+        if (contract.type === 'bounty') progress += result.defeatedEnemyIds.length;
+        if ((contract.type === 'recovery' || contract.type === 'rescue') && newEvidence.length > 0) progress = contract.requiredProgress;
+        if (progress >= contract.requiredProgress) {
+          contractReward += contract.reward;
+          factions = adjustFactionStanding(factions, contract.issuerFactionId, gameYear, 'contract-complete', 7, `Выполнен контракт «${contract.title}».`);
+          return completedContract({ ...contract, progress }, gameYear);
+        }
+        return { ...contract, progress };
+      });
+      if (contractReward > 0) {
+        updatedCaptain = { ...updatedCaptain, credits: updatedCaptain.credits + contractReward, reputation: updatedCaptain.reputation + 2 };
+        logs.unshift(makeLog(gameYear, 'Контракт выполнен', `Получено ${contractReward} кредитов.`, 'good'));
+      }
+
       set({
         galaxy: updatedGalaxy,
         ship: updatedShip,
@@ -629,6 +724,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
         discoveries: newDiscoveries,
         artifactKnowledge: knowledge,
         crew: updatedCrew,
+        contracts,
+        factions,
+        locationStates,
         logs
       });
       await persist(set, get, 'expedition');
@@ -789,6 +887,148 @@ export const useGameStore = create<GameStore>((set, get) => ({
       await persist(set, get, 'crew-payroll');
     }, undefined);
   },
+  async dockAtHub(hubId) {
+    return runExclusive('dock', set, get, async () => {
+      const { hubs, currentSystemId, ship, captain, factions, contracts, gameYear, galaxy } = get();
+      if (!currentSystemId || !ship || !captain || !galaxy) return { ok: false, message: 'Нет активного корабля' };
+      const hub = hubs.find((entry) => entry.id === hubId);
+      if (!hub || hub.systemId !== currentSystemId) return { ok: false, message: 'Хаб недоступен в этой системе' };
+      const faction = factions.find((entry) => entry.id === hub.factionId);
+      if (faction?.disposition === 'hostile') return { ok: false, message: 'Стыковка запрещена: фракция враждебна' };
+
+      const smugglerBonus = get().crew.some((member) => member.primaryRole === 'smuggler' || member.secondaryRole === 'smuggler') ? 24 : 0;
+      const illegalCargo = ship.cargo.filter((item) => item.illegal);
+      const rng = createRng(`${galaxy.seed}:inspection:${hub.id}:${gameYear}:${ship.cargo.length}`);
+      const inspected = illegalCargo.length > 0 && rng.chance(Math.max(0, hub.inspectionLevel - smugglerBonus) / 100);
+      let updatedShip = { ...ship, cargo: [...ship.cargo] };
+      let updatedCaptain = { ...captain };
+      let updatedFactions = factions;
+      let logs = [...get().logs];
+      let message = `Стыковка разрешена: ${hub.name}.`;
+
+      if (inspected) {
+        const confiscatedValue = illegalCargo.reduce((sum, item) => sum + item.value * item.quantity, 0);
+        const fine = Math.min(updatedCaptain.credits, Math.max(120, Math.round(confiscatedValue * 0.45)));
+        updatedShip = { ...updatedShip, cargo: updatedShip.cargo.filter((item) => !item.illegal) };
+        updatedCaptain = { ...updatedCaptain, credits: updatedCaptain.credits - fine, reputation: updatedCaptain.reputation - 3 };
+        updatedFactions = adjustFactionStanding(updatedFactions, hub.factionId, gameYear, 'contraband-caught', -12, 'На корабле обнаружена контрабанда.');
+        logs.unshift(makeLog(gameYear, 'Досмотр и конфискация', `Запрещённый груз изъят. Штраф: ${fine} кредитов.`, 'danger'));
+        message = `Контрабанда конфискована. Штраф: ${fine}.`;
+      }
+
+      let reward = 0;
+      const updatedContracts = contracts.map((contract) => {
+        if (contract.status !== 'active' || contract.targetSystemId !== currentSystemId || (contract.type !== 'delivery' && contract.type !== 'smuggling')) return contract;
+        const cargoPresent = updatedShip.cargo.some((item) => item.contractId === contract.id || item.id === contract.cargoId);
+        if (!cargoPresent) return contract;
+        if (contract.type === 'smuggling' && inspected) return { ...contract, status: 'failed' as const };
+        updatedShip = { ...updatedShip, cargo: updatedShip.cargo.filter((item) => item.contractId !== contract.id && item.id !== contract.cargoId) };
+        reward += contract.reward;
+        updatedFactions = adjustFactionStanding(updatedFactions, contract.issuerFactionId, gameYear, 'contract-complete', 7, `Выполнен контракт «${contract.title}».`);
+        return completedContract(contract, gameYear);
+      });
+      if (reward > 0) {
+        updatedCaptain = { ...updatedCaptain, credits: updatedCaptain.credits + reward, reputation: updatedCaptain.reputation + 2 };
+        logs.unshift(makeLog(gameYear, 'Доставка завершена', `Контракты закрыты. Получено ${reward} кредитов.`, 'good'));
+      }
+
+      set({
+        hubs: hubs.map((entry) => ({ ...entry, docked: entry.id === hub.id, visited: entry.id === hub.id ? true : entry.visited })),
+        currentHubId: hub.id,
+        screen: 'hub',
+        ship: updatedShip,
+        captain: updatedCaptain,
+        factions: updatedFactions,
+        contracts: updatedContracts,
+        logs
+      });
+      await persist(set, get, 'dock');
+      return { ok: true, message };
+    }, { ok: false, message: 'Другое действие ещё выполняется' });
+  },
+  async leaveHub() {
+    return runExclusive('leave-hub', set, get, async () => {
+      set({ hubs: get().hubs.map((hub) => ({ ...hub, docked: false })), currentHubId: null, screen: 'system' });
+      await persist(set, get, 'leave-hub');
+    }, undefined);
+  },
+  async acceptContract(contractId) {
+    return runExclusive('accept-contract', set, get, async () => {
+      const contract = get().contracts.find((entry) => entry.id === contractId);
+      const captain = get().captain;
+      const ship = get().ship;
+      if (!contract || !captain || !ship || contract.status !== 'available') return { ok: false, message: 'Контракт недоступен' };
+      if ((contract.type === 'delivery' || contract.type === 'smuggling') && ship.cargo.length >= ship.cargoCapacity) return { ok: false, message: 'В трюме нет места для контрактного груза' };
+      let cargo = [...ship.cargo];
+      if (contract.cargoId) {
+        cargo.push({
+          id: contract.cargoId,
+          name: contract.type === 'smuggling' ? 'Опечатанный нелегальный контейнер' : 'Защищённый контрактный контейнер',
+          kind: contract.type === 'smuggling' ? 'contraband' : 'contractCargo',
+          quantity: 1,
+          value: Math.max(200, contract.reward / 2),
+          contractId: contract.id,
+          illegal: contract.illegal
+        });
+      }
+      const contracts = get().contracts.map((entry) => entry.id === contractId ? { ...entry, status: 'active' as const, acceptedYear: get().gameYear } : entry);
+      const factions = adjustFactionStanding(get().factions, contract.issuerFactionId, get().gameYear, 'contract-accepted', 1, `Принят контракт «${contract.title}».`);
+      set({
+        contracts,
+        factions,
+        ship: { ...ship, cargo },
+        captain: { ...captain, credits: captain.credits + contract.advance },
+        logs: [makeLog(get().gameYear, 'Контракт принят', `${contract.title}. Аванс: ${contract.advance}.`, contract.illegal ? 'warning' : 'good'), ...get().logs]
+      });
+      await persist(set, get, 'contract-accept');
+      return { ok: true, message: 'Контракт принят' };
+    }, { ok: false, message: 'Другое действие ещё выполняется' });
+  },
+  async refreshContracts() {
+    return runExclusive('refresh-contracts', set, get, async () => {
+      const { galaxy, hubs, gameYear, currentHubId } = get();
+      if (!galaxy || !currentHubId) return;
+      const generated = generateContracts(galaxy.seed, hubs.filter((hub) => hub.id === currentHubId), galaxy.systems, gameYear + get().contracts.length, 8);
+      set({ contracts: [...get().contracts.filter((contract) => contract.status !== 'available'), ...generated] });
+      await persist(set, get, 'contracts-refresh');
+    }, undefined);
+  },
+  async buyMarketGood(hubId, good) {
+    return runExclusive('market-buy', set, get, async () => {
+      const { currentHubId, captain, ship } = get();
+      if (currentHubId !== hubId || !captain || !ship) return { ok: false, message: 'Сначала пристыкуйтесь к хабу' };
+      if (captain.credits < good.price) return { ok: false, message: 'Недостаточно кредитов' };
+      let nextShip = { ...ship, cargo: [...ship.cargo] };
+      if (good.category === 'fuel') nextShip.fuel = Math.min(nextShip.maxFuel, nextShip.fuel + 20);
+      else if (good.category === 'parts') nextShip.hull = Math.min(nextShip.maxHull, nextShip.hull + 18);
+      else if (good.category === 'medicine') {
+        const currentCaptain = get().captain!;
+        set({ captain: { ...currentCaptain, health: Math.min(currentCaptain.maxHealth, currentCaptain.health + 20), credits: currentCaptain.credits - good.price } });
+        await persist(set, get, 'market-buy-medicine');
+        return { ok: true, message: 'Лечение проведено' };
+      } else {
+        if (nextShip.cargo.length >= nextShip.cargoCapacity) return { ok: false, message: 'Трюм заполнен' };
+        nextShip.cargo.push({ id: `cargo_${good.id}_${Date.now()}`, name: good.name, kind: good.category, quantity: 1, value: good.price, commodityId: good.id, illegal: good.illegal });
+      }
+      set({ ship: nextShip, captain: { ...captain, credits: captain.credits - good.price }, logs: [makeLog(get().gameYear, 'Покупка', `${good.name}: ${good.price} кредитов.`, good.illegal ? 'warning' : 'info'), ...get().logs] });
+      await persist(set, get, 'market-buy');
+      return { ok: true, message: 'Покупка завершена' };
+    }, { ok: false, message: 'Другое действие ещё выполняется' });
+  },
+  async sellCommodity(itemId, hubId) {
+    return runExclusive('market-sell', set, get, async () => {
+      const { ship, captain, currentHubId } = get();
+      if (!ship || !captain || currentHubId !== hubId) return;
+      const item = ship.cargo.find((entry) => entry.id === itemId && !entry.contractId);
+      if (!item) return;
+      const hub = get().hubs.find((entry) => entry.id === hubId);
+      const market = hub ? generateMarket(hub, get().gameYear) : [];
+      const matching = market.find((good) => good.id === item.commodityId || good.category === item.kind);
+      const price = Math.max(1, Math.round((matching?.price ?? item.value) * 0.68));
+      set({ ship: { ...ship, cargo: ship.cargo.filter((entry) => entry.id !== itemId) }, captain: { ...captain, credits: captain.credits + price }, logs: [makeLog(get().gameYear, 'Продажа товара', `${item.name}: +${price} кредитов.`, 'good'), ...get().logs] });
+      await persist(set, get, 'market-sell');
+    }, undefined);
+  },
   async restoreSnapshot(snapshot) {
     return runExclusive('import-save', set, get, async () => {
       const safe = parseSnapshot(snapshot);
@@ -809,6 +1049,12 @@ export const useGameStore = create<GameStore>((set, get) => ({
         artifactKnowledge: safe.artifactKnowledge,
         crew: safe.crew,
         crewCandidates: safe.crewCandidates,
+        factions: safe.factions,
+        hubs: safe.hubs,
+        contracts: safe.contracts,
+        news: safe.news,
+        locationStates: safe.locationStates,
+        currentHubId: safe.currentHubId,
         saveMeta: safe.saveMeta ?? null,
         hydrationStatus: 'ready',
         saveAvailable: true,
@@ -822,7 +1068,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   getSnapshot() {
     const {
       galaxy, captain, ship, currentSystemId, gameYear, discoveries, logs, saveMeta,
-      scanReports, pointsOfInterest, evidence, hypotheses, artifactKnowledge, crew, crewCandidates
+      scanReports, pointsOfInterest, evidence, hypotheses, artifactKnowledge, crew, crewCandidates, factions, hubs, contracts, news, locationStates, currentHubId
     } = get();
     if (!galaxy || !captain || !ship || !currentSystemId) return null;
     return {
@@ -841,7 +1087,13 @@ export const useGameStore = create<GameStore>((set, get) => ({
       hypotheses,
       artifactKnowledge,
       crew,
-      crewCandidates
+      crewCandidates,
+      factions,
+      hubs,
+      contracts,
+      news,
+      locationStates,
+      currentHubId
     };
   }
 }));

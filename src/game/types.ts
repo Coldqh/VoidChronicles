@@ -213,6 +213,9 @@ export interface CargoItem {
   quantity: number;
   value: number;
   artifactId?: string;
+  commodityId?: string;
+  contractId?: string;
+  illegal?: boolean;
 }
 
 export interface Discovery {
@@ -308,6 +311,115 @@ export interface ArtifactKnowledge {
   revealedTruth?: string;
 }
 
+
+export type FactionKind = 'government' | 'corporation' | 'university' | 'cartel' | 'tradeHouse' | 'religious' | 'pirates';
+export type FactionDisposition = 'friendly' | 'neutral' | 'wary' | 'hostile';
+export interface FactionMemory {
+  id: string;
+  year: number;
+  action: string;
+  impact: number;
+  text: string;
+}
+export interface Faction {
+  id: string;
+  name: string;
+  kind: FactionKind;
+  civilizationId?: string;
+  disposition: FactionDisposition;
+  reputation: number;
+  wealth: number;
+  military: number;
+  research: number;
+  laws: string[];
+  allies: string[];
+  enemies: string[];
+  memories: FactionMemory[];
+}
+
+export type HubKind = 'station' | 'colony' | 'freeport' | 'settlement';
+export type HubService = 'contracts' | 'trade' | 'repair' | 'fuel' | 'crew' | 'news' | 'blackMarket';
+export interface Hub {
+  id: string;
+  systemId: string;
+  factionId: string;
+  civilizationId?: string;
+  name: string;
+  kind: HubKind;
+  population: number;
+  safety: DangerLevel;
+  services: HubService[];
+  description: string;
+  visited: boolean;
+  docked: boolean;
+  inspectionLevel: number;
+  marketSeed: string;
+}
+
+export type ContractType = 'survey' | 'recovery' | 'delivery' | 'bounty' | 'smuggling' | 'rescue';
+export type ContractStatus = 'available' | 'active' | 'completed' | 'failed' | 'expired';
+export interface Contract {
+  id: string;
+  type: ContractType;
+  status: ContractStatus;
+  issuerHubId: string;
+  issuerFactionId: string;
+  title: string;
+  description: string;
+  reward: number;
+  advance: number;
+  deadlineYear: number;
+  acceptedYear?: number;
+  completedYear?: number;
+  targetSystemId: string;
+  targetPointOfInterestId?: string;
+  progress: number;
+  requiredProgress: number;
+  illegal: boolean;
+  hiddenClause?: string;
+  cargoId?: string;
+}
+
+export interface NewsItem {
+  id: string;
+  year: number;
+  sourceHubId?: string;
+  headline: string;
+  text: string;
+  category: 'security' | 'discovery' | 'trade' | 'politics';
+  reliability: number;
+  systemIds: string[];
+}
+
+export type MarketCategory = 'fuel' | 'medicine' | 'parts' | 'science' | 'weapons' | 'drugs' | 'contraband';
+export interface MarketGood {
+  id: string;
+  name: string;
+  category: MarketCategory;
+  basePrice: number;
+  price: number;
+  stock: number;
+  illegal: boolean;
+}
+
+export interface LocationEnemyState {
+  id: string;
+  health: number;
+  x: number;
+  y: number;
+}
+export interface LocationState {
+  pointOfInterestId: string;
+  visitCount: number;
+  enemyStates: LocationEnemyState[];
+  resolvedObjectIds: string[];
+  collectedEvidenceKeys: string[];
+  revealedTileKeys: string[];
+  artifactTaken: boolean;
+  lastOutcome: 'evacuated' | 'resolved' | 'failed';
+  lastVisitedYear: number;
+}
+
 export interface ExpeditionResult {
   pointOfInterestId: string;
   crewIds: string[];
@@ -317,6 +429,8 @@ export interface ExpeditionResult {
   outcome: 'evacuated' | 'resolved' | 'failed';
   turnsSpent: number;
   blockedReason?: string;
+  locationState: LocationState;
+  defeatedEnemyIds: string[];
 }
 
 export interface GameLogEntry {
@@ -352,4 +466,10 @@ export interface GameStateSnapshot {
   artifactKnowledge: ArtifactKnowledge[];
   crew: CrewMember[];
   crewCandidates: CrewCandidate[];
+  factions: Faction[];
+  hubs: Hub[];
+  contracts: Contract[];
+  news: NewsItem[];
+  locationStates: LocationState[];
+  currentHubId: string | null;
 }

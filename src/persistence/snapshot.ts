@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import type { GameStateSnapshot, SaveMetadata } from '../game/types';
 import { APP_VERSION, SAVE_SCHEMA_VERSION } from '../version';
+import { initializeLivingGalaxy } from '../world/livingGalaxy';
 
 export const CURRENT_SCHEMA_VERSION = SAVE_SCHEMA_VERSION;
 export { APP_VERSION };
@@ -154,7 +155,10 @@ const cargoSchema = z.object({
   kind: z.string(),
   quantity: finiteNumber,
   value: finiteNumber,
-  artifactId: z.string().optional()
+  artifactId: z.string().optional(),
+  commodityId: z.string().optional(),
+  contractId: z.string().optional(),
+  illegal: z.boolean().optional()
 });
 
 const moduleSchema = z.object({
@@ -306,6 +310,36 @@ const crewCandidateSchema = crewMemberSchema.extend({
   originSystemId: z.string()
 });
 
+
+const factionMemorySchema = z.object({ id: z.string(), year: finiteNumber, action: z.string(), impact: finiteNumber, text: z.string() });
+const factionSchema = z.object({
+  id: z.string(), name: z.string(), kind: z.enum(['government','corporation','university','cartel','tradeHouse','religious','pirates']),
+  civilizationId: z.string().optional(), disposition: z.enum(['friendly','neutral','wary','hostile']), reputation: finiteNumber,
+  wealth: finiteNumber, military: finiteNumber, research: finiteNumber, laws: z.array(z.string()), allies: z.array(z.string()), enemies: z.array(z.string()), memories: z.array(factionMemorySchema)
+});
+const hubSchema = z.object({
+  id: z.string(), systemId: z.string(), factionId: z.string(), civilizationId: z.string().optional(), name: z.string(),
+  kind: z.enum(['station','colony','freeport','settlement']), population: finiteNumber, safety: dangerSchema,
+  services: z.array(z.enum(['contracts','trade','repair','fuel','crew','news','blackMarket'])), description: z.string(),
+  visited: z.boolean(), docked: z.boolean(), inspectionLevel: finiteNumber, marketSeed: z.string()
+});
+const contractSchema = z.object({
+  id: z.string(), type: z.enum(['survey','recovery','delivery','bounty','smuggling','rescue']), status: z.enum(['available','active','completed','failed','expired']),
+  issuerHubId: z.string(), issuerFactionId: z.string(), title: z.string(), description: z.string(), reward: finiteNumber, advance: finiteNumber,
+  deadlineYear: finiteNumber, acceptedYear: finiteNumber.optional(), completedYear: finiteNumber.optional(), targetSystemId: z.string(),
+  targetPointOfInterestId: z.string().optional(), progress: finiteNumber, requiredProgress: finiteNumber, illegal: z.boolean(), hiddenClause: z.string().optional(), cargoId: z.string().optional()
+});
+const newsSchema = z.object({
+  id: z.string(), year: finiteNumber, sourceHubId: z.string().optional(), headline: z.string(), text: z.string(),
+  category: z.enum(['security','discovery','trade','politics']), reliability: finiteNumber, systemIds: z.array(z.string())
+});
+const locationEnemySchema = z.object({ id: z.string(), health: finiteNumber, x: finiteNumber, y: finiteNumber });
+const locationStateSchema = z.object({
+  pointOfInterestId: z.string(), visitCount: finiteNumber, enemyStates: z.array(locationEnemySchema), resolvedObjectIds: z.array(z.string()),
+  collectedEvidenceKeys: z.array(z.string()), revealedTileKeys: z.array(z.string()), artifactTaken: z.boolean(),
+  lastOutcome: z.enum(['evacuated','resolved','failed']), lastVisitedYear: finiteNumber
+});
+
 const legacyPayloadSchema = z.object({
   galaxy: galaxySchema,
   captain: captainSchema,
@@ -328,6 +362,14 @@ const v4PayloadSchema = v3PayloadSchema.extend({
   crew: z.array(crewMemberSchema),
   crewCandidates: z.array(crewCandidateSchema)
 });
+const v5PayloadSchema = v4PayloadSchema.extend({
+  factions: z.array(factionSchema),
+  hubs: z.array(hubSchema),
+  contracts: z.array(contractSchema),
+  news: z.array(newsSchema),
+  locationStates: z.array(locationStateSchema),
+  currentHubId: z.string().nullable()
+});
 
 const saveMetadataSchema = z.object({
   savedAt: z.string().datetime(),
@@ -341,8 +383,9 @@ const snapshotV1Schema = legacyPayloadSchema.extend({ schemaVersion: z.literal(1
 const snapshotV2Schema = legacyPayloadSchema.extend({ schemaVersion: z.literal(2), saveMeta: saveMetadataSchema });
 const snapshotV3Schema = v3PayloadSchema.extend({ schemaVersion: z.literal(3), saveMeta: saveMetadataSchema });
 const snapshotV4Schema = v4PayloadSchema.extend({ schemaVersion: z.literal(4), saveMeta: saveMetadataSchema });
+const snapshotV5Schema = v5PayloadSchema.extend({ schemaVersion: z.literal(5), saveMeta: saveMetadataSchema });
 
-type SnapshotCurrent = z.infer<typeof snapshotV4Schema>;
+type SnapshotCurrent = z.infer<typeof snapshotV5Schema>;
 
 function hashText(value: string): string {
   let hash = 0x811c9dc5;
@@ -365,6 +408,10 @@ function emptyExploration() {
   return { scanReports: [], pointsOfInterest: [], evidence: [], hypotheses: [], artifactKnowledge: [] };
 }
 function emptyCrew() { return { crew: [], crewCandidates: [] }; }
+function livingState(galaxy: z.infer<typeof galaxySchema>) {
+  const living = initializeLivingGalaxy(galaxy);
+  return { ...living, locationStates: [], currentHubId: null };
+}
 
 function normalizeSnapshot(snapshot: SnapshotCurrent): SnapshotCurrent {
   const systemIds = new Set(snapshot.galaxy.systems.map((system) => system.id));
@@ -402,7 +449,13 @@ function normalizeSnapshot(snapshot: SnapshotCurrent): SnapshotCurrent {
     hypotheses: snapshot.hypotheses.filter((entry) => pointIds.has(entry.pointOfInterestId)).map((entry) => ({ ...entry, evidenceIds: entry.evidenceIds.filter((id) => evidenceIds.has(id)) })).slice(0, 5_000),
     artifactKnowledge: snapshot.artifactKnowledge.filter((entry) => snapshot.galaxy.artifacts.some((artifact) => artifact.id === entry.artifactId)).slice(0, 2_000),
     crew,
-    crewCandidates: snapshot.crewCandidates.filter((entry) => systemIds.has(entry.originSystemId) && !crewIds.has(entry.id)).slice(0, 12)
+    crewCandidates: snapshot.crewCandidates.filter((entry) => systemIds.has(entry.originSystemId) && !crewIds.has(entry.id)).slice(0, 12),
+    factions: snapshot.factions.slice(0, 100),
+    hubs: snapshot.hubs.filter((hub) => systemIds.has(hub.systemId)).slice(0, 250),
+    contracts: snapshot.contracts.filter((contract) => systemIds.has(contract.targetSystemId)).slice(0, 500),
+    news: snapshot.news.filter((entry) => entry.systemIds.every((id) => systemIds.has(id))).slice(0, 500),
+    locationStates: snapshot.locationStates.filter((entry) => pointIds.has(entry.pointOfInterestId)).slice(0, 5_000),
+    currentHubId: snapshot.currentHubId && snapshot.hubs.some((hub) => hub.id === snapshot.currentHubId) ? snapshot.currentHubId : null
   };
 
   normalized.ship.hull = Math.max(0, Math.min(normalized.ship.maxHull, normalized.ship.hull));
@@ -419,18 +472,22 @@ export function parseSnapshot(input: unknown, options: ParseSnapshotOptions = {}
 
   if (header.schemaVersion === 1) {
     const legacy = snapshotV1Schema.parse(input);
-    migrated = { ...legacy, ...emptyExploration(), ...emptyCrew(), schemaVersion: CURRENT_SCHEMA_VERSION, saveMeta: { savedAt: new Date().toISOString(), appVersion: APP_VERSION, sequence: 0, reason: 'migration-v1', checksum: '00000000' } };
+    migrated = { ...legacy, ...emptyExploration(), ...emptyCrew(), ...livingState(legacy.galaxy), schemaVersion: CURRENT_SCHEMA_VERSION, saveMeta: { savedAt: new Date().toISOString(), appVersion: APP_VERSION, sequence: 0, reason: 'migration-v1', checksum: '00000000' } };
     migrated.saveMeta.checksum = computeSnapshotChecksum(migrated);
   } else if (header.schemaVersion === 2) {
     const legacy = snapshotV2Schema.parse(input);
-    migrated = { ...legacy, ...emptyExploration(), ...emptyCrew(), schemaVersion: CURRENT_SCHEMA_VERSION, saveMeta: { ...legacy.saveMeta, appVersion: APP_VERSION, reason: 'migration-v2', checksum: '00000000' } };
+    migrated = { ...legacy, ...emptyExploration(), ...emptyCrew(), ...livingState(legacy.galaxy), schemaVersion: CURRENT_SCHEMA_VERSION, saveMeta: { ...legacy.saveMeta, appVersion: APP_VERSION, reason: 'migration-v2', checksum: '00000000' } };
     migrated.saveMeta.checksum = computeSnapshotChecksum(migrated);
   } else if (header.schemaVersion === 3) {
     const previous = snapshotV3Schema.parse(input);
-    migrated = { ...previous, ...emptyCrew(), schemaVersion: CURRENT_SCHEMA_VERSION, saveMeta: { ...previous.saveMeta, appVersion: APP_VERSION, reason: 'migration-v3', checksum: '00000000' } };
+    migrated = { ...previous, ...emptyCrew(), ...livingState(previous.galaxy), schemaVersion: CURRENT_SCHEMA_VERSION, saveMeta: { ...previous.saveMeta, appVersion: APP_VERSION, reason: 'migration-v3', checksum: '00000000' } };
+    migrated.saveMeta.checksum = computeSnapshotChecksum(migrated);
+  } else if (header.schemaVersion === 4) {
+    const previous = snapshotV4Schema.parse(input);
+    migrated = { ...previous, ...livingState(previous.galaxy), schemaVersion: CURRENT_SCHEMA_VERSION, saveMeta: { ...previous.saveMeta, appVersion: APP_VERSION, reason: 'migration-v4', checksum: '00000000' } };
     migrated.saveMeta.checksum = computeSnapshotChecksum(migrated);
   } else if (header.schemaVersion === CURRENT_SCHEMA_VERSION) {
-    migrated = snapshotV4Schema.parse(input);
+    migrated = snapshotV5Schema.parse(input);
     if (options.verifyChecksum !== false) {
       const expected = computeSnapshotChecksum(migrated);
       if (migrated.saveMeta.checksum !== expected) throw new Error('Контрольная сумма сохранения не совпадает');

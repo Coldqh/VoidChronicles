@@ -101,6 +101,7 @@ export function generatePointsOfInterest(galaxy: Galaxy, system: StarSystem, pla
     if (planet.civilizationId && index === 0 && rng.chance(0.7)) type = 'settlement';
     if (planet.type === 'gas' && type !== 'wreck' && type !== 'laboratory' && type !== 'distress' && type !== 'anomaly') type = 'wreck';
     const civilization = chooseCivilization(galaxy, planet, system, index);
+    if (type === 'settlement' && civilization?.status !== 'living') type = 'ruin';
     const age = civilization
       ? Math.max(12, Math.abs(rng.int(civilization.foundedYear, civilization.endedYear ?? -1)))
       : rng.int(20, 200_000);
@@ -119,7 +120,7 @@ export function generatePointsOfInterest(galaxy: Galaxy, system: StarSystem, pla
       name: `${rng.pick(typeNames[type])} ${index + 1}`,
       type,
       status: 'detected',
-      danger: dangerScore(planet, index),
+      danger: type === 'settlement' && civilization?.status === 'living' ? 'safe' : dangerScore(planet, index),
       age,
       civilizationId: civilization?.id,
       origin,

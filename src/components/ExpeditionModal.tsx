@@ -5,6 +5,7 @@ import type {
   EquipmentId,
   EvidenceDraft,
   ExpeditionResult,
+  LocationState,
   Planet,
   PointOfInterest
 } from '../game/types';
@@ -18,6 +19,7 @@ interface Props {
   point: PointOfInterest;
   artifact?: Artifact;
   crew: CrewMember[];
+  locationState?: LocationState;
   onClose(): void;
   onComplete(result: ExpeditionResult): void | Promise<void>;
 }
@@ -25,15 +27,15 @@ interface Props {
 type Phase = 'loadout' | 'field' | 'debrief';
 const DEFAULT_LOADOUT: EquipmentId[] = ['pistol', 'armor', 'scanner', 'medkit', 'oxygen'];
 
-export function ExpeditionModal({ seed, planet, point, artifact, crew, onClose, onComplete }: Props) {
+export function ExpeditionModal({ seed, planet, point, artifact, crew, locationState, onClose, onComplete }: Props) {
   const [phase, setPhase] = useState<Phase>('loadout');
   const [selected, setSelected] = useState<EquipmentId[]>(DEFAULT_LOADOUT);
   const [selectedCrewIds, setSelectedCrewIds] = useState<string[]>([]);
-  const initial = useMemo(() => generateSurface(seed, planet, point), [seed, planet, point]);
+  const initial = useMemo(() => generateSurface(seed, planet, point, locationState), [seed, planet, point, locationState]);
   const [map, setMap] = useState<SurfaceMap>(initial);
   const [playerHealth, setPlayerHealth] = useState(100);
   const [turns, setTurns] = useState(0);
-  const [log, setLog] = useState<string[]>([`Цель: ${point.name}. Данные сканирования ненадёжны.`]);
+  const [log, setLog] = useState<string[]>([locationState ? `Повторный заход. Локация помнит прошлую экспедицию: визитов ${locationState.visitCount}.` : `Цель: ${point.name}. Данные сканирования ненадёжны.`]);
   const [collectedEvidence, setCollectedEvidence] = useState<EvidenceDraft[]>([]);
   const [hasArtifact, setHasArtifact] = useState(false);
   const [blockedReason, setBlockedReason] = useState<string | undefined>();
@@ -181,15 +183,32 @@ export function ExpeditionModal({ seed, planet, point, artifact, crew, onClose, 
         ? { bodyPart: 'torso' as const, severity: Math.min(10, Math.max(1, Math.ceil((100 - playerHealth) / 7))) }
         : undefined;
       const resolved = collectedEvidence.length >= 2 && (hasArtifact || point.type === 'biosphere' || point.type === 'settlement');
+      const outcome = playerHealth <= 0 ? 'failed' as const : resolved ? 'resolved' as const : 'evacuated' as const;
+      const previousEnemies = new Map((locationState?.enemyStates ?? []).map((enemy) => [enemy.id, enemy]));
+      for (const enemy of map.enemies) previousEnemies.set(enemy.id, { id: enemy.id, health: Math.max(0, enemy.health), x: enemy.x, y: enemy.y });
+      const defeatedEnemyIds = map.enemies.filter((enemy) => enemy.health <= 0).map((enemy) => enemy.id);
+      const nextLocationState: LocationState = {
+        pointOfInterestId: point.id,
+        visitCount: (locationState?.visitCount ?? 0) + 1,
+        enemyStates: Array.from(previousEnemies.values()),
+        resolvedObjectIds: Array.from(new Set([...(locationState?.resolvedObjectIds ?? []), ...map.objects.filter((object) => object.resolved).map((object) => object.id)])),
+        collectedEvidenceKeys: Array.from(new Set([...(locationState?.collectedEvidenceKeys ?? []), ...collectedEvidence.map((entry) => entry.key)])),
+        revealedTileKeys: Array.from(new Set([...(locationState?.revealedTileKeys ?? []), ...map.tiles.filter((tile) => tile.revealed).map((tile) => `${tile.x}:${tile.y}`)])),
+        artifactTaken: Boolean(locationState?.artifactTaken || hasArtifact),
+        lastOutcome: outcome,
+        lastVisitedYear: 0
+      };
       const result: ExpeditionResult = {
         pointOfInterestId: point.id,
         crewIds: selectedCrewIds,
         artifact: hasArtifact ? artifact : undefined,
         injury,
         evidence: collectedEvidence,
-        outcome: playerHealth <= 0 ? 'failed' : resolved ? 'resolved' : 'evacuated',
+        outcome,
         turnsSpent: turns,
-        blockedReason
+        blockedReason,
+        locationState: nextLocationState,
+        defeatedEnemyIds
       };
       await onComplete(result);
       setPhase('debrief');
@@ -201,7 +220,7 @@ export function ExpeditionModal({ seed, planet, point, artifact, crew, onClose, 
   if (phase === 'loadout') {
     return <div className="modal-backdrop"><section className="modal expedition-modal loadout-modal">
       <header><div><span className="eyebrow">ПОДГОТОВКА ЭКСПЕДИЦИИ</span><h2>{point.name}</h2><p>{point.publicSummary}</p></div><button className="icon-button" onClick={onClose}>×</button></header>
-      <div className="mission-brief"><div><b>Среда</b><span>{planet.type} · {planet.danger}</span></div><div><b>Оценка угрозы</b><span>{point.danger}</span></div><div><b>Скан</b><span>{point.scanConfidence}%</span></div><div><b>Возможная добыча</b><span>{point.possibleRewards.join(', ')}</span></div></div>
+      <div className="mission-brief"><div><b>Память локации</b><span>{locationState ? `визитов ${locationState.visitCount} · живых угроз ${locationState.enemyStates.filter((enemy) => enemy.health > 0).length}` : 'первый заход'}</span></div><div><b>Среда</b><span>{planet.type} · {planet.danger}</span></div><div><b>Оценка угрозы</b><span>{point.danger}</span></div><div><b>Скан</b><span>{point.scanConfidence}%</span></div><div><b>Возможная добыча</b><span>{point.possibleRewards.join(', ')}</span></div></div>
       <section className="crew-selection"><h3>Экспедиционная группа · капитан + {selectedCrew.length}</h3><div className="crew-selection-grid">{crew.length === 0 ? <p>Напарников нет. Высадка будет одиночной.</p> : crew.map((member) => <button key={member.id} className={selectedCrewIds.includes(member.id) ? 'selected' : ''} onClick={() => toggleCrew(member.id)}><b>{member.name}</b><span>{roleLabel(member.primaryRole)} · мораль {member.morale}</span></button>)}</div></section>
       <div className="loadout-grid">{EQUIPMENT.map((item) => <button key={item.id} className={selected.includes(item.id) ? 'selected' : ''} onClick={() => toggle(item.id)}><b>{item.name}</b><span>{item.description}</span><em>{item.weight} ед.</em></button>)}</div>
       <footer className="loadout-footer"><span>Масса: {usedWeight}/{capacity} · группа {selectedCrew.length + 1}</span><button className="primary-button" onClick={() => setPhase('field')}>Начать высадку</button></footer>

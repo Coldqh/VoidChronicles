@@ -40,7 +40,8 @@ async function makeLegacySnapshot(): Promise<GameStateSnapshot> {
     hypotheses: [],
     artifactKnowledge: [],
     crew: [],
-    crewCandidates: []
+    crewCandidates: [],
+    factions: [], hubs: [], contracts: [], news: [], locationStates: [], currentHubId: null
   };
 }
 
@@ -49,7 +50,7 @@ describe('snapshot validation and migration', () => {
     const legacy = await makeLegacySnapshot();
     const migrated = parseSnapshot(legacy);
     expect(migrated.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
-    expect(migrated.saveMeta?.appVersion).toBe('0.3.0');
+    expect(migrated.saveMeta?.appVersion).toBe('0.4.0');
     expect(migrated.saveMeta?.checksum).toMatch(/^[0-9a-f]{8}$/);
   });
 

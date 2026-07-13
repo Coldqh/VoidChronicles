@@ -2,18 +2,13 @@
 
 Procedural single-player space exploration roguelike built with React, TypeScript and Canvas.
 
-## v0.3 — Deep Discovery
+## v0.4 Living Galaxy
 
-- orbital star-system screen;
-- multi-stage system and planet scanning;
-- deterministic points of interest tied to planetary and civilization history;
-- expedition loadout with equipment weight and tool requirements;
-- expanded tactical surface maps, environmental pressure and field interactions;
-- evidence collection and automatically updated hypotheses;
-- artifacts with four analysis levels;
-- archive tabs for evidence and hypotheses;
-- save schema v3 with automatic v1/v2 migration;
-- visible application version and a forced PWA update action in Settings.
+- dynamic factions with territory, reputation and remembered player actions;
+- friendly civilian hubs, settlements, research stations and black markets;
+- contracts, markets, contraband, inspections, news and regional opportunities;
+- persistent expedition sites where enemies, loot, evidence, doors and revealed terrain retain their state between visits;
+- save schema v5 with automatic migration from older ironman saves.
 
 ## Development
 
