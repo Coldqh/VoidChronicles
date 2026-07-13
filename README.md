@@ -1,5 +1,7 @@
 # Void Chronicles
 
+**Current version: v0.9.1 — Legacy & Brand**
+
 Procedural single-player space exploration roguelike built with React, TypeScript and Canvas.
 
 ## v0.9 Legacy & Continuity

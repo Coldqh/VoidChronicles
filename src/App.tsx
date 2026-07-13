@@ -42,6 +42,7 @@ const defaultSettings: GalaxySettings = {
 };
 
 const formatYear = (year: number) => year < 0 ? `${Math.abs(year).toLocaleString('ru-RU')} лет до старта` : `Год ${year}`;
+const BRAND_MARK = `${import.meta.env.BASE_URL}brand/void-chronicles-mark.webp`;
 const VersionBadge = () => <span className="version-badge">v{APP_VERSION}</span>;
 const contractStatusLabel = (contract: Contract) => contract.status === 'available' ? 'доступен' : contract.status === 'active' ? 'активен' : contract.status === 'completed' ? 'выполнен' : contract.status === 'expired' ? 'просрочен' : 'провален';
 const npcRoleLabel = (npc: LocalNpc) => ({ administrator: 'управляющий', merchant: 'торговец', scientist: 'учёный', doctor: 'врач', fixer: 'посредник', priest: 'религиозный деятель', guard: 'охранник', resident: 'местный житель' }[npc.role]);
@@ -174,13 +175,13 @@ function AppChrome() {
   return <>
     <header className="app-hud">
       <button className="drawer-toggle" aria-label="Открыть навигацию" onClick={() => setOpen(true)}><span/><span/><span/></button>
-      <button className="hud-brand" onClick={() => navigate('command')}><b>VOID CHRONICLES</b><VersionBadge/></button>
+      <button className="hud-brand" onClick={() => navigate('command')}><img className="hud-brand-mark" src={BRAND_MARK} alt=""/><span className="hud-brand-copy"><b>VOID CHRONICLES</b><VersionBadge/></span></button>
       <div className="hud-location"><span>{current?.name ?? 'НЕИЗВЕСТНАЯ СИСТЕМА'}</span><small>{store.currentHubId ? store.hubs.find((hub) => hub.id === store.currentHubId)?.name : 'КОРАБЛЬ В КОСМОСЕ'}</small></div>
       <div className="hud-stats"><span className={`save-state save-${store.saveStatus}`}>{store.saveStatus === 'saving' || store.saveStatus === 'pending' ? 'СОХРАНЕНИЕ…' : store.saveStatus === 'error' ? 'ОШИБКА СЕЙВА' : 'СЕЙВ ЗАЩИЩЁН'}</span><span>₡{store.captain.credits}</span><span>⛽{store.ship.fuel}</span></div>
     </header>
     <button className={`drawer-overlay ${open ? 'open' : ''}`} aria-label="Закрыть меню" onClick={() => setOpen(false)}/>
     <aside className={`nav-drawer ${open ? 'open' : ''}`} aria-hidden={!open}>
-      <header><div><span className="eyebrow">КОРАБЕЛЬНАЯ СИСТЕМА</span><h2>VOID CHRONICLES</h2><div className="drawer-version"><VersionBadge/><span>{APP_CODENAME}</span></div></div><button className="icon-button" onClick={() => setOpen(false)}>×</button></header>
+      <header><div className="drawer-brand"><img src={BRAND_MARK} alt="Void Chronicles"/><div><span className="eyebrow">КОРАБЕЛЬНАЯ СИСТЕМА</span><h2>VOID CHRONICLES</h2><div className="drawer-version"><VersionBadge/><span>{APP_CODENAME}</span></div></div></div><button className="icon-button" onClick={() => setOpen(false)}>×</button></header>
       <nav className="drawer-nav">
         {visibleNavigationGroups.map((group) => <section key={group.title}><span>{group.title}</span>{group.items.map((item) => <button key={item.id} className={store.screen === item.id ? 'active' : ''} onClick={() => navigate(item.id)}><i>{item.icon}</i><b>{item.label}</b></button>)}</section>)}
       </nav>
@@ -429,7 +430,7 @@ function SettingsScreen() {
   return <div className="game-shell">{store.galaxy && <AppChrome/>}<main className="scroll-screen settings-screen"><header><div><span className="eyebrow">СИСТЕМА</span><h1>Настройки</h1></div>{!store.galaxy && <button onClick={() => store.setScreen('menu')}>Назад</button>}</header><section className="settings-cards"><article><h2>Версия</h2><div className="version-hero">v{APP_VERSION}</div><p>{APP_CODENAME}</p><div className="stat-row"><span>Схема сейва</span><b>v{SAVE_SCHEMA_VERSION}</b></div><div className="stat-row"><span>Сборка</span><b>{BUILD_TIME === 'development' ? 'development' : new Date(BUILD_TIME).toLocaleString('ru-RU')}</b></div></article><article><h2>Обучение</h2><p>{store.tutorial.completed ? 'Вводный маршрут завершён.' : 'Обучение активно.'}</p><button onClick={() => void store.restartTutorial()}>Запустить обучение заново</button></article><article><h2>Обновление PWA</h2><button className="primary-button" disabled={updating} onClick={() => void update()}>{updating ? 'Обновление…' : 'Принудительно обновить игру'}</button><small>IndexedDB и ironman не удаляются.</small></article><article><h2>Ironman</h2>{snapshot && <button onClick={() => exportSnapshot(snapshot)}>Экспортировать</button>}<button onClick={() => void store.createBackup()}>Создать backup</button></article><article className="danger-settings"><h2>Кампания</h2><p>Сброс удаляет текущий сейв и backup. «Начать заново» сохранит параметры генерации для нового старта.</p><button className="danger-button" onClick={() => { if (window.confirm('Удалить текущую кампанию без возможности восстановления?')) void store.clearGame(); }}>Сбросить кампанию</button><button className="danger-button" onClick={() => { if (!store.galaxy || !window.confirm('Удалить текущую кампанию и подготовить новую с теми же настройками?')) return; try { localStorage.setItem('void-chronicles:new-campaign-preset', JSON.stringify(store.galaxy.settings)); } catch {} void store.clearGame(); }}>Начать заново</button></article></section></main></div>;
 }
 
-const BootScreen = () => <main className="boot-screen"><div className="boot-mark">◆</div><span className="eyebrow">VOID CHRONICLES · v{APP_VERSION}</span><p>Проверка локального архива…</p></main>;
+const BootScreen = () => <main className="boot-screen"><div className="boot-mark"><img src={BRAND_MARK} alt="Void Chronicles"/></div><span className="eyebrow">VOID CHRONICLES · v{APP_VERSION}</span><p>Проверка локального архива…</p></main>;
 
 export default function App() {
   const screen = useGameStore((state) => state.screen);

@@ -1,3 +1,11 @@
+# v0.9.1 — Legacy, Continuity & Brand
+
+- Includes the complete v0.9 legacy/continuity patch.
+- Adds the new Void Chronicles brand mark to the HUD, navigation drawer and boot screen.
+- Adds favicon, Apple touch icon and installable PWA icons.
+- Adds brand-asset validation before every production build.
+- Uses stable GitHub Pages action versions and removes the unnecessary configure-pages step.
+
 # Changelog
 
 ## v0.9.0 — Legacy & Continuity

@@ -31,13 +31,18 @@ export default defineConfig({
         name: 'Void Chronicles',
         short_name: 'Void',
         description: 'Procedural space exploration roguelike',
+        lang: 'ru',
         theme_color: '#071018',
         background_color: '#071018',
         display: 'standalone',
         id: '/VoidChronicles/',
         scope: '/VoidChronicles/',
         start_url: '/VoidChronicles/',
-        icons: [{ src: '/VoidChronicles/icon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any maskable' }]
+        icons: [
+          { src: '/VoidChronicles/brand/void-chronicles-mark-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+          { src: '/VoidChronicles/brand/void-chronicles-mark-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
+          { src: '/VoidChronicles/brand/void-chronicles-mark-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' }
+        ]
       }
     })
   ],

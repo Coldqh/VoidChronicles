@@ -16,22 +16,25 @@ jobs:
   build:
     name: Build, test and package
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     permissions:
       contents: read
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
 
       - name: Setup Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
           cache-dependency-path: package-lock.json
 
-      - name: Verify npm registry
-        run: npm config get registry
+      - name: Verify environment
+        run: |
+          node --version
+          npm --version
+          npm config get registry
 
       - name: Install dependencies
         run: npm ci --no-audit --no-fund
@@ -41,9 +44,6 @@ jobs:
 
       - name: Test
         run: npm test
-
-      - name: Configure GitHub Pages
-        uses: actions/configure-pages@v6
 
       - name: Build
         run: npm run build
@@ -57,9 +57,12 @@ jobs:
           test -f dist/404.html
           test -f dist/manifest.webmanifest
           test -f dist/sw.js
+          test -f dist/brand/void-chronicles-mark-192.png
+          test -f dist/brand/void-chronicles-mark-512.png
+          grep -q 'void-chronicles-mark-192.png' dist/manifest.webmanifest
 
       - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v4
+        uses: actions/upload-pages-artifact@v3
         with:
           path: dist
 
@@ -68,7 +71,7 @@ jobs:
     if: github.ref == 'refs/heads/main'
     needs: build
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     permissions:
       pages: write
       id-token: write
