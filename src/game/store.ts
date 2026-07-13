@@ -2,7 +2,9 @@ import { create } from 'zustand';
 import type {
   Artifact,
   ArtifactKnowledge,
+  ArchaeologyChain,
   Captain,
+  CivilizationContact,
   CrewCandidate,
   CrewMember,
   Contract,
@@ -16,6 +18,7 @@ import type {
   Hub,
   Hypothesis,
   LocationState,
+  LocalNpc,
   MarketGood,
   NewsItem,
   PointOfInterest,
@@ -44,8 +47,9 @@ import { generatePointsOfInterest } from '../exploration/pointsOfInterest';
 import { buildHypothesis } from '../exploration/hypotheses';
 import { generateCrewCandidates } from '../crew/generateCrew';
 import { generateContracts, generateMarket, generateNews, initializeLivingGalaxy } from '../world/livingGalaxy';
+import { culturalArtifactMultiplier, initializeCivilizationLayer } from '../world/civilizations';
 
-export type MainScreen = 'menu' | 'command' | 'galaxy' | 'system' | 'hub' | 'contracts' | 'factions' | 'crew' | 'archive' | 'ship' | 'settings';
+export type MainScreen = 'menu' | 'command' | 'galaxy' | 'system' | 'hub' | 'contracts' | 'factions' | 'civilizations' | 'crew' | 'archive' | 'ship' | 'settings';
 export type HydrationStatus = 'idle' | 'loading' | 'ready' | 'error';
 export type SaveStatus = 'idle' | 'pending' | 'saving' | 'saved' | 'error';
 
@@ -72,6 +76,9 @@ interface GameStore {
   news: NewsItem[];
   locationStates: LocationState[];
   currentHubId: string | null;
+  localNpcs: LocalNpc[];
+  civilizationContacts: CivilizationContact[];
+  archaeologyChains: ArchaeologyChain[];
   generationActive: boolean;
   hydrationStatus: HydrationStatus;
   saveAvailable: boolean;
@@ -111,6 +118,10 @@ interface GameStore {
   refreshContracts(): Promise<void>;
   buyMarketGood(hubId: string, good: MarketGood): Promise<{ ok: boolean; message: string }>;
   sellCommodity(itemId: string, hubId: string): Promise<void>;
+  attemptFirstContact(civilizationId: string): Promise<{ ok: boolean; message: string }>;
+  interactWithNpc(npcId: string, kind: 'deal' | 'help' | 'threat'): Promise<void>;
+  resolveHypothesis(hypothesisId: string, disposition: 'published' | 'sold' | 'suppressed'): Promise<void>;
+  sellArtifactToHub(itemId: string, hubId: string, channel: 'market' | 'museum' | 'heirs' | 'blackMarket'): Promise<void>;
   restoreSnapshot(snapshot: GameStateSnapshot): Promise<void>;
   getSnapshot(): GameStateSnapshot | null;
 }
@@ -182,6 +193,44 @@ function adjustFactionStanding(factions: Faction[], factionId: string, year: num
 
 function completedContract(contract: Contract, gameYear: number): Contract {
   return { ...contract, status: 'completed', progress: contract.requiredProgress, completedYear: gameYear };
+}
+
+function bindArchaeologyPoints(chains: ArchaeologyChain[], points: PointOfInterest[]): ArchaeologyChain[] {
+  return chains.map((chain) => {
+    const civilizationPoints = points.filter((point) => point.civilizationId === chain.civilizationId);
+    if (civilizationPoints.length === 0) return chain;
+    return {
+      ...chain,
+      stages: chain.stages.map((stage) => {
+        if (stage.targetPointOfInterestId || stage.status === 'completed') return stage;
+        const match = civilizationPoints.find((point) => point.systemId === stage.targetSystemId) ?? civilizationPoints[0];
+        return match ? { ...stage, targetPointOfInterestId: match.id, status: stage.status === 'locked' ? stage.status : 'active' } : stage;
+      })
+    };
+  });
+}
+
+function advanceArchaeologyChains(chains: ArchaeologyChain[], pointId: string, evidenceCount: number, gameYear: number): { chains: ArchaeologyChain[]; completedTitle?: string; advancedTitle?: string } {
+  let completedTitle: string | undefined;
+  let advancedTitle: string | undefined;
+  const nextChains = chains.map((chain) => {
+    const stageIndex = chain.stages.findIndex((stage) => stage.targetPointOfInterestId === pointId && stage.status === 'active');
+    if (stageIndex < 0 || evidenceCount <= 0) return chain;
+    const stages = chain.stages.map((stage, index) => index === stageIndex ? { ...stage, status: 'completed' as const, completedYear: gameYear } : index === stageIndex + 1 ? { ...stage, status: 'active' as const } : stage);
+    const finished = stages.every((stage) => stage.status === 'completed');
+    if (finished) completedTitle = chain.title;
+    else advancedTitle = stages[stageIndex + 1]?.title;
+    return { ...chain, stages, status: finished ? 'completed' as const : chain.status };
+  });
+  return { chains: nextChains, completedTitle, advancedTitle };
+}
+
+const contactOrder: CivilizationContact['stage'][] = ['unknown', 'observed', 'signals', 'translated', 'contacted', 'trusted'];
+
+function nextContactStage(stage: CivilizationContact['stage']): CivilizationContact['stage'] {
+  if (stage === 'failed') return 'signals';
+  const index = contactOrder.indexOf(stage);
+  return contactOrder[Math.min(contactOrder.length - 1, Math.max(0, index + 1))] ?? 'observed';
 }
 
 async function persist(
@@ -257,6 +306,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
   news: [],
   locationStates: [],
   currentHubId: null,
+  localNpcs: [],
+  civilizationContacts: [],
+  archaeologyChains: [],
   generationActive: false,
   hydrationStatus: 'idle',
   saveAvailable: false,
@@ -306,6 +358,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
           news: safe.news,
           locationStates: safe.locationStates,
           currentHubId: safe.currentHubId,
+          localNpcs: safe.localNpcs,
+          civilizationContacts: safe.civilizationContacts,
+          archaeologyChains: safe.archaeologyChains,
           saveMeta: safe.saveMeta ?? null,
           hydrationStatus: 'ready',
           saveAvailable: true,
@@ -338,11 +393,13 @@ export const useGameStore = create<GameStore>((set, get) => ({
   async startGame(galaxy) {
     return runExclusive('new-game', set, get, async () => {
       const living = initializeLivingGalaxy(galaxy);
-      const start = galaxy.systems.find((system) => system.id === galaxy.startSystemId);
+      const civilizationLayer = initializeCivilizationLayer(galaxy, living.hubs);
+      const enrichedGalaxy = civilizationLayer.galaxy;
+      const start = enrichedGalaxy.systems.find((system) => system.id === enrichedGalaxy.startSystemId);
       if (!start) throw new Error('Стартовая система не найдена');
       set({
         screen: 'command',
-        galaxy,
+        galaxy: enrichedGalaxy,
         captain: initialCaptain(),
         ship: initialShip(),
         currentSystemId: start.id,
@@ -357,11 +414,14 @@ export const useGameStore = create<GameStore>((set, get) => ({
         crew: [],
         crewCandidates: [],
         factions: living.factions,
-        hubs: living.hubs,
+        hubs: civilizationLayer.hubs,
         contracts: living.contracts,
         news: living.news,
         locationStates: [],
         currentHubId: null,
+        localNpcs: civilizationLayer.localNpcs,
+        civilizationContacts: civilizationLayer.civilizationContacts,
+        archaeologyChains: civilizationLayer.archaeologyChains,
         logs: [makeLog(0, 'Новая экспедиция', `Корабль «Странник-01» начинает путь из системы ${start.name}.`, 'good')],
         hydrationStatus: 'ready',
         saveAvailable: true,
@@ -390,7 +450,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
         set({
           screen: 'menu', galaxy: null, captain: null, ship: null, currentSystemId: null,
           selectedSystemId: null, gameYear: 0, discoveries: [], logs: [], scanReports: [],
-          pointsOfInterest: [], evidence: [], hypotheses: [], artifactKnowledge: [], crew: [], crewCandidates: [], factions: [], hubs: [], contracts: [], news: [], locationStates: [], currentHubId: null,
+          pointsOfInterest: [], evidence: [], hypotheses: [], artifactKnowledge: [], crew: [], crewCandidates: [], factions: [], hubs: [], contracts: [], news: [], locationStates: [], currentHubId: null, localNpcs: [], civilizationContacts: [], archaeologyChains: [],
           hydrationStatus: 'ready', saveAvailable: false, saveError: null,
           saveStatus: 'idle', saveMeta: null, backupCount: 0, recoveryNotice: null
         });
@@ -475,6 +535,12 @@ export const useGameStore = create<GameStore>((set, get) => ({
         planet.scanLevel = Math.max(planet.scanLevel ?? 0, 1) as 1;
         planet.lastScanYear = gameYear;
       });
+      const civilizationContacts = get().civilizationContacts.map((contact) => system.civilizationIds.includes(contact.civilizationId) && contact.stage === 'unknown' ? {
+        ...contact,
+        stage: 'observed' as const,
+        lastContactYear: gameYear,
+        notes: [...contact.notes, `Зафиксированы признаки присутствия в системе ${system.name}.`].slice(-12)
+      } : contact);
       const report: ScanReport = {
         id: `scan_system_${system.id}_${gameYear}`,
         systemId: system.id,
@@ -488,7 +554,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
       set({
         galaxy: updatedGalaxy,
         scanReports: [report, ...get().scanReports.filter((entry) => entry.id !== report.id)],
-        logs: [makeLog(gameYear, `Система ${system.name} просканирована`, 'Получены орбиты и первичные характеристики планет.', 'good'), ...get().logs]
+        civilizationContacts,
+        logs: [makeLog(gameYear, `Система ${system.name} просканирована`, 'Получены орбиты, первичные характеристики планет и признаки разумной активности.', 'good'), ...get().logs]
       });
       await persist(set, get, 'system-scan');
     }, undefined);
@@ -507,6 +574,13 @@ export const useGameStore = create<GameStore>((set, get) => ({
       const existing = get().pointsOfInterest.filter((entry) => entry.planetId === planetId);
       const generated = existing.length > 0 ? existing : generatePointsOfInterest(updatedGalaxy, system, planet).map((entry) => ({ ...entry, discoveredYear: gameYear }));
       const allPoints = existing.length > 0 ? get().pointsOfInterest : [...generated, ...get().pointsOfInterest];
+      const archaeologyChains = bindArchaeologyPoints(get().archaeologyChains, allPoints);
+      const civilizationContacts = get().civilizationContacts.map((contact) => planet.civilizationId === contact.civilizationId && (contact.stage === 'unknown' || contact.stage === 'observed') ? {
+        ...contact,
+        stage: 'signals' as const,
+        lastContactYear: gameYear,
+        notes: [...contact.notes, `Детальный скан ${planet.name} выделил искусственные сигналы.`].slice(-12)
+      } : contact);
       const report: ScanReport = {
         id: `scan_planet_${planet.id}_${gameYear}_${get().scanReports.length}`,
         systemId: system.id,
@@ -549,6 +623,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
         contracts,
         factions,
         captain,
+        archaeologyChains,
+        civilizationContacts,
         logs: [makeLog(gameYear, `Детальный скан: ${planet.name}`, `Обнаружено ${generated.length} точек интереса.${reward ? ` Контракт закрыт: +${reward} кредитов.` : ''}`, 'good'), ...get().logs]
       });
       await persist(set, get, 'detail-scan');
@@ -695,6 +771,10 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
       const locationState = { ...result.locationState, lastVisitedYear: gameYear };
       const locationStates = [locationState, ...get().locationStates.filter((entry) => entry.pointOfInterestId !== point.id)];
+      const archaeologyProgress = advanceArchaeologyChains(get().archaeologyChains, point.id, newEvidence.length, gameYear);
+      const archaeologyChains = archaeologyProgress.chains;
+      if (archaeologyProgress.completedTitle) logs.unshift(makeLog(gameYear, 'Археологическая цепочка завершена', archaeologyProgress.completedTitle, 'good'));
+      else if (archaeologyProgress.advancedTitle) logs.unshift(makeLog(gameYear, 'Открыт следующий след', archaeologyProgress.advancedTitle, 'info'));
       let factions = get().factions;
       let contractReward = 0;
       const contracts = get().contracts.map((contract) => {
@@ -727,6 +807,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
         contracts,
         factions,
         locationStates,
+        archaeologyChains,
         logs
       });
       await persist(set, get, 'expedition');
@@ -1029,6 +1110,117 @@ export const useGameStore = create<GameStore>((set, get) => ({
       await persist(set, get, 'market-sell');
     }, undefined);
   },
+  async attemptFirstContact(civilizationId) {
+    return runExclusive('first-contact', set, get, async () => {
+      const { galaxy, currentSystemId, gameYear } = get();
+      if (!galaxy || !currentSystemId) return { ok: false, message: 'Нет активной системы' };
+      const civilization = galaxy.civilizations.find((entry) => entry.id === civilizationId);
+      const system = galaxy.systems.find((entry) => entry.id === currentSystemId);
+      const contact = get().civilizationContacts.find((entry) => entry.civilizationId === civilizationId);
+      if (!civilization || civilization.status === 'dead' || !contact) return { ok: false, message: 'Связь с этой цивилизацией невозможна' };
+      const present = system?.civilizationIds.includes(civilizationId) || system?.planets.some((planet) => planet.civilizationId === civilizationId);
+      if (!present) return { ok: false, message: 'В системе нет подтверждённого канала этой цивилизации' };
+      if (contact.stage === 'trusted') return { ok: true, message: 'Уже установлен доверительный канал' };
+      const specialistBonus = get().crew.some((member) => member.primaryRole === 'diplomat') ? 0.18
+        : get().crew.some((member) => member.primaryRole === 'scientist' || member.primaryRole === 'archaeologist') ? 0.08 : 0;
+      const baseChance = contact.stage === 'failed' ? 0.48 : contact.stage === 'unknown' ? 0.58 : contact.stage === 'observed' ? 0.66 : contact.stage === 'signals' ? 0.72 : 0.82;
+      const rng = createRng(`${galaxy.seed}:contact:${civilizationId}:${contact.attempts}:${gameYear}`);
+      const success = rng.chance(Math.min(0.94, baseChance + specialistBonus));
+      const nextStage = success ? nextContactStage(contact.stage) : 'failed';
+      const nextContact: CivilizationContact = {
+        ...contact,
+        stage: nextStage,
+        attempts: contact.attempts + 1,
+        languageLevel: Math.max(0, Math.min(5, contact.languageLevel + (success && (nextStage === 'translated' || nextStage === 'contacted' || nextStage === 'trusted') ? 1 : 0))),
+        trust: Math.max(-100, Math.min(100, contact.trust + (success ? 8 : -7))),
+        firstContactYear: success && (nextStage === 'contacted' || nextStage === 'trusted') ? contact.firstContactYear ?? gameYear : contact.firstContactYear,
+        lastContactYear: gameYear,
+        notes: [...contact.notes, success ? `Связь продвинута до стадии «${nextStage}».` : 'Передача была понята неверно; канал временно сорван.'].slice(-12)
+      };
+      let factions = get().factions;
+      const related = factions.find((faction) => faction.civilizationId === civilizationId);
+      if (related) factions = adjustFactionStanding(factions, related.id, gameYear, 'first-contact', success ? 3 : -3, success ? 'Капитан установил корректный канал связи.' : 'Попытка контакта вызвала подозрение.');
+      const headline = success ? `Контакт с ${civilization.name} продвинут` : `Связь с ${civilization.name} сорвана`;
+      set({
+        civilizationContacts: [nextContact, ...get().civilizationContacts.filter((entry) => entry.civilizationId !== civilizationId)],
+        factions,
+        news: [{ id: `news_contact_${civilizationId}_${gameYear}_${contact.attempts}`, year: gameYear, headline, text: success ? 'Получен ответ и новые языковые данные.' : 'Стороны неверно истолковали сигналы друг друга.', category: 'politics' as const, reliability: 96, systemIds: [currentSystemId] }, ...get().news].slice(0, 500),
+        logs: [makeLog(gameYear, headline, success ? `Уровень понимания языка: ${nextContact.languageLevel}/5.` : 'Повторная попытка потребует другого подхода.', success ? 'good' : 'warning'), ...get().logs]
+      });
+      await persist(set, get, 'first-contact');
+      return { ok: success, message: success ? `Стадия контакта: ${nextStage}` : 'Контакт сорван; данные сохранены' };
+    }, { ok: false, message: 'Другое действие ещё выполняется' });
+  },
+  async interactWithNpc(npcId, kind) {
+    return runExclusive('npc-interaction', set, get, async () => {
+      const npc = get().localNpcs.find((entry) => entry.id === npcId);
+      const hub = get().hubs.find((entry) => entry.id === npc?.hubId);
+      const captain = get().captain;
+      if (!npc || !hub || !captain || get().currentHubId !== hub.id || !npc.alive || !npc.present) return;
+      const impact = kind === 'help' ? 9 : kind === 'deal' ? 4 : -16;
+      const cost = kind === 'help' ? 80 : 0;
+      if (captain.credits < cost) return;
+      const nextTrust = Math.max(-100, Math.min(100, npc.trust + impact));
+      const memory = { id: `npc_memory_${npc.id}_${get().gameYear}_${npc.memories.length}`, year: get().gameYear, kind, text: kind === 'help' ? 'Капитан помог решить локальную проблему.' : kind === 'deal' ? 'Состоялась взаимовыгодная сделка.' : 'Капитан угрожал и требовал уступок.', impact } as const;
+      let factions = adjustFactionStanding(get().factions, hub.factionId, get().gameYear, `npc-${kind}`, Math.sign(impact) * (kind === 'threat' ? 4 : 1), `${npc.name}: ${memory.text}`);
+      const nextNpcs = get().localNpcs.map((entry) => entry.id === npcId ? {
+        ...entry,
+        trust: nextTrust,
+        disposition: nextTrust <= -35 ? 'hostile' as const : nextTrust < -5 ? 'wary' as const : nextTrust >= 25 ? 'friendly' as const : 'neutral' as const,
+        memories: [memory, ...entry.memories].slice(0, 20)
+      } : entry);
+      set({ localNpcs: nextNpcs, factions, captain: { ...captain, credits: captain.credits - cost }, logs: [makeLog(get().gameYear, `Контакт: ${npc.name}`, memory.text, impact > 0 ? 'good' : 'warning'), ...get().logs] });
+      await persist(set, get, 'npc-interaction');
+    }, undefined);
+  },
+  async resolveHypothesis(hypothesisId, disposition) {
+    return runExclusive('hypothesis-resolution', set, get, async () => {
+      const hypothesis = get().hypotheses.find((entry) => entry.id === hypothesisId);
+      const captain = get().captain;
+      if (!hypothesis || !captain || hypothesis.disposition) return;
+      const point = get().pointsOfInterest.find((entry) => entry.id === hypothesis.pointOfInterestId);
+      const civilizationId = point?.civilizationId;
+      const beneficiary = disposition === 'sold'
+        ? get().factions.find((faction) => faction.kind === 'university' || faction.kind === 'corporation')
+        : get().factions.find((faction) => faction.civilizationId === civilizationId && faction.kind === 'government');
+      const payment = disposition === 'sold' ? Math.max(220, Math.round(hypothesis.confidence * 14)) : disposition === 'published' ? Math.round(hypothesis.confidence * 3) : 0;
+      let factions = get().factions;
+      if (beneficiary) factions = adjustFactionStanding(factions, beneficiary.id, get().gameYear, `hypothesis-${disposition}`, disposition === 'suppressed' ? 2 : 6, `Получена версия «${hypothesis.title}».`);
+      const updated = { ...hypothesis, disposition, beneficiaryFactionId: beneficiary?.id, resolvedYear: get().gameYear };
+      set({
+        hypotheses: [updated, ...get().hypotheses.filter((entry) => entry.id !== hypothesisId)],
+        factions,
+        captain: { ...captain, credits: captain.credits + payment, reputation: captain.reputation + (disposition === 'published' ? 3 : 0) },
+        news: disposition === 'published' ? [{ id: `news_hypothesis_${hypothesisId}`, year: get().gameYear, headline: `Опубликована гипотеза: ${hypothesis.title}`, text: hypothesis.summary, category: 'discovery' as const, reliability: hypothesis.confidence, systemIds: point ? [point.systemId] : [] }, ...get().news].slice(0, 500) : get().news,
+        logs: [makeLog(get().gameYear, 'Решение по гипотезе', disposition === 'sold' ? `Материалы проданы за ${payment} кредитов.` : disposition === 'published' ? 'Материалы опубликованы в открытой сети.' : 'Материалы скрыты в личном архиве.', disposition === 'published' ? 'good' : 'info'), ...get().logs]
+      });
+      await persist(set, get, 'hypothesis-resolution');
+    }, undefined);
+  },
+  async sellArtifactToHub(itemId, hubId, channel) {
+    return runExclusive('artifact-transfer', set, get, async () => {
+      const { ship, captain, currentHubId, gameYear } = get();
+      const hub = get().hubs.find((entry) => entry.id === hubId);
+      const item = ship?.cargo.find((entry) => entry.id === itemId && entry.artifactId);
+      const artifact = get().galaxy?.artifacts.find((entry) => entry.id === item?.artifactId);
+      const faction = get().factions.find((entry) => entry.id === hub?.factionId);
+      if (!ship || !captain || !hub || !item || !artifact || currentHubId !== hubId) return;
+      if (channel === 'heirs' && hub.civilizationId !== artifact.civilizationId) return;
+      if (channel === 'museum' && !['university', 'religious', 'government'].includes(faction?.kind ?? '')) return;
+      if (channel === 'blackMarket' && !hub.services.includes('blackMarket')) return;
+      const sameCivilization = hub.civilizationId === artifact.civilizationId;
+      const price = Math.max(1, Math.round(item.value * culturalArtifactMultiplier(channel, sameCivilization)));
+      let factions = get().factions;
+      if (faction) factions = adjustFactionStanding(factions, faction.id, gameYear, `artifact-${channel}`, channel === 'heirs' ? 12 : channel === 'museum' ? 6 : channel === 'blackMarket' ? -3 : 1, `${artifact.name} передан через канал «${channel}».`);
+      set({
+        ship: { ...ship, cargo: ship.cargo.filter((entry) => entry.id !== itemId) },
+        captain: { ...captain, credits: captain.credits + price, reputation: captain.reputation + (channel === 'heirs' ? 3 : 0) },
+        factions,
+        logs: [makeLog(gameYear, 'Артефакт передан', `${artifact.name}: ${price} кредитов. Канал: ${channel}.`, channel === 'blackMarket' ? 'warning' : 'good'), ...get().logs]
+      });
+      await persist(set, get, 'artifact-transfer');
+    }, undefined);
+  },
   async restoreSnapshot(snapshot) {
     return runExclusive('import-save', set, get, async () => {
       const safe = parseSnapshot(snapshot);
@@ -1055,6 +1247,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
         news: safe.news,
         locationStates: safe.locationStates,
         currentHubId: safe.currentHubId,
+        localNpcs: safe.localNpcs,
+        civilizationContacts: safe.civilizationContacts,
+        archaeologyChains: safe.archaeologyChains,
         saveMeta: safe.saveMeta ?? null,
         hydrationStatus: 'ready',
         saveAvailable: true,
@@ -1068,7 +1263,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   getSnapshot() {
     const {
       galaxy, captain, ship, currentSystemId, gameYear, discoveries, logs, saveMeta,
-      scanReports, pointsOfInterest, evidence, hypotheses, artifactKnowledge, crew, crewCandidates, factions, hubs, contracts, news, locationStates, currentHubId
+      scanReports, pointsOfInterest, evidence, hypotheses, artifactKnowledge, crew, crewCandidates, factions, hubs, contracts, news, locationStates, currentHubId, localNpcs, civilizationContacts, archaeologyChains
     } = get();
     if (!galaxy || !captain || !ship || !currentSystemId) return null;
     return {
@@ -1093,7 +1288,10 @@ export const useGameStore = create<GameStore>((set, get) => ({
       contracts,
       news,
       locationStates,
-      currentHubId
+      currentHubId,
+      localNpcs,
+      civilizationContacts,
+      archaeologyChains
     };
   }
 }));

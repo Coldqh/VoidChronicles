@@ -41,7 +41,8 @@ async function makeLegacySnapshot(): Promise<GameStateSnapshot> {
     artifactKnowledge: [],
     crew: [],
     crewCandidates: [],
-    factions: [], hubs: [], contracts: [], news: [], locationStates: [], currentHubId: null
+    factions: [], hubs: [], contracts: [], news: [], locationStates: [], currentHubId: null,
+    localNpcs: [], civilizationContacts: [], archaeologyChains: []
   };
 }
 
@@ -50,7 +51,7 @@ describe('snapshot validation and migration', () => {
     const legacy = await makeLegacySnapshot();
     const migrated = parseSnapshot(legacy);
     expect(migrated.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
-    expect(migrated.saveMeta?.appVersion).toBe('0.4.0');
+    expect(migrated.saveMeta?.appVersion).toBe('0.5.0');
     expect(migrated.saveMeta?.checksum).toMatch(/^[0-9a-f]{8}$/);
   });
 
@@ -74,6 +75,22 @@ describe('snapshot validation and migration', () => {
     expect(migrated.pointsOfInterest).toEqual([]);
     expect(migrated.evidence).toEqual([]);
     expect(migrated.hypotheses).toEqual([]);
+  });
+
+
+  it('migrates v5 living-galaxy saves into civilization records', async () => {
+    const current = prepareSnapshotForSave(parseSnapshot(await makeLegacySnapshot()), 'current-fixture');
+    const { localNpcs: _localNpcs, civilizationContacts: _contacts, archaeologyChains: _chains, ...withoutCivilizations } = current;
+    const v5 = {
+      ...withoutCivilizations,
+      schemaVersion: 5,
+      saveMeta: { ...current.saveMeta!, appVersion: '0.4.0', reason: 'legacy-v5', checksum: '00000000' }
+    };
+    const migrated = parseSnapshot(v5, { verifyChecksum: false });
+    expect(migrated.schemaVersion).toBe(6);
+    expect(migrated.localNpcs.length).toBeGreaterThan(0);
+    expect(migrated.civilizationContacts.length).toBeGreaterThan(0);
+    expect(migrated.galaxy.civilizations.every((entry) => (entry.cultures?.length ?? 0) > 0)).toBe(true);
   });
 
   it('repairs a missing current system reference', async () => {

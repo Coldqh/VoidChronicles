@@ -10,9 +10,10 @@ import { generatePointsOfInterest } from '../exploration/pointsOfInterest';
 describe('application rendering smoke tests', () => {
   it('renders the boot shell with the current version', () => {
     const html = renderToString(React.createElement(App));
-    expect(html).toContain('0.4.0');
+    expect(html).toContain('0.5.0');
     expect(html).toContain('Проверка локального архива');
   });
+
 
   it('renders the orbital map and expedition loadout without runtime exceptions', async () => {
     const galaxy = await generateGalaxy({

@@ -11,6 +11,9 @@ export type EvidenceKind = 'record' | 'body' | 'weapon' | 'architecture' | 'samp
 export type HypothesisStatus = 'tentative' | 'supported' | 'confirmed' | 'disproved';
 export type CrewRole = 'pilot' | 'engineer' | 'doctor' | 'scientist' | 'archaeologist' | 'soldier' | 'diplomat' | 'biologist' | 'smuggler';
 export type CrewStatus = 'active' | 'injured' | 'unpaid' | 'missing';
+export type ContactStage = 'unknown' | 'observed' | 'signals' | 'translated' | 'contacted' | 'trusted' | 'failed';
+export type LocalNpcRole = 'administrator' | 'merchant' | 'scientist' | 'doctor' | 'fixer' | 'priest' | 'guard' | 'resident';
+export type HypothesisDisposition = 'private' | 'published' | 'sold' | 'suppressed';
 
 export interface GalaxySettings {
   seed: string;
@@ -59,6 +62,49 @@ export interface StarSystem {
   region: 'core' | 'frontier' | 'deep';
 }
 
+export interface SpeciesProfile {
+  bodyPlan: string;
+  metabolism: string;
+  reproduction: string;
+  lifespan: number;
+  homeAdaptation: string;
+  unusualTrait: string;
+}
+
+export interface CivilizationLanguage {
+  id: string;
+  name: string;
+  script: string;
+  complexity: number;
+}
+
+export interface CivilizationReligion {
+  id: string;
+  name: string;
+  doctrine: string;
+  taboos: string[];
+  sacredObjects: string[];
+}
+
+export interface CivilizationCulture {
+  id: string;
+  name: string;
+  values: string[];
+  taboos: string[];
+  artForms: string[];
+  languageId: string;
+  religionIds: string[];
+}
+
+export interface CivilizationState {
+  id: string;
+  name: string;
+  government: string;
+  capitalSystemId: string;
+  status: 'active' | 'collapsed' | 'exiled';
+  outsiderPolicy: string;
+}
+
 export interface Civilization {
   id: string;
   name: string;
@@ -71,6 +117,15 @@ export interface Civilization {
   foundedYear: number;
   endedYear?: number;
   traits: string[];
+  speciesProfile?: SpeciesProfile;
+  languages?: CivilizationLanguage[];
+  religions?: CivilizationReligion[];
+  cultures?: CivilizationCulture[];
+  states?: CivilizationState[];
+  socialClasses?: string[];
+  outsiderPolicy?: string;
+  originMystery?: string;
+  extinctionCause?: string;
 }
 
 export interface HistoricalFigure {
@@ -301,6 +356,9 @@ export interface Hypothesis {
   status: HypothesisStatus;
   evidenceIds: string[];
   updatedYear: number;
+  disposition?: HypothesisDisposition;
+  beneficiaryFactionId?: string;
+  resolvedYear?: number;
 }
 
 export interface ArtifactKnowledge {
@@ -339,6 +397,14 @@ export interface Faction {
 
 export type HubKind = 'station' | 'colony' | 'freeport' | 'settlement';
 export type HubService = 'contracts' | 'trade' | 'repair' | 'fuel' | 'crew' | 'news' | 'blackMarket';
+export interface HubDistrict {
+  id: string;
+  name: string;
+  function: string;
+  safety: DangerLevel;
+  description: string;
+}
+
 export interface Hub {
   id: string;
   systemId: string;
@@ -354,6 +420,65 @@ export interface Hub {
   docked: boolean;
   inspectionLevel: number;
   marketSeed: string;
+  districts?: HubDistrict[];
+  localCustoms?: string[];
+  npcIds?: string[];
+}
+
+export interface NpcMemory {
+  id: string;
+  year: number;
+  kind: 'meeting' | 'deal' | 'help' | 'threat' | 'betrayal' | 'discovery';
+  text: string;
+  impact: number;
+}
+
+export interface LocalNpc {
+  id: string;
+  hubId: string;
+  civilizationId?: string;
+  name: string;
+  species: string;
+  culture: string;
+  role: LocalNpcRole;
+  disposition: FactionDisposition;
+  trust: number;
+  alive: boolean;
+  present: boolean;
+  agenda: string;
+  fear: string;
+  memories: NpcMemory[];
+}
+
+export interface CivilizationContact {
+  civilizationId: string;
+  stage: ContactStage;
+  languageLevel: number;
+  trust: number;
+  attempts: number;
+  firstContactYear?: number;
+  lastContactYear?: number;
+  notes: string[];
+}
+
+export interface ArchaeologyStage {
+  id: string;
+  title: string;
+  summary: string;
+  status: 'locked' | 'active' | 'completed';
+  targetSystemId: string;
+  targetPointOfInterestId?: string;
+  completedYear?: number;
+}
+
+export interface ArchaeologyChain {
+  id: string;
+  civilizationId: string;
+  title: string;
+  summary: string;
+  status: 'active' | 'completed' | 'failed';
+  stages: ArchaeologyStage[];
+  createdYear: number;
 }
 
 export type ContractType = 'survey' | 'recovery' | 'delivery' | 'bounty' | 'smuggling' | 'rescue';
@@ -472,4 +597,7 @@ export interface GameStateSnapshot {
   news: NewsItem[];
   locationStates: LocationState[];
   currentHubId: string | null;
+  localNpcs: LocalNpc[];
+  civilizationContacts: CivilizationContact[];
+  archaeologyChains: ArchaeologyChain[];
 }

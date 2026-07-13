@@ -2,13 +2,15 @@
 
 Procedural single-player space exploration roguelike built with React, TypeScript and Canvas.
 
-## v0.4 Living Galaxy
+## v0.5 Civilizations & Lost Worlds
 
-- dynamic factions with territory, reputation and remembered player actions;
-- friendly civilian hubs, settlements, research stations and black markets;
-- contracts, markets, contraband, inspections, news and regional opportunities;
-- persistent expedition sites where enemies, loot, evidence, doors and revealed terrain retain their state between visits;
-- save schema v5 with automatic migration from older ironman saves.
+- generated species biology, cultures, languages, religions, states and social structures;
+- staged first contact with translation, trust and political consequences;
+- populated hubs with districts, customs and persistent local NPCs;
+- archaeology chains, lost-world investigations and actionable hypotheses;
+- cultural artifact ownership and different values for markets, museums and heirs;
+- slide-out side navigation and reliable vertical scrolling on desktop and mobile;
+- save schema v6 with automatic migration from older ironman saves.
 
 ## Development
 

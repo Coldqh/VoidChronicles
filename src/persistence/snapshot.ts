@@ -2,6 +2,7 @@ import { z } from 'zod';
 import type { GameStateSnapshot, SaveMetadata } from '../game/types';
 import { APP_VERSION, SAVE_SCHEMA_VERSION } from '../version';
 import { initializeLivingGalaxy } from '../world/livingGalaxy';
+import { enrichGalaxyCivilizations, initializeCivilizationLayer } from '../world/civilizations';
 
 export const CURRENT_SCHEMA_VERSION = SAVE_SCHEMA_VERSION;
 export { APP_VERSION };
@@ -46,6 +47,21 @@ const systemSchema = z.object({
   region: z.enum(['core', 'frontier', 'deep'])
 });
 
+const speciesProfileSchema = z.object({
+  bodyPlan: z.string(), metabolism: z.string(), reproduction: z.string(), lifespan: finiteNumber,
+  homeAdaptation: z.string(), unusualTrait: z.string()
+});
+const civilizationLanguageSchema = z.object({ id: z.string(), name: z.string(), script: z.string(), complexity: finiteNumber });
+const civilizationReligionSchema = z.object({ id: z.string(), name: z.string(), doctrine: z.string(), taboos: z.array(z.string()), sacredObjects: z.array(z.string()) });
+const civilizationCultureSchema = z.object({
+  id: z.string(), name: z.string(), values: z.array(z.string()), taboos: z.array(z.string()), artForms: z.array(z.string()),
+  languageId: z.string(), religionIds: z.array(z.string())
+});
+const civilizationStateSchema = z.object({
+  id: z.string(), name: z.string(), government: z.string(), capitalSystemId: z.string(),
+  status: z.enum(['active','collapsed','exiled']), outsiderPolicy: z.string()
+});
+
 const civilizationSchema = z.object({
   id: z.string().min(1),
   name: z.string(),
@@ -57,7 +73,16 @@ const civilizationSchema = z.object({
   controlledSystems: z.array(z.string()),
   foundedYear: finiteNumber,
   endedYear: finiteNumber.optional(),
-  traits: z.array(z.string())
+  traits: z.array(z.string()),
+  speciesProfile: speciesProfileSchema.optional(),
+  languages: z.array(civilizationLanguageSchema).optional(),
+  religions: z.array(civilizationReligionSchema).optional(),
+  cultures: z.array(civilizationCultureSchema).optional(),
+  states: z.array(civilizationStateSchema).optional(),
+  socialClasses: z.array(z.string()).optional(),
+  outsiderPolicy: z.string().optional(),
+  originMystery: z.string().optional(),
+  extinctionCause: z.string().optional()
 });
 
 const figureSchema = z.object({
@@ -263,7 +288,10 @@ const hypothesisSchema = z.object({
   confidence: finiteNumber,
   status: z.enum(['tentative', 'supported', 'confirmed', 'disproved']),
   evidenceIds: z.array(z.string()),
-  updatedYear: finiteNumber
+  updatedYear: finiteNumber,
+  disposition: z.enum(['private','published','sold','suppressed']).optional(),
+  beneficiaryFactionId: z.string().optional(),
+  resolvedYear: finiteNumber.optional()
 });
 
 const artifactKnowledgeSchema = z.object({
@@ -317,11 +345,33 @@ const factionSchema = z.object({
   civilizationId: z.string().optional(), disposition: z.enum(['friendly','neutral','wary','hostile']), reputation: finiteNumber,
   wealth: finiteNumber, military: finiteNumber, research: finiteNumber, laws: z.array(z.string()), allies: z.array(z.string()), enemies: z.array(z.string()), memories: z.array(factionMemorySchema)
 });
+const hubDistrictSchema = z.object({ id: z.string(), name: z.string(), function: z.string(), safety: dangerSchema, description: z.string() });
 const hubSchema = z.object({
   id: z.string(), systemId: z.string(), factionId: z.string(), civilizationId: z.string().optional(), name: z.string(),
   kind: z.enum(['station','colony','freeport','settlement']), population: finiteNumber, safety: dangerSchema,
   services: z.array(z.enum(['contracts','trade','repair','fuel','crew','news','blackMarket'])), description: z.string(),
-  visited: z.boolean(), docked: z.boolean(), inspectionLevel: finiteNumber, marketSeed: z.string()
+  visited: z.boolean(), docked: z.boolean(), inspectionLevel: finiteNumber, marketSeed: z.string(),
+  districts: z.array(hubDistrictSchema).optional(), localCustoms: z.array(z.string()).optional(), npcIds: z.array(z.string()).optional()
+});
+const npcMemorySchema = z.object({ id: z.string(), year: finiteNumber, kind: z.enum(['meeting','deal','help','threat','betrayal','discovery']), text: z.string(), impact: finiteNumber });
+const localNpcSchema = z.object({
+  id: z.string(), hubId: z.string(), civilizationId: z.string().optional(), name: z.string(), species: z.string(), culture: z.string(),
+  role: z.enum(['administrator','merchant','scientist','doctor','fixer','priest','guard','resident']),
+  disposition: z.enum(['friendly','neutral','wary','hostile']), trust: finiteNumber, alive: z.boolean(), present: z.boolean(),
+  agenda: z.string(), fear: z.string(), memories: z.array(npcMemorySchema)
+});
+const civilizationContactSchema = z.object({
+  civilizationId: z.string(), stage: z.enum(['unknown','observed','signals','translated','contacted','trusted','failed']),
+  languageLevel: finiteNumber, trust: finiteNumber, attempts: finiteNumber, firstContactYear: finiteNumber.optional(),
+  lastContactYear: finiteNumber.optional(), notes: z.array(z.string())
+});
+const archaeologyStageSchema = z.object({
+  id: z.string(), title: z.string(), summary: z.string(), status: z.enum(['locked','active','completed']),
+  targetSystemId: z.string(), targetPointOfInterestId: z.string().optional(), completedYear: finiteNumber.optional()
+});
+const archaeologyChainSchema = z.object({
+  id: z.string(), civilizationId: z.string(), title: z.string(), summary: z.string(), status: z.enum(['active','completed','failed']),
+  stages: z.array(archaeologyStageSchema), createdYear: finiteNumber
 });
 const contractSchema = z.object({
   id: z.string(), type: z.enum(['survey','recovery','delivery','bounty','smuggling','rescue']), status: z.enum(['available','active','completed','failed','expired']),
@@ -370,6 +420,11 @@ const v5PayloadSchema = v4PayloadSchema.extend({
   locationStates: z.array(locationStateSchema),
   currentHubId: z.string().nullable()
 });
+const v6PayloadSchema = v5PayloadSchema.extend({
+  localNpcs: z.array(localNpcSchema),
+  civilizationContacts: z.array(civilizationContactSchema),
+  archaeologyChains: z.array(archaeologyChainSchema)
+});
 
 const saveMetadataSchema = z.object({
   savedAt: z.string().datetime(),
@@ -384,8 +439,9 @@ const snapshotV2Schema = legacyPayloadSchema.extend({ schemaVersion: z.literal(2
 const snapshotV3Schema = v3PayloadSchema.extend({ schemaVersion: z.literal(3), saveMeta: saveMetadataSchema });
 const snapshotV4Schema = v4PayloadSchema.extend({ schemaVersion: z.literal(4), saveMeta: saveMetadataSchema });
 const snapshotV5Schema = v5PayloadSchema.extend({ schemaVersion: z.literal(5), saveMeta: saveMetadataSchema });
+const snapshotV6Schema = v6PayloadSchema.extend({ schemaVersion: z.literal(6), saveMeta: saveMetadataSchema });
 
-type SnapshotCurrent = z.infer<typeof snapshotV5Schema>;
+type SnapshotCurrent = z.infer<typeof snapshotV6Schema>;
 
 function hashText(value: string): string {
   let hash = 0x811c9dc5;
@@ -410,7 +466,19 @@ function emptyExploration() {
 function emptyCrew() { return { crew: [], crewCandidates: [] }; }
 function livingState(galaxy: z.infer<typeof galaxySchema>) {
   const living = initializeLivingGalaxy(galaxy);
-  return { ...living, locationStates: [], currentHubId: null };
+  const layer = initializeCivilizationLayer(galaxy as GameStateSnapshot['galaxy'], living.hubs);
+  return {
+    galaxy: layer.galaxy,
+    factions: living.factions,
+    hubs: layer.hubs,
+    contracts: living.contracts,
+    news: living.news,
+    locationStates: [],
+    currentHubId: null,
+    localNpcs: layer.localNpcs,
+    civilizationContacts: layer.civilizationContacts,
+    archaeologyChains: layer.archaeologyChains
+  };
 }
 
 function normalizeSnapshot(snapshot: SnapshotCurrent): SnapshotCurrent {
@@ -438,8 +506,10 @@ function normalizeSnapshot(snapshot: SnapshotCurrent): SnapshotCurrent {
     memories: entry.memories.slice(-20)
   }));
 
+  const civilizationLayer = initializeCivilizationLayer(enrichGalaxyCivilizations(snapshot.galaxy as GameStateSnapshot['galaxy']), snapshot.hubs as GameStateSnapshot['hubs']);
   const normalized: SnapshotCurrent = {
     ...snapshot,
+    galaxy: civilizationLayer.galaxy,
     currentSystemId: systemIds.has(snapshot.currentSystemId) ? snapshot.currentSystemId : fallbackSystemId,
     discoveries: snapshot.discoveries.filter((entry) => systemIds.has(entry.systemId)).slice(0, 7_500),
     logs: snapshot.logs.slice(0, 750),
@@ -451,11 +521,14 @@ function normalizeSnapshot(snapshot: SnapshotCurrent): SnapshotCurrent {
     crew,
     crewCandidates: snapshot.crewCandidates.filter((entry) => systemIds.has(entry.originSystemId) && !crewIds.has(entry.id)).slice(0, 12),
     factions: snapshot.factions.slice(0, 100),
-    hubs: snapshot.hubs.filter((hub) => systemIds.has(hub.systemId)).slice(0, 250),
+    hubs: civilizationLayer.hubs.filter((hub) => systemIds.has(hub.systemId)).slice(0, 250),
     contracts: snapshot.contracts.filter((contract) => systemIds.has(contract.targetSystemId)).slice(0, 500),
     news: snapshot.news.filter((entry) => entry.systemIds.every((id) => systemIds.has(id))).slice(0, 500),
     locationStates: snapshot.locationStates.filter((entry) => pointIds.has(entry.pointOfInterestId)).slice(0, 5_000),
-    currentHubId: snapshot.currentHubId && snapshot.hubs.some((hub) => hub.id === snapshot.currentHubId) ? snapshot.currentHubId : null
+    currentHubId: snapshot.currentHubId && snapshot.hubs.some((hub) => hub.id === snapshot.currentHubId) ? snapshot.currentHubId : null,
+    localNpcs: (snapshot.localNpcs.length ? snapshot.localNpcs : civilizationLayer.localNpcs).filter((npc) => civilizationLayer.hubs.some((hub) => hub.id === npc.hubId)).slice(0, 2_000),
+    civilizationContacts: snapshot.civilizationContacts.length ? snapshot.civilizationContacts : civilizationLayer.civilizationContacts,
+    archaeologyChains: snapshot.archaeologyChains.length ? snapshot.archaeologyChains : civilizationLayer.archaeologyChains
   };
 
   normalized.ship.hull = Math.max(0, Math.min(normalized.ship.maxHull, normalized.ship.hull));
@@ -486,8 +559,13 @@ export function parseSnapshot(input: unknown, options: ParseSnapshotOptions = {}
     const previous = snapshotV4Schema.parse(input);
     migrated = { ...previous, ...livingState(previous.galaxy), schemaVersion: CURRENT_SCHEMA_VERSION, saveMeta: { ...previous.saveMeta, appVersion: APP_VERSION, reason: 'migration-v4', checksum: '00000000' } };
     migrated.saveMeta.checksum = computeSnapshotChecksum(migrated);
+  } else if (header.schemaVersion === 5) {
+    const previous = snapshotV5Schema.parse(input);
+    const layer = initializeCivilizationLayer(previous.galaxy as GameStateSnapshot['galaxy'], previous.hubs as GameStateSnapshot['hubs']);
+    migrated = { ...previous, galaxy: layer.galaxy, hubs: layer.hubs, localNpcs: layer.localNpcs, civilizationContacts: layer.civilizationContacts, archaeologyChains: layer.archaeologyChains, schemaVersion: CURRENT_SCHEMA_VERSION, saveMeta: { ...previous.saveMeta, appVersion: APP_VERSION, reason: 'migration-v5', checksum: '00000000' } };
+    migrated.saveMeta.checksum = computeSnapshotChecksum(migrated);
   } else if (header.schemaVersion === CURRENT_SCHEMA_VERSION) {
-    migrated = snapshotV5Schema.parse(input);
+    migrated = snapshotV6Schema.parse(input);
     if (options.verifyChecksum !== false) {
       const expected = computeSnapshotChecksum(migrated);
       if (migrated.saveMeta.checksum !== expected) throw new Error('Контрольная сумма сохранения не совпадает');

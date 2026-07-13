@@ -1,5 +1,20 @@
 # Changelog
 
+## v0.5.0 — Civilizations & Lost Worlds
+
+- added deterministic species biology, cultures, languages, religions, states, social classes and outsider policies;
+- added staged first contact with translation progress, trust, failure and faction consequences;
+- expanded hubs into settlements with districts, customs and persistent local NPCs;
+- added NPC agendas, fears, trust, memories and direct interactions;
+- added archaeology chains for dead civilizations and multi-stage lost-world investigations;
+- added publication, sale and suppression of historical hypotheses;
+- added cultural artifact valuation for markets, museums, heirs and black markets;
+- added a dedicated civilization dossier screen and deeper archive connections;
+- replaced the crowded top navigation with a slide-out side drawer;
+- fixed vertical scrolling across long screens, tabs, maps, archives and mobile layouts;
+- migrated save schema from v5 to v6 while preserving existing ironman saves;
+- added civilization, migration and interface smoke tests.
+
 ## v0.4.0 — Living Galaxy
 
 - added governments, corporations, universities, trade houses, cartels, religious groups and pirates;
