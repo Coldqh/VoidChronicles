@@ -11,6 +11,7 @@ import type {
   Discovery,
   Faction,
   Evidence,
+  EquipmentItem,
   ExpeditionResult,
   Galaxy,
   GameLogEntry,
@@ -22,10 +23,13 @@ import type {
   MarketGood,
   NewsItem,
   PointOfInterest,
+  ResearchProject,
   SaveMetadata,
   ScanReport,
   Ship,
-  StarSystem
+  StarSystem,
+  TechnologyBlueprint,
+  WorldThread
 } from './types';
 import {
   createManualBackup,
@@ -48,8 +52,10 @@ import { buildHypothesis } from '../exploration/hypotheses';
 import { generateCrewCandidates } from '../crew/generateCrew';
 import { generateContracts, generateMarket, generateNews, initializeLivingGalaxy } from '../world/livingGalaxy';
 import { culturalArtifactMultiplier, initializeCivilizationLayer } from '../world/civilizations';
+import { blueprintFromProject, createResearchProject, researchPower } from '../research/technology';
+import { initializeWorldThreads, syncWorldThreads } from '../world/storyThreads';
 
-export type MainScreen = 'menu' | 'command' | 'galaxy' | 'system' | 'hub' | 'contracts' | 'factions' | 'civilizations' | 'crew' | 'archive' | 'ship' | 'settings';
+export type MainScreen = 'menu' | 'command' | 'galaxy' | 'system' | 'hub' | 'contracts' | 'factions' | 'civilizations' | 'crew' | 'archive' | 'laboratory' | 'world' | 'ship' | 'settings';
 export type HydrationStatus = 'idle' | 'loading' | 'ready' | 'error';
 export type SaveStatus = 'idle' | 'pending' | 'saving' | 'saved' | 'error';
 
@@ -79,6 +85,10 @@ interface GameStore {
   localNpcs: LocalNpc[];
   civilizationContacts: CivilizationContact[];
   archaeologyChains: ArchaeologyChain[];
+  researchProjects: ResearchProject[];
+  technologyBlueprints: TechnologyBlueprint[];
+  equipmentInventory: EquipmentItem[];
+  worldThreads: WorldThread[];
   generationActive: boolean;
   hydrationStatus: HydrationStatus;
   saveAvailable: boolean;
@@ -103,6 +113,10 @@ interface GameStore {
   detailedScanPlanet(planetId: string): Promise<{ ok: boolean; message: string }>;
   completeExpedition(result: ExpeditionResult): Promise<void>;
   analyzeArtifact(artifactId: string): Promise<void>;
+  startResearch(artifactId: string): Promise<{ ok: boolean; message: string }>;
+  advanceResearch(projectId: string): Promise<{ ok: boolean; message: string }>;
+  installBlueprint(blueprintId: string): Promise<{ ok: boolean; message: string }>;
+  assignEquipment(itemId: string, targetId?: string): Promise<void>;
   damageShip(amount: number, status?: string): Promise<void>;
   repairShip(): Promise<void>;
   refuelShip(): Promise<void>;
@@ -161,6 +175,12 @@ const initialShip = (): Ship => ({
   ],
   statuses: []
 });
+
+const initialEquipment = (): EquipmentItem[] => ([
+  { id: 'gear_sidearm', name: 'Служебный пистолет', category: 'weapon', rarity: 1, description: 'Надёжное оружие для аварийной защиты.', effect: '+базовая атака в экспедиции', assignedToId: 'captain_player', condition: 100 },
+  { id: 'gear_field_armor', name: 'Полевой скафандр', category: 'armor', rarity: 1, description: 'Изоляция от среды и лёгкая бронезащита.', effect: '-риск травмы от среды', assignedToId: 'captain_player', condition: 100 },
+  { id: 'gear_multiscanner', name: 'Ручной мультисканер', category: 'tool', rarity: 1, description: 'Собирает спектральные и структурные данные.', effect: '+достоверность полевого анализа', condition: 100 }
+]);
 
 const emptySaveMeta = (): SaveMetadata => ({
   savedAt: new Date(0).toISOString(),
@@ -309,6 +329,10 @@ export const useGameStore = create<GameStore>((set, get) => ({
   localNpcs: [],
   civilizationContacts: [],
   archaeologyChains: [],
+  researchProjects: [],
+  technologyBlueprints: [],
+  equipmentInventory: [],
+  worldThreads: [],
   generationActive: false,
   hydrationStatus: 'idle',
   saveAvailable: false,
@@ -361,6 +385,10 @@ export const useGameStore = create<GameStore>((set, get) => ({
           localNpcs: safe.localNpcs,
           civilizationContacts: safe.civilizationContacts,
           archaeologyChains: safe.archaeologyChains,
+          researchProjects: safe.researchProjects,
+          technologyBlueprints: safe.technologyBlueprints,
+          equipmentInventory: safe.equipmentInventory,
+          worldThreads: safe.worldThreads,
           saveMeta: safe.saveMeta ?? null,
           hydrationStatus: 'ready',
           saveAvailable: true,
@@ -422,6 +450,10 @@ export const useGameStore = create<GameStore>((set, get) => ({
         localNpcs: civilizationLayer.localNpcs,
         civilizationContacts: civilizationLayer.civilizationContacts,
         archaeologyChains: civilizationLayer.archaeologyChains,
+        researchProjects: [],
+        technologyBlueprints: [],
+        equipmentInventory: initialEquipment(),
+        worldThreads: initializeWorldThreads(enrichedGalaxy.civilizations, living.factions, civilizationLayer.archaeologyChains, 0),
         logs: [makeLog(0, 'Новая экспедиция', `Корабль «Странник-01» начинает путь из системы ${start.name}.`, 'good')],
         hydrationStatus: 'ready',
         saveAvailable: true,
@@ -450,7 +482,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
         set({
           screen: 'menu', galaxy: null, captain: null, ship: null, currentSystemId: null,
           selectedSystemId: null, gameYear: 0, discoveries: [], logs: [], scanReports: [],
-          pointsOfInterest: [], evidence: [], hypotheses: [], artifactKnowledge: [], crew: [], crewCandidates: [], factions: [], hubs: [], contracts: [], news: [], locationStates: [], currentHubId: null, localNpcs: [], civilizationContacts: [], archaeologyChains: [],
+          pointsOfInterest: [], evidence: [], hypotheses: [], artifactKnowledge: [], crew: [], crewCandidates: [], factions: [], hubs: [], contracts: [], news: [], locationStates: [], currentHubId: null, localNpcs: [], civilizationContacts: [], archaeologyChains: [], researchProjects: [], technologyBlueprints: [], equipmentInventory: [], worldThreads: [],
           hydrationStatus: 'ready', saveAvailable: false, saveError: null,
           saveStatus: 'idle', saveMeta: null, backupCount: 0, recoveryNotice: null
         });
@@ -516,7 +548,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
       }
       const contracts = get().contracts.map((contract) => contract.status === 'active' && nextYear > contract.deadlineYear ? { ...contract, status: 'expired' as const } : contract);
       const newsItem = generateNews(updatedGalaxy.seed, updatedGalaxy.systems, get().hubs, nextYear, get().news.length);
-      set({ galaxy: updatedGalaxy, ship: updatedShip, currentSystemId: target.id, selectedSystemId: target.id, currentHubId: null, gameYear: nextYear, logs, contracts, news: [newsItem, ...get().news].slice(0, 500) });
+      const nextNews = [newsItem, ...get().news].slice(0, 500);
+      const worldThreads = syncWorldThreads(get().worldThreads, contracts, nextNews, get().researchProjects, nextYear);
+      set({ galaxy: updatedGalaxy, ship: updatedShip, currentSystemId: target.id, selectedSystemId: target.id, currentHubId: null, gameYear: nextYear, logs, contracts, news: nextNews, worldThreads });
       await persist(set, get, 'travel');
       return { ok: true, message: 'Перелёт завершён', encounter };
     }, { ok: false, message: 'Другое действие ещё выполняется' });
@@ -808,6 +842,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
         factions,
         locationStates,
         archaeologyChains,
+        worldThreads: syncWorldThreads(get().worldThreads, contracts, get().news, get().researchProjects, gameYear),
         logs
       });
       await persist(set, get, 'expedition');
@@ -844,6 +879,105 @@ export const useGameStore = create<GameStore>((set, get) => ({
       });
       await persist(set, get, 'artifact-analysis');
     }, undefined);
+  },
+  async startResearch(artifactId) {
+    return runExclusive('research-start', set, get, async () => {
+      const { galaxy, ship, captain, gameYear } = get();
+      const artifact = galaxy?.artifacts.find((entry) => entry.id === artifactId);
+      const carried = ship?.cargo.some((item) => item.artifactId === artifactId);
+      if (!galaxy || !ship || !captain || !artifact || !carried) return { ok: false, message: 'Артефакт должен находиться на борту' };
+      if (get().researchProjects.some((entry) => entry.artifactId === artifactId && entry.status !== 'failed')) return { ok: false, message: 'Исследование уже создано' };
+      const cost = 180 + artifact.danger * 25;
+      if (captain.credits < cost) return { ok: false, message: `Нужно ${cost} кредитов на изоляцию и расходники` };
+      const project = createResearchProject(artifact, gameYear);
+      const researchProjects = [project, ...get().researchProjects];
+      set({
+        captain: { ...captain, credits: captain.credits - cost },
+        researchProjects,
+        worldThreads: syncWorldThreads(get().worldThreads, get().contracts, get().news, researchProjects, gameYear),
+        logs: [makeLog(gameYear, 'Запущено исследование', `${artifact.name} помещён в лабораторию. Риск ${project.risk}/10.`, 'info'), ...get().logs]
+      });
+      await persist(set, get, 'research-start');
+      return { ok: true, message: 'Исследование запущено' };
+    }, { ok: false, message: 'Другое действие ещё выполняется' });
+  },
+  async advanceResearch(projectId) {
+    return runExclusive('research-cycle', set, get, async () => {
+      const { galaxy, captain, ship, crew, gameYear } = get();
+      const project = get().researchProjects.find((entry) => entry.id === projectId);
+      const artifact = galaxy?.artifacts.find((entry) => entry.id === project?.artifactId);
+      if (!galaxy || !captain || !ship || !project || !artifact || project.status !== 'active') return { ok: false, message: 'Активное исследование не найдено' };
+      const cost = 90 + project.risk * 18;
+      if (captain.credits < cost) return { ok: false, message: `Нужно ${cost} кредитов на цикл` };
+      const specialists = crew.filter((member) => ['scientist','archaeologist','engineer','doctor','biologist'].includes(member.primaryRole));
+      const rng = createRng(`${galaxy.seed}:${project.id}:${project.progress}:${gameYear}`);
+      const gain = researchPower(specialists) + captain.skills.research * 6 + rng.int(0, 12);
+      const progress = Math.min(project.requiredProgress, project.progress + gain);
+      const complication = rng.chance(Math.min(.48, project.risk * .035));
+      const completed = progress >= project.requiredProgress;
+      const nextYear = gameYear + 1;
+      const nextProject: ResearchProject = {
+        ...project,
+        progress,
+        status: completed ? 'completed' : complication && project.risk >= 9 ? 'failed' : 'active',
+        updatedYear: nextYear,
+        completedYear: completed ? nextYear : project.completedYear,
+        complication: complication ? 'Контур дал нестабильный выброс; часть данных повреждена.' : project.complication,
+        log: [`Цикл ${nextYear}: +${gain} прогресса${complication ? ', зафиксирован сбой' : ''}.`, ...project.log].slice(0, 12)
+      };
+      const researchProjects = [nextProject, ...get().researchProjects.filter((entry) => entry.id !== project.id)];
+      let technologyBlueprints = get().technologyBlueprints;
+      let equipmentInventory = get().equipmentInventory;
+      let knowledge = get().artifactKnowledge;
+      let nextShip = ship;
+      if (completed) {
+        const blueprint = blueprintFromProject(nextProject, artifact, nextYear);
+        blueprint.factionInterest = get().factions.filter((entry) => entry.research >= 45).sort((a, b) => b.research - a.research).slice(0, 3).map((entry) => entry.id);
+        technologyBlueprints = [blueprint, ...technologyBlueprints.filter((entry) => entry.sourceArtifactId !== artifact.id)];
+        if (['medicine','biology','weapons'].includes(blueprint.domain)) {
+          const category = blueprint.domain === 'weapons' ? 'weapon' as const : blueprint.domain === 'medicine' ? 'medical' as const : 'implant' as const;
+          equipmentInventory = [{ id: `gear_${artifact.id}`, name: `Прототип: ${artifact.name}`, category, rarity: blueprint.rarity, description: blueprint.description, effect: blueprint.benefit, sourceArtifactId: artifact.id, condition: 100 }, ...equipmentInventory.filter((entry) => entry.sourceArtifactId !== artifact.id)];
+        }
+        const existing = knowledge.find((entry) => entry.artifactId === artifact.id) ?? { artifactId: artifact.id, level: 1, knownFields: [], notes: [] };
+        knowledge = [{ ...existing, level: 6, knownFields: Array.from(new Set([...existing.knownFields, 'truth', 'properties', 'technology'])), notes: [`Функция восстановлена. Создан чертёж «${blueprint.name}».`, ...existing.notes], revealedTruth: artifact.truth }, ...knowledge.filter((entry) => entry.artifactId !== artifact.id)];
+      } else if (complication) {
+        nextShip = { ...ship, hull: Math.max(1, ship.hull - project.risk * 2), statuses: Array.from(new Set([...ship.statuses, 'лабораторный выброс'])) };
+      }
+      const worldThreads = syncWorldThreads(get().worldThreads, get().contracts, get().news, researchProjects, nextYear).map((thread) => thread.id === `thread_research_${project.id}` ? { ...thread, progress: Math.round(progress / project.requiredProgress * 100), status: completed ? 'resolved' as const : nextProject.status === 'failed' ? 'lost' as const : thread.status, updates: [{ id: `research_update_${project.id}_${nextYear}`, year: nextYear, text: completed ? `Исследование завершено: ${artifact.name}.` : complication ? 'Лабораторный цикл завершился аварийным выбросом.' : `Получены новые данные: ${gain} ед.`, tone: completed ? 'good' as const : complication ? 'danger' as const : 'info' as const }, ...thread.updates].slice(0, 8) } : thread);
+      set({
+        captain: { ...captain, credits: captain.credits - cost }, ship: nextShip, gameYear: nextYear,
+        researchProjects, technologyBlueprints, equipmentInventory, artifactKnowledge: knowledge, worldThreads,
+        logs: [makeLog(nextYear, completed ? 'Технология восстановлена' : complication ? 'Авария в лаборатории' : 'Исследовательский цикл', completed ? `Создан новый технологический чертёж из объекта «${artifact.name}».` : complication ? 'Сбой повредил корпус и остановил часть анализа.' : `${project.title}: ${progress}/${project.requiredProgress}.`, completed ? 'good' : complication ? 'danger' : 'info'), ...get().logs]
+      });
+      await persist(set, get, 'research-cycle');
+      return { ok: true, message: completed ? 'Исследование завершено' : nextProject.status === 'failed' ? 'Проект потерян' : `Прогресс ${progress}/${project.requiredProgress}` };
+    }, { ok: false, message: 'Другое действие ещё выполняется' });
+  },
+  async installBlueprint(blueprintId) {
+    return runExclusive('blueprint-install', set, get, async () => {
+      const { captain, ship, gameYear } = get();
+      const blueprint = get().technologyBlueprints.find((entry) => entry.id === blueprintId);
+      if (!captain || !ship || !blueprint || blueprint.status === 'installed') return { ok: false, message: 'Чертёж недоступен' };
+      if (captain.credits < blueprint.installCost) return { ok: false, message: `Нужно ${blueprint.installCost} кредитов` };
+      const module = { id: `module_${blueprint.id}`, name: blueprint.name, slot: blueprint.moduleSlot, rarity: blueprint.rarity, effect: `${blueprint.benefit}; недостаток: ${blueprint.drawback}` };
+      let nextShip = { ...ship, modules: [...ship.modules.filter((entry) => entry.id !== module.id), module] };
+      if (blueprint.domain === 'propulsion') nextShip = { ...nextShip, jumpRange: nextShip.jumpRange + 45 };
+      if (blueprint.domain === 'energy') nextShip = { ...nextShip, maxFuel: nextShip.maxFuel + 15, fuel: nextShip.fuel + 15 };
+      if (blueprint.domain === 'materials') nextShip = { ...nextShip, maxHull: nextShip.maxHull + 20, hull: nextShip.hull + 20 };
+      const technologyBlueprints = get().technologyBlueprints.map((entry) => entry.id === blueprint.id ? { ...entry, status: 'installed' as const } : entry);
+      set({
+        captain: { ...captain, credits: captain.credits - blueprint.installCost }, ship: nextShip, technologyBlueprints,
+        logs: [makeLog(gameYear, 'Экспериментальный модуль установлен', `${blueprint.name}: ${blueprint.benefit}.`, blueprint.status === 'restricted' ? 'warning' : 'good'), ...get().logs]
+      });
+      await persist(set, get, 'blueprint-install');
+      return { ok: true, message: 'Модуль установлен' };
+    }, { ok: false, message: 'Другое действие ещё выполняется' });
+  },
+  async assignEquipment(itemId, targetId = 'captain_player') {
+    const item = get().equipmentInventory.find((entry) => entry.id === itemId);
+    if (!item) return;
+    set({ equipmentInventory: get().equipmentInventory.map((entry) => entry.id === itemId ? { ...entry, assignedToId: targetId } : entry.assignedToId === targetId && entry.category === item.category ? { ...entry, assignedToId: undefined } : entry) });
+    await persist(set, get, 'equipment-assignment');
   },
   async damageShip(amount, status) {
     const ship = get().ship;
@@ -1141,10 +1275,21 @@ export const useGameStore = create<GameStore>((set, get) => ({
       const related = factions.find((faction) => faction.civilizationId === civilizationId);
       if (related) factions = adjustFactionStanding(factions, related.id, gameYear, 'first-contact', success ? 3 : -3, success ? 'Капитан установил корректный канал связи.' : 'Попытка контакта вызвала подозрение.');
       const headline = success ? `Контакт с ${civilization.name} продвинут` : `Связь с ${civilization.name} сорвана`;
+      const nextNews = [{ id: `news_contact_${civilizationId}_${gameYear}_${contact.attempts}`, year: gameYear, headline, text: success ? 'Получен ответ и новые языковые данные.' : 'Стороны неверно истолковали сигналы друг друга.', category: 'politics' as const, reliability: 96, systemIds: [currentSystemId] }, ...get().news].slice(0, 500);
+      const existingThread = get().worldThreads.find((thread) => thread.id === `thread_contact_${civilizationId}`);
+      const contactThread = {
+        id: `thread_contact_${civilizationId}`, category: 'culture' as const, status: success ? 'active' as const : 'escalating' as const,
+        title: `Контакт: ${civilization.name}`, summary: success ? 'Стороны постепенно создают общий язык и правила взаимодействия.' : 'Ошибка интерпретации усилила подозрение и может закрыть систему для чужаков.',
+        urgency: success ? 35 : 72, progress: Math.min(100, nextContact.attempts * 18 + nextContact.languageLevel * 10), systemIds: [currentSystemId], civilizationIds: [civilizationId], factionIds: related ? [related.id] : [], relatedArtifactIds: [], playerInvolved: true,
+        nextAction: success ? 'Продолжить языковой и дипломатический обмен.' : 'Сменить подход или привлечь дипломата.',
+        updates: [{ id: `contact_thread_update_${civilizationId}_${gameYear}_${contact.attempts}`, year: gameYear, text: headline, tone: success ? 'good' as const : 'warning' as const }, ...(existingThread?.updates ?? [])].slice(0, 8)
+      };
+      const worldThreads = [contactThread, ...get().worldThreads.filter((thread) => thread.id !== contactThread.id)];
       set({
         civilizationContacts: [nextContact, ...get().civilizationContacts.filter((entry) => entry.civilizationId !== civilizationId)],
         factions,
-        news: [{ id: `news_contact_${civilizationId}_${gameYear}_${contact.attempts}`, year: gameYear, headline, text: success ? 'Получен ответ и новые языковые данные.' : 'Стороны неверно истолковали сигналы друг друга.', category: 'politics' as const, reliability: 96, systemIds: [currentSystemId] }, ...get().news].slice(0, 500),
+        news: nextNews,
+        worldThreads,
         logs: [makeLog(gameYear, headline, success ? `Уровень понимания языка: ${nextContact.languageLevel}/5.` : 'Повторная попытка потребует другого подхода.', success ? 'good' : 'warning'), ...get().logs]
       });
       await persist(set, get, 'first-contact');
@@ -1187,11 +1332,15 @@ export const useGameStore = create<GameStore>((set, get) => ({
       let factions = get().factions;
       if (beneficiary) factions = adjustFactionStanding(factions, beneficiary.id, get().gameYear, `hypothesis-${disposition}`, disposition === 'suppressed' ? 2 : 6, `Получена версия «${hypothesis.title}».`);
       const updated = { ...hypothesis, disposition, beneficiaryFactionId: beneficiary?.id, resolvedYear: get().gameYear };
+      const nextNews = disposition === 'published' ? [{ id: `news_hypothesis_${hypothesisId}`, year: get().gameYear, headline: `Опубликована гипотеза: ${hypothesis.title}`, text: hypothesis.summary, category: 'discovery' as const, reliability: hypothesis.confidence, systemIds: point ? [point.systemId] : [] }, ...get().news].slice(0, 500) : get().news;
+      const threadId = `thread_hypothesis_${hypothesis.id}`;
+      const worldThreads = [{ id: threadId, category: 'discovery' as const, status: 'resolved' as const, title: hypothesis.title, summary: hypothesis.summary, urgency: hypothesis.confidence, progress: 100, systemIds: point ? [point.systemId] : [], civilizationIds: civilizationId ? [civilizationId] : [], factionIds: beneficiary ? [beneficiary.id] : [], relatedArtifactIds: [], playerInvolved: true, nextAction: disposition === 'published' ? 'Следить за политической и научной реакцией.' : disposition === 'sold' ? 'Наблюдать за действиями покупателя.' : 'Сохранить доказательства в безопасности.', updates: [{ id: `thread_hypothesis_update_${hypothesis.id}`, year: get().gameYear, text: disposition === 'published' ? 'Версия опубликована и стала частью публичной истории.' : disposition === 'sold' ? 'Контроль над материалами перешёл к покупателю.' : 'Материалы исключены из открытого архива.', tone: disposition === 'published' ? 'good' as const : 'info' as const }] }, ...get().worldThreads.filter((thread) => thread.id !== threadId)];
       set({
         hypotheses: [updated, ...get().hypotheses.filter((entry) => entry.id !== hypothesisId)],
         factions,
         captain: { ...captain, credits: captain.credits + payment, reputation: captain.reputation + (disposition === 'published' ? 3 : 0) },
-        news: disposition === 'published' ? [{ id: `news_hypothesis_${hypothesisId}`, year: get().gameYear, headline: `Опубликована гипотеза: ${hypothesis.title}`, text: hypothesis.summary, category: 'discovery' as const, reliability: hypothesis.confidence, systemIds: point ? [point.systemId] : [] }, ...get().news].slice(0, 500) : get().news,
+        news: nextNews,
+        worldThreads,
         logs: [makeLog(get().gameYear, 'Решение по гипотезе', disposition === 'sold' ? `Материалы проданы за ${payment} кредитов.` : disposition === 'published' ? 'Материалы опубликованы в открытой сети.' : 'Материалы скрыты в личном архиве.', disposition === 'published' ? 'good' : 'info'), ...get().logs]
       });
       await persist(set, get, 'hypothesis-resolution');
@@ -1250,6 +1399,10 @@ export const useGameStore = create<GameStore>((set, get) => ({
         localNpcs: safe.localNpcs,
         civilizationContacts: safe.civilizationContacts,
         archaeologyChains: safe.archaeologyChains,
+        researchProjects: safe.researchProjects,
+        technologyBlueprints: safe.technologyBlueprints,
+        equipmentInventory: safe.equipmentInventory,
+        worldThreads: safe.worldThreads,
         saveMeta: safe.saveMeta ?? null,
         hydrationStatus: 'ready',
         saveAvailable: true,
@@ -1263,7 +1416,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   getSnapshot() {
     const {
       galaxy, captain, ship, currentSystemId, gameYear, discoveries, logs, saveMeta,
-      scanReports, pointsOfInterest, evidence, hypotheses, artifactKnowledge, crew, crewCandidates, factions, hubs, contracts, news, locationStates, currentHubId, localNpcs, civilizationContacts, archaeologyChains
+      scanReports, pointsOfInterest, evidence, hypotheses, artifactKnowledge, crew, crewCandidates, factions, hubs, contracts, news, locationStates, currentHubId, localNpcs, civilizationContacts, archaeologyChains, researchProjects, technologyBlueprints, equipmentInventory, worldThreads
     } = get();
     if (!galaxy || !captain || !ship || !currentSystemId) return null;
     return {
@@ -1291,7 +1444,11 @@ export const useGameStore = create<GameStore>((set, get) => ({
       currentHubId,
       localNpcs,
       civilizationContacts,
-      archaeologyChains
+      archaeologyChains,
+      researchProjects,
+      technologyBlueprints,
+      equipmentInventory,
+      worldThreads
     };
   }
 }));

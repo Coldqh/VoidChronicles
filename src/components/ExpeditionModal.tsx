@@ -4,6 +4,7 @@ import type {
   CrewMember,
   EquipmentId,
   EvidenceDraft,
+  EquipmentItem,
   ExpeditionResult,
   LocationState,
   Planet,
@@ -19,6 +20,7 @@ interface Props {
   point: PointOfInterest;
   artifact?: Artifact;
   crew: CrewMember[];
+  personalEquipment: EquipmentItem[];
   locationState?: LocationState;
   onClose(): void;
   onComplete(result: ExpeditionResult): void | Promise<void>;
@@ -27,7 +29,7 @@ interface Props {
 type Phase = 'loadout' | 'field' | 'debrief';
 const DEFAULT_LOADOUT: EquipmentId[] = ['pistol', 'armor', 'scanner', 'medkit', 'oxygen'];
 
-export function ExpeditionModal({ seed, planet, point, artifact, crew, locationState, onClose, onComplete }: Props) {
+export function ExpeditionModal({ seed, planet, point, artifact, crew, personalEquipment, locationState, onClose, onComplete }: Props) {
   const [phase, setPhase] = useState<Phase>('loadout');
   const [selected, setSelected] = useState<EquipmentId[]>(DEFAULT_LOADOUT);
   const [selectedCrewIds, setSelectedCrewIds] = useState<string[]>([]);
@@ -43,11 +45,16 @@ export function ExpeditionModal({ seed, planet, point, artifact, crew, locationS
   const [isLeaving, setIsLeaving] = useState(false);
 
   const selectedCrew = crew.filter((member) => selectedCrewIds.includes(member.id));
+  const issuedEquipment = personalEquipment.filter((item) => item.assignedToId === 'captain_player' || selectedCrewIds.includes(item.assignedToId ?? ''));
+  const personalCombatBonus = issuedEquipment.filter((item) => item.category === 'weapon' || item.category === 'implant').reduce((sum, item) => sum + item.rarity * 3, 0);
+  const personalEvidenceBonus = issuedEquipment.filter((item) => item.category === 'tool' || item.category === 'relic').reduce((sum, item) => sum + item.rarity * 3, 0);
+  const personalHealingBonus = issuedEquipment.filter((item) => item.category === 'medical').reduce((sum, item) => sum + item.rarity * 4, 0);
+  const personalArmorBonus = issuedEquipment.filter((item) => item.category === 'armor' || item.category === 'implant').reduce((sum, item) => sum + item.rarity * 2, 0);
   const roleBonuses = selectedCrew.flatMap((member) => [crewRoleBonus(member.primaryRole), ...(member.secondaryRole ? [crewRoleBonus(member.secondaryRole)] : [])]);
   const equipmentSubstitutes = new Set(roleBonuses.map((bonus) => bonus.equipment).filter(Boolean));
-  const combatBonus = roleBonuses.reduce((sum, bonus) => sum + (bonus.combat ?? 0), 0);
-  const evidenceBonus = roleBonuses.reduce((sum, bonus) => sum + (bonus.evidence ?? 0), 0);
-  const healingBonus = roleBonuses.reduce((sum, bonus) => sum + (bonus.healing ?? 0), 0);
+  const combatBonus = roleBonuses.reduce((sum, bonus) => sum + (bonus.combat ?? 0), 0) + personalCombatBonus;
+  const evidenceBonus = roleBonuses.reduce((sum, bonus) => sum + (bonus.evidence ?? 0), 0) + personalEvidenceBonus;
+  const healingBonus = roleBonuses.reduce((sum, bonus) => sum + (bonus.healing ?? 0), 0) + personalHealingBonus;
   const crewTurnBonus = roleBonuses.reduce((sum, bonus) => sum + (bonus.turns ?? 0), 0);
   const capacity = 9 + selectedCrew.length * 2;
   const usedWeight = equipmentWeight(selected);
@@ -118,7 +125,7 @@ export function ExpeditionModal({ seed, planet, point, artifact, crew, locationS
     } else {
       nextMap.player = { x, y };
       if (tile.kind === 'hazard') {
-        const damage = has('armor') ? 4 : 10;
+        const damage = Math.max(1, (has('armor') ? 4 : 10) - personalArmorBonus);
         nextHealth -= damage;
         nextLog.unshift(`${map.hazardName}: получено ${damage} урона.`);
       }
@@ -130,7 +137,7 @@ export function ExpeditionModal({ seed, planet, point, artifact, crew, locationS
     for (const enemy of nextMap.enemies.filter((entry) => entry.health > 0)) {
       occupied.delete(`${enemy.x}:${enemy.y}`);
       if (distance(enemy, nextMap.player) <= 2) {
-        const damage = Math.max(3, enemy.damage - (has('armor') ? 5 : 0));
+        const damage = Math.max(1, enemy.damage - (has('armor') ? 5 : 0) - personalArmorBonus);
         nextHealth -= damage;
         nextLog.unshift(`${enemy.name} атакует. Получено ${damage} урона.`);
       } else {
@@ -157,7 +164,7 @@ export function ExpeditionModal({ seed, planet, point, artifact, crew, locationS
     }));
     const nextTurns = turns + 1;
     if (nextTurns >= turnsLimit) {
-      const damage = has('armor') ? 7 : 15;
+      const damage = Math.max(1, (has('armor') ? 7 : 15) - personalArmorBonus);
       nextHealth -= damage;
       nextLog.unshift(`Безопасное окно закрыто. ${map.hazardName}: ${damage} урона.`);
     }
@@ -222,6 +229,7 @@ export function ExpeditionModal({ seed, planet, point, artifact, crew, locationS
       <header><div><span className="eyebrow">ПОДГОТОВКА ЭКСПЕДИЦИИ</span><h2>{point.name}</h2><p>{point.publicSummary}</p></div><button className="icon-button" onClick={onClose}>×</button></header>
       <div className="mission-brief"><div><b>Память локации</b><span>{locationState ? `визитов ${locationState.visitCount} · живых угроз ${locationState.enemyStates.filter((enemy) => enemy.health > 0).length}` : 'первый заход'}</span></div><div><b>Среда</b><span>{planet.type} · {planet.danger}</span></div><div><b>Оценка угрозы</b><span>{point.danger}</span></div><div><b>Скан</b><span>{point.scanConfidence}%</span></div><div><b>Возможная добыча</b><span>{point.possibleRewards.join(', ')}</span></div></div>
       <section className="crew-selection"><h3>Экспедиционная группа · капитан + {selectedCrew.length}</h3><div className="crew-selection-grid">{crew.length === 0 ? <p>Напарников нет. Высадка будет одиночной.</p> : crew.map((member) => <button key={member.id} className={selectedCrewIds.includes(member.id) ? 'selected' : ''} onClick={() => toggleCrew(member.id)}><b>{member.name}</b><span>{roleLabel(member.primaryRole)} · мораль {member.morale}</span></button>)}</div></section>
+      <section className="issued-equipment"><h3>Выданное личное снаряжение</h3>{issuedEquipment.length === 0 ? <p>Закреплённого снаряжения нет. Используется стандартный экспедиционный комплект.</p> : <div className="issued-equipment-grid">{issuedEquipment.map((item) => <article key={item.id}><span className="eyebrow">{item.category} · R{item.rarity}</span><b>{item.name}</b><p>{item.description}</p></article>)}</div>}<small>Бонусы: бой +{personalCombatBonus} · анализ +{personalEvidenceBonus} · лечение +{personalHealingBonus} · защита +{personalArmorBonus}</small></section>
       <div className="loadout-grid">{EQUIPMENT.map((item) => <button key={item.id} className={selected.includes(item.id) ? 'selected' : ''} onClick={() => toggle(item.id)}><b>{item.name}</b><span>{item.description}</span><em>{item.weight} ед.</em></button>)}</div>
       <footer className="loadout-footer"><span>Масса: {usedWeight}/{capacity} · группа {selectedCrew.length + 1}</span><button className="primary-button" onClick={() => setPhase('field')}>Начать высадку</button></footer>
     </section></div>;

@@ -14,6 +14,12 @@ export type CrewStatus = 'active' | 'injured' | 'unpaid' | 'missing';
 export type ContactStage = 'unknown' | 'observed' | 'signals' | 'translated' | 'contacted' | 'trusted' | 'failed';
 export type LocalNpcRole = 'administrator' | 'merchant' | 'scientist' | 'doctor' | 'fixer' | 'priest' | 'guard' | 'resident';
 export type HypothesisDisposition = 'private' | 'published' | 'sold' | 'suppressed';
+export type TechnologyDomain = 'energy' | 'propulsion' | 'medicine' | 'materials' | 'computing' | 'weapons' | 'biology' | 'anomaly';
+export type ResearchStatus = 'queued' | 'active' | 'completed' | 'failed';
+export type BlueprintStatus = 'discovered' | 'available' | 'installed' | 'restricted';
+export type WorldThreadCategory = 'politics' | 'discovery' | 'conflict' | 'culture' | 'research' | 'crew';
+export type WorldThreadStatus = 'emerging' | 'active' | 'escalating' | 'resolved' | 'lost';
+export type EquipmentCategory = 'weapon' | 'armor' | 'tool' | 'medical' | 'implant' | 'relic';
 
 export interface GalaxySettings {
   seed: string;
@@ -369,6 +375,75 @@ export interface ArtifactKnowledge {
   revealedTruth?: string;
 }
 
+export interface ResearchProject {
+  id: string;
+  artifactId: string;
+  title: string;
+  domain: TechnologyDomain;
+  status: ResearchStatus;
+  progress: number;
+  requiredProgress: number;
+  risk: number;
+  assignedCrewIds: string[];
+  startedYear: number;
+  updatedYear: number;
+  completedYear?: number;
+  complication?: string;
+  log: string[];
+}
+
+export interface TechnologyBlueprint {
+  id: string;
+  sourceArtifactId: string;
+  name: string;
+  domain: TechnologyDomain;
+  status: BlueprintStatus;
+  rarity: number;
+  description: string;
+  benefit: string;
+  drawback: string;
+  installCost: number;
+  moduleSlot: ShipModule['slot'];
+  factionInterest: string[];
+  discoveredYear: number;
+}
+
+export interface EquipmentItem {
+  id: string;
+  name: string;
+  category: EquipmentCategory;
+  rarity: number;
+  description: string;
+  effect: string;
+  assignedToId?: string;
+  sourceArtifactId?: string;
+  condition: number;
+}
+
+export interface WorldThreadUpdate {
+  id: string;
+  year: number;
+  text: string;
+  tone: GameLogEntry['tone'];
+}
+
+export interface WorldThread {
+  id: string;
+  category: WorldThreadCategory;
+  status: WorldThreadStatus;
+  title: string;
+  summary: string;
+  urgency: number;
+  progress: number;
+  systemIds: string[];
+  civilizationIds: string[];
+  factionIds: string[];
+  relatedArtifactIds: string[];
+  playerInvolved: boolean;
+  nextAction?: string;
+  updates: WorldThreadUpdate[];
+}
+
 
 export type FactionKind = 'government' | 'corporation' | 'university' | 'cartel' | 'tradeHouse' | 'religious' | 'pirates';
 export type FactionDisposition = 'friendly' | 'neutral' | 'wary' | 'hostile';
@@ -600,4 +675,8 @@ export interface GameStateSnapshot {
   localNpcs: LocalNpc[];
   civilizationContacts: CivilizationContact[];
   archaeologyChains: ArchaeologyChain[];
+  researchProjects: ResearchProject[];
+  technologyBlueprints: TechnologyBlueprint[];
+  equipmentInventory: EquipmentItem[];
+  worldThreads: WorldThread[];
 }

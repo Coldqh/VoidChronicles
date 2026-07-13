@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.6.0 — Relics, Technology & Living World
+
+- added a ship laboratory with multi-cycle artifact research, specialist bonuses, costs, risks and accidents;
+- added technology domains, recovered blueprints, prototype equipment and installable ship modifications;
+- connected equipment assignment to expedition combat, evidence quality, healing and damage mitigation;
+- added persistent world threads for discoveries, faction conflicts, civilization changes, archaeology and research;
+- rebuilt the Command Deck around current decisions, opportunities, urgent situations and visible consequences;
+- added dedicated Living World and Laboratory screens with actionable navigation into related systems;
+- upgraded civilization dossiers, expedition preparation and bridge summaries to explain context instead of listing raw data;
+- migrated save schema from v6 to v7 while preserving existing ironman saves;
+- expanded deterministic research, world-thread, migration and UI tests; total suite: 32 tests.
+
 ## v0.5.0 — Civilizations & Lost Worlds
 
 - added deterministic species biology, cultures, languages, religions, states, social classes and outsider policies;

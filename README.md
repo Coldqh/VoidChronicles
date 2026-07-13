@@ -2,15 +2,16 @@
 
 Procedural single-player space exploration roguelike built with React, TypeScript and Canvas.
 
-## v0.5 Civilizations & Lost Worlds
+## v0.6 Relics, Technology & Living World
 
-- generated species biology, cultures, languages, religions, states and social structures;
-- staged first contact with translation, trust and political consequences;
-- populated hubs with districts, customs and persistent local NPCs;
-- archaeology chains, lost-world investigations and actionable hypotheses;
-- cultural artifact ownership and different values for markets, museums and heirs;
-- slide-out side navigation and reliable vertical scrolling on desktop and mobile;
-- save schema v6 with automatic migration from older ironman saves.
+- connected artifact recovery to laboratory research, risky experiments, blueprints and installed ship upgrades;
+- added personal equipment assignment that changes combat, analysis, healing and protection during expeditions;
+- added technology domains and civilization-specific research outcomes instead of one linear tech tree;
+- added persistent world threads that turn discoveries, political conflicts and research into ongoing situations;
+- rebuilt the Command Deck around decisions, active opportunities, urgent processes and recent consequences;
+- added dedicated Living World and Laboratory screens with direct routes to related systems;
+- upgraded civilization dossiers and expedition briefings so data explains why it matters and what the player can do;
+- migrated save schema from v6 to v7 while preserving existing ironman saves.
 
 ## Development
 
