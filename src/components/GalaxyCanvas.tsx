@@ -15,7 +15,7 @@ export function GalaxyCanvas({ systems, currentSystemId, selectedSystemId, jumpR
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [view, setView] = useState<ViewState>({ x: 0, y: 0, zoom: 0.72 });
   const [canvasVersion, setCanvasVersion] = useState(0);
-  const drag = useRef<{ x: number; y: number; vx: number; vy: number } | null>(null);
+  const drag = useRef<{ x: number; y: number; vx: number; vy: number; pointerType: string; panning: boolean } | null>(null);
   const systemIndex = useMemo(() => new Map(systems.map((system) => [system.id, system])), [systems]);
   const current = systemIndex.get(currentSystemId);
 
@@ -112,6 +112,9 @@ export function GalaxyCanvas({ systems, currentSystemId, selectedSystemId, jumpR
     const observer = new ResizeObserver(() => setCanvasVersion((value) => value + 1));
     observer.observe(canvas);
     const onWheel = (event: WheelEvent) => {
+      // Ordinary wheel/trackpad movement must keep scrolling the page.
+      // Hold Ctrl/Cmd to zoom the galactic map deliberately.
+      if (!event.ctrlKey && !event.metaKey) return;
       event.preventDefault();
       setView((old) => ({ ...old, zoom: Math.max(0.25, Math.min(2.8, old.zoom * (event.deltaY > 0 ? 0.9 : 1.1))) }));
     };
@@ -139,24 +142,47 @@ export function GalaxyCanvas({ systems, currentSystemId, selectedSystemId, jumpR
   return <canvas
     ref={canvasRef}
     className="galaxy-canvas"
+    aria-label="Карта галактики. Прокручивай страницу вертикально; веди пальцем по горизонтали, чтобы двигать карту."
     onPointerDown={(event) => {
-      drag.current = { x: event.clientX, y: event.clientY, vx: view.x, vy: view.y };
-      event.currentTarget.setPointerCapture(event.pointerId);
+      const touch = event.pointerType === 'touch';
+      drag.current = { x: event.clientX, y: event.clientY, vx: view.x, vy: view.y, pointerType: event.pointerType, panning: !touch };
+      if (!touch) event.currentTarget.setPointerCapture(event.pointerId);
     }}
     onPointerMove={(event) => {
-      if (!drag.current) return;
-      const dx = (event.clientX - drag.current.x) / view.zoom;
-      const dy = (event.clientY - drag.current.y) / view.zoom;
-      setView((old) => ({ ...old, x: drag.current!.vx + dx, y: drag.current!.vy + dy }));
+      const started = drag.current;
+      if (!started) return;
+      const rawX = event.clientX - started.x;
+      const rawY = event.clientY - started.y;
+
+      if (started.pointerType === 'touch' && !started.panning) {
+        // Vertical touch movement belongs to the page. Horizontal movement controls the map.
+        if (Math.abs(rawY) > Math.abs(rawX) + 6 && Math.abs(rawY) > 8) {
+          drag.current = null;
+          return;
+        }
+        if (Math.abs(rawX) < 10 || Math.abs(rawX) <= Math.abs(rawY)) return;
+        started.panning = true;
+        event.currentTarget.setPointerCapture(event.pointerId);
+      }
+
+      if (!started.panning) return;
+      event.preventDefault();
+      const dx = rawX / view.zoom;
+      const dy = rawY / view.zoom;
+      setView((old) => ({ ...old, x: started.vx + dx, y: started.vy + dy }));
     }}
     onPointerUp={(event) => {
       const started = drag.current;
       drag.current = null;
-      if (started && Math.hypot(event.clientX - started.x, event.clientY - started.y) < 6) {
+      if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+      if (started && Math.hypot(event.clientX - started.x, event.clientY - started.y) < 7) {
         const system = findSystem(event.clientX, event.clientY);
         if (system) onSelect(system.id);
       }
     }}
-    onPointerCancel={() => { drag.current = null; }}
+    onPointerCancel={(event) => {
+      drag.current = null;
+      if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+    }}
   />;
 }

@@ -1,8 +1,16 @@
 # Void Chronicles
 
-**Current version: v0.9.2 — Responsive Shell**
+**Current version: v0.9.3 — Adaptive Interface**
 
 Procedural single-player space exploration roguelike built with React, TypeScript and Canvas.
+
+## v0.9.3 Adaptive Interface
+
+- one vertical scroll flow on phones and tablets;
+- no document-level horizontal scrolling or tab rails;
+- circular responsive star-system orbits on every viewport;
+- galaxy-map gestures no longer block normal page scrolling;
+- separate density rules for phone, tablet, laptop and wide desktop screens.
 
 ## v0.9.2 Responsive Shell
 

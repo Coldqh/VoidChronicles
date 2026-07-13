@@ -29,6 +29,7 @@ const WorldScreen = lazy(() => import('./screens/WorldScreen').then((module) => 
 const OperationsScreen = lazy(() => import('./screens/OperationsScreen').then((module) => ({ default: module.OperationsScreen })));
 import { ChronicleScreen, ContinuityScreen } from './screens/LegacyScreen';
 import './styles/app.css';
+import './styles/adaptive.css';
 
 const defaultSettings: GalaxySettings = {
   seed: 'VOID-CHRONICLES-005',
@@ -196,7 +197,6 @@ function AppChrome() {
       <button className={store.screen === 'command' ? 'active' : ''} onClick={() => navigate('command')} aria-label="Мостик"><i>⌂</i><span>Мостик</span></button>
       <button className={store.screen === 'system' ? 'active' : ''} onClick={() => navigate('system')} aria-label="Система"><i>◎</i><span>Система</span></button>
       <button className={store.screen === 'galaxy' ? 'active' : ''} onClick={() => navigate('galaxy')} aria-label="Галактика"><i>✦</i><span>Галактика</span></button>
-      <button className={store.screen === 'operations' ? 'active' : ''} onClick={() => navigate('operations')} aria-label="Операции"><i>⚔</i><span>Операции</span></button>
       <button onClick={() => setOpen(true)} aria-label="Открыть все разделы"><i>☰</i><span>Разделы</span></button>
     </nav>
   </>;

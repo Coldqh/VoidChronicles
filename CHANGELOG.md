@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.9.3 — Adaptive Interface
+
+- replaced the failed horizontal mobile layout with one vertical document flow;
+- rebuilt the star-system map with percentage-based circular orbits instead of fixed 620 px geometry;
+- removed document-level horizontal rails and made tabs wrap into readable rows;
+- allowed ordinary touch and trackpad gestures over the galaxy map to keep scrolling the page;
+- reserved map panning for deliberate horizontal touch movement and Ctrl/Cmd-wheel zoom;
+- reduced the phone dock from five actions to four and simplified phone HUD density;
+- added phone, tablet, laptop and desktop layout regression checks;
+- kept save schema v10 unchanged; total suite: 53 tests.
+
 ## v0.9.2 — Responsive Shell
 
 - replaced the fixed-height global layout with a scroll-safe responsive application shell;
