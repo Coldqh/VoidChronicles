@@ -2,16 +2,16 @@
 
 Procedural single-player space exploration roguelike built with React, TypeScript and Canvas.
 
-## v0.7 Encounters & Consequences
+## v0.8 War, Pursuit & Ship Operations
 
-- added playable narrative scenes with concrete participants, locations, risks and choices;
-- added delayed consequences that return after later jumps and years;
-- added active objectives created by scenes instead of raw data lists;
-- added travel and hub encounters that react to local factions and settlements;
-- added a modern seven-step onboarding flow with a creation-screen opt-out;
-- rebuilt the visual language around cinematic scenes, layered glass, responsive spatial navigation and animated system feedback;
-- added lazy-loaded world and laboratory screens;
-- migrated save schema from v7 to v8 while preserving existing ironman saves.
+- ship contacts begin with intent, demands and incomplete information instead of automatic gunfire;
+- tactical ship combat uses range, engines, reactor, weapons, sensors, communications, life support and cargo damage;
+- disabled targets can be boarded for prisoners, cargo, sabotage or capture;
+- pursuit records track who knows the captain, transponder and ship profile;
+- local wars affect systems, routes and the contacts generated during travel;
+- defeat can lead to capture, debt, confiscation and emergency recovery instead of always ending the run;
+- active battles and damaged systems survive refreshes and version updates through save schema v9;
+- heavy dependencies are split into production chunks for faster loading.
 
 ## Development
 

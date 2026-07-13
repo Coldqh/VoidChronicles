@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.8.0 — War, Pursuit & Ship Operations
+
+- replaced instant random ship battles with a contact phase: patrols, pirates, traders, refugees, researchers, smugglers, military vessels and bounty hunters;
+- added documents, bribery, hidden cargo, aid, surrender, communication, escape and first-strike responses before combat;
+- rebuilt ship combat around range, targeted subsystem damage, evasion, emergency jumps, negotiation and boarding conditions;
+- added persistent ship systems for engines, reactor, weapons, sensors, communications, life support and cargo;
+- added boarding operations for the bridge, cargo hold, prisoners and reactor sabotage;
+- added defeat outcomes that can preserve the run through capture, cargo loss, debt and emergency repairs;
+- added concrete pursuit records showing who is hunting the player and what information they know;
+- added transponder replacement and partial pursuit reduction;
+- added local war fronts that advance during travel and increase contact danger in contested systems;
+- added a dedicated Operations screen and integrated threat summaries into the Command Deck and ship dossier;
+- persisted active combat, pursuits, war fronts and subsystem damage in ironman saves;
+- migrated save schema from v8 to v9 and added mid-combat restoration coverage;
+- split React, state and validation libraries into separate production chunks; test suite: 46 tests.
+
 ## v0.7.1 — Clarity & Persistence
 
 - mirrored every ironman autosave into a synchronous browser rescue copy;

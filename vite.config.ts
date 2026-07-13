@@ -3,6 +3,18 @@ import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 
 export default defineConfig({
+  build: {
+    rolldownOptions: {
+      output: {
+        manualChunks: (id: string) => {
+          if (id.includes('/node_modules/react') || id.includes('/node_modules/react-dom')) return 'react';
+          if (id.includes('/node_modules/zustand') || id.includes('/node_modules/dexie')) return 'state';
+          if (id.includes('/node_modules/zod')) return 'validation';
+          return undefined;
+        }
+      }
+    }
+  },
   define: { __BUILD_TIME__: JSON.stringify(new Date().toISOString()) },
   base: '/VoidChronicles/',
   plugins: [

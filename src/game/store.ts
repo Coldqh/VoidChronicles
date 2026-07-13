@@ -26,13 +26,17 @@ import type {
   PlayerObjective,
   PendingConsequence,
   ResearchProject,
+  PursuitRecord,
   SaveMetadata,
   ScanReport,
   Ship,
+  ShipEncounterState,
+  ShipSystemId,
   StarSystem,
   StoryScene,
   TutorialState,
   TechnologyBlueprint,
+  WarFront,
   WorldThread
 } from './types';
 import {
@@ -58,9 +62,10 @@ import { generateContracts, generateMarket, generateNews, initializeLivingGalaxy
 import { culturalArtifactMultiplier, initializeCivilizationLayer } from '../world/civilizations';
 import { blueprintFromProject, createResearchProject, researchPower } from '../research/technology';
 import { initializeWorldThreads, syncWorldThreads } from '../world/storyThreads';
+import { advanceWarFronts, createShipSystems, createTravelEncounter, damageSystem, initializeWarFronts, normalizeShipSystems, systemIntegrity } from '../world/warfare';
 import { generateHubScene, generateTravelScene, initializeNarrative, processDueConsequences } from '../narrative/encounters';
 
-export type MainScreen = 'menu' | 'command' | 'encounters' | 'galaxy' | 'system' | 'hub' | 'contracts' | 'factions' | 'civilizations' | 'crew' | 'archive' | 'laboratory' | 'world' | 'ship' | 'settings';
+export type MainScreen = 'menu' | 'command' | 'encounters' | 'galaxy' | 'system' | 'hub' | 'contracts' | 'factions' | 'civilizations' | 'crew' | 'archive' | 'laboratory' | 'world' | 'operations' | 'ship' | 'settings';
 export type HydrationStatus = 'idle' | 'loading' | 'ready' | 'error';
 export type SaveStatus = 'idle' | 'pending' | 'saving' | 'saved' | 'error';
 
@@ -98,6 +103,9 @@ interface GameStore {
   pendingConsequences: PendingConsequence[];
   objectives: PlayerObjective[];
   tutorial: TutorialState;
+  activeShipEncounter: ShipEncounterState | null;
+  pursuits: PursuitRecord[];
+  warFronts: WarFront[];
   generationActive: boolean;
   hydrationStatus: HydrationStatus;
   saveAvailable: boolean;
@@ -121,7 +129,13 @@ interface GameStore {
   clearGame(): Promise<void>;
   createBackup(): Promise<boolean>;
   selectSystem(id: string | null): void;
-  travelTo(systemId: string): Promise<{ ok: boolean; message: string; encounter?: 'shipCombat' }>;
+  travelTo(systemId: string): Promise<{ ok: boolean; message: string; encounter?: 'shipContact' }>;
+  assignCombatStation(systemId: ShipSystemId, crewId: string | null): Promise<void>;
+  respondToShipContact(action: 'communicate' | 'documents' | 'bribe' | 'hideCargo' | 'help' | 'attack' | 'escape' | 'surrender'): Promise<{ ok: boolean; message: string }>;
+  shipCombatAction(action: 'fire' | 'targetEngine' | 'targetWeapons' | 'close' | 'withdraw' | 'evade' | 'jump' | 'negotiate' | 'board'): Promise<{ ok: boolean; message: string }>;
+  boardingAction(action: 'bridge' | 'cargo' | 'rescue' | 'sabotage' | 'withdraw'): Promise<{ ok: boolean; message: string }>;
+  closeShipEncounter(): Promise<void>;
+  changeTransponder(): Promise<{ ok: boolean; message: string }>;
   scanSystem(systemId: string): Promise<void>;
   detailedScanPlanet(planetId: string): Promise<{ ok: boolean; message: string }>;
   completeExpedition(result: ExpeditionResult): Promise<void>;
@@ -186,8 +200,27 @@ const initialShip = (): Ship => ({
     { id: 'cargo_basic', name: 'Грузовой модуль', slot: 'cargo', rarity: 1, effect: '10 единиц груза' },
     { id: 'weapon_basic', name: 'Лёгкая рельса', slot: 'weapon', rarity: 1, effect: 'Корабельная атака 14–24' }
   ],
-  statuses: []
+  statuses: [],
+  systems: createShipSystems(),
+  transponder: 'WANDERER-01',
+  registration: 'VC-01-CORE'
 });
+
+function buildStationAssignments(crew: CrewMember[]): Partial<Record<ShipSystemId, string>> {
+  const assignments: Partial<Record<ShipSystemId, string>> = {};
+  const roleTargets: { role: CrewMember['primaryRole']; system: ShipSystemId }[] = [
+    { role: 'pilot', system: 'engine' }, { role: 'engineer', system: 'reactor' }, { role: 'soldier', system: 'weapons' },
+    { role: 'scientist', system: 'sensors' }, { role: 'diplomat', system: 'comms' }, { role: 'doctor', system: 'lifeSupport' },
+    { role: 'smuggler', system: 'cargo' }, { role: 'archaeologist', system: 'sensors' }, { role: 'biologist', system: 'lifeSupport' }
+  ];
+  for (const target of roleTargets) {
+    if (assignments[target.system]) continue;
+    const member = crew.find((entry) => entry.status === 'active' && (entry.primaryRole === target.role || entry.secondaryRole === target.role) && !Object.values(assignments).includes(entry.id));
+    if (member) assignments[target.system] = member.id;
+  }
+  return assignments;
+}
+
 
 const initialEquipment = (): EquipmentItem[] => ([
   { id: 'gear_sidearm', name: 'Служебный пистолет', category: 'weapon', rarity: 1, description: 'Надёжное оружие для аварийной защиты.', effect: '+базовая атака в экспедиции', assignedToId: 'captain_player', condition: 100 },
@@ -390,6 +423,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
   pendingConsequences: [],
   objectives: [],
   tutorial: { enabled: false, active: false, currentStep: 0, completed: true },
+  activeShipEncounter: null,
+  pursuits: [],
+  warFronts: [],
   generationActive: false,
   hydrationStatus: 'idle',
   saveAvailable: false,
@@ -604,6 +640,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
         pendingConsequences: narrative.pendingConsequences,
         objectives: narrative.objectives,
         tutorial: { ...narrative.tutorial, targetPlanetId: preparedStart.tutorialPlanetId },
+        activeShipEncounter: null,
+        pursuits: [],
+        warFronts: initializeWarFronts(enrichedGalaxy.seed, living.factions, enrichedGalaxy.systems, 0),
         logs: [],
         hydrationStatus: 'ready',
         saveAvailable: true,
@@ -632,7 +671,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
         set({
           screen: 'menu', galaxy: null, captain: null, ship: null, currentSystemId: null,
           selectedSystemId: null, gameYear: 0, discoveries: [], logs: [], scanReports: [],
-          pointsOfInterest: [], evidence: [], hypotheses: [], artifactKnowledge: [], crew: [], crewCandidates: [], factions: [], hubs: [], contracts: [], news: [], locationStates: [], currentHubId: null, localNpcs: [], civilizationContacts: [], archaeologyChains: [], researchProjects: [], technologyBlueprints: [], equipmentInventory: [], worldThreads: [], storyScenes: [], pendingConsequences: [], objectives: [], tutorial: { enabled: false, active: false, currentStep: 0, completed: true },
+          pointsOfInterest: [], evidence: [], hypotheses: [], artifactKnowledge: [], crew: [], crewCandidates: [], factions: [], hubs: [], contracts: [], news: [], locationStates: [], currentHubId: null, localNpcs: [], civilizationContacts: [], archaeologyChains: [], researchProjects: [], technologyBlueprints: [], equipmentInventory: [], worldThreads: [], storyScenes: [], pendingConsequences: [], objectives: [], tutorial: { enabled: false, active: false, currentStep: 0, completed: true }, activeShipEncounter: null, pursuits: [], warFronts: [],
           hydrationStatus: 'ready', saveAvailable: false, saveError: null,
           saveStatus: 'idle', saveMeta: null, backupCount: 0, recoveryNotice: null
         });
@@ -657,16 +696,18 @@ export const useGameStore = create<GameStore>((set, get) => ({
     return runExclusive('travel', set, get, async () => {
       const { galaxy, ship, currentSystemId, gameYear } = get();
       if (!galaxy || !ship || !currentSystemId) return { ok: false, message: 'Нет активной партии' };
+      if (get().activeShipEncounter && get().activeShipEncounter?.phase !== 'resolved') return { ok: false, message: 'Сначала завершите корабельный контакт' };
       const current = galaxy.systems.find((system) => system.id === currentSystemId);
       const target = galaxy.systems.find((system) => system.id === systemId);
       if (!current || !target) return { ok: false, message: 'Система не найдена' };
       if (!current.neighbors.includes(target.id)) return { ok: false, message: 'Нет прямого маршрута' };
       const jumpDistance = distance(current, target);
       if (jumpDistance > ship.jumpRange) return { ok: false, message: 'Маршрут за пределами дальности двигателя' };
+      const engine = ship.systems.find((entry) => entry.id === 'engine');
+      if (engine?.disabled) return { ok: false, message: 'Двигатель отключён' };
       const fuelCost = Math.max(7, Math.ceil(jumpDistance / 14));
       if (ship.fuel < fuelCost) return { ok: false, message: `Нужно ${fuelCost} топлива` };
       if (ship.hull <= 0) return { ok: false, message: 'Корабль не способен к прыжку' };
-      const rng = createRng(`${galaxy.seed}:travel:${current.id}:${target.id}:${gameYear}:${get().logs.length}`);
       const updatedGalaxy = structuredClone(galaxy);
       const updatedTarget = updatedGalaxy.systems.find((system) => system.id === target.id);
       if (updatedTarget) {
@@ -677,30 +718,30 @@ export const useGameStore = create<GameStore>((set, get) => ({
           if (neighbor) neighbor.known = true;
         });
       }
-      const updatedShip = { ...ship, fuel: ship.fuel - fuelCost };
+      const updatedShip = { ...ship, systems: normalizeShipSystems(ship.systems), fuel: ship.fuel - fuelCost };
       const nextYear = gameYear + Math.max(1, Math.round(jumpDistance / 50));
       const logs = [makeLog(nextYear, 'Прыжок завершён', `${current.name} → ${target.name}. Потрачено ${fuelCost} топлива.`, 'info'), ...get().logs];
-      let encounter: 'shipCombat' | undefined;
+      const warFronts = advanceWarFronts(updatedGalaxy.seed, get().warFronts, nextYear);
+      let activeShipEncounter = createTravelEncounter({
+        seed: updatedGalaxy.seed,
+        system: target,
+        factions: get().factions,
+        pursuits: get().pursuits,
+        warFronts,
+        year: nextYear,
+        serial: get().logs.length + get().storyScenes.length
+      });
+      if (activeShipEncounter) activeShipEncounter = { ...activeShipEncounter, stationAssignments: buildStationAssignments(get().crew) };
+      const encounter = activeShipEncounter ? 'shipContact' as const : undefined;
       const targetFaction = get().factions.find((entry) => entry.id === target.factionId);
       const hasCivilianHub = get().hubs.some((hub) => hub.systemId === target.id && hub.safety !== 'danger');
-      const baseCombatChance = target.danger === 'extreme' ? 0.5 : target.danger === 'danger' ? 0.28 : target.danger === 'caution' ? 0.12 : 0.03;
-      const combatChance = targetFaction?.disposition === 'hostile' ? Math.min(0.8, baseCombatChance * 1.35)
-        : targetFaction?.disposition === 'friendly' || hasCivilianHub ? 0
-          : targetFaction?.disposition === 'wary' ? baseCombatChance * 0.65
-            : baseCombatChance * 0.38;
-      if (rng.chance(combatChance)) {
-        encounter = 'shipCombat';
-        logs.unshift(makeLog(nextYear, 'Враждебный перехват', 'Контакт открыл огонь после проваленного запроса связи.', 'danger'));
-      } else if (targetFaction?.disposition === 'friendly' || hasCivilianHub) {
-        logs.unshift(makeLog(nextYear, 'Гражданский контроль', 'Диспетчер передал коридор движения и список открытых портов.', 'good'));
-      } else if (rng.chance(0.18)) {
-        logs.unshift(makeLog(nextYear, 'Слабый сигнал', 'Во время перелёта зафиксирован короткий сигнал неизвестного происхождения.', 'warning'));
-      }
+      if (activeShipEncounter) logs.unshift(makeLog(nextYear, 'Корабельный контакт', `${activeShipEncounter.contact.name}: ${activeShipEncounter.contact.demand}`, activeShipEncounter.contact.hostile ? 'danger' : 'warning'));
+      else if (targetFaction?.disposition === 'friendly' || hasCivilianHub) logs.unshift(makeLog(nextYear, 'Гражданский контроль', 'Диспетчер передал коридор движения и список открытых портов.', 'good'));
       const contracts = get().contracts.map((contract) => contract.status === 'active' && nextYear > contract.deadlineYear ? { ...contract, status: 'expired' as const } : contract);
       const newsItem = generateNews(updatedGalaxy.seed, updatedGalaxy.systems, get().hubs, nextYear, get().news.length);
       const nextNews = [newsItem, ...get().news].slice(0, 500);
       const worldThreads = syncWorldThreads(get().worldThreads, contracts, nextNews, get().researchProjects, nextYear);
-      const generatedScene = encounter ? null : generateTravelScene(updatedGalaxy.seed, current.id, target.id, target.name, nextYear, get().hubs, get().factions);
+      const generatedScene = activeShipEncounter ? null : generateTravelScene(updatedGalaxy.seed, current.id, target.id, target.name, nextYear, get().hubs, get().factions);
       const processedConsequences = processDueConsequences(get().pendingConsequences, nextYear);
       processedConsequences.due.forEach((entry) => logs.unshift(makeLog(nextYear, entry.title, entry.text, entry.tone)));
       const storyScenes = [
@@ -708,9 +749,283 @@ export const useGameStore = create<GameStore>((set, get) => ({
         ...get().storyScenes.map((scene) => scene.status === 'available' && scene.expiresYear !== undefined && scene.expiresYear < nextYear ? { ...scene, status: 'expired' as const } : scene)
       ].slice(0, 160);
       const objectives = get().objectives.map((objective) => objective.status === 'active' && objective.deadlineYear !== undefined && objective.deadlineYear < nextYear ? { ...objective, status: 'failed' as const } : objective);
-      set({ galaxy: updatedGalaxy, ship: updatedShip, currentSystemId: target.id, selectedSystemId: target.id, currentHubId: null, gameYear: nextYear, logs, contracts, news: nextNews, worldThreads, storyScenes, pendingConsequences: processedConsequences.consequences, objectives });
-      await persist(set, get, 'travel');
-      return { ok: true, message: 'Перелёт завершён', encounter };
+      const pursuits = get().pursuits.map((entry) => entry.status === 'active' && (entry.knownIdentity || entry.knownTransponder) ? { ...entry, lastKnownSystemId: target.id, lastUpdateYear: nextYear } : entry);
+      set({ galaxy: updatedGalaxy, ship: updatedShip, currentSystemId: target.id, selectedSystemId: target.id, currentHubId: null, gameYear: nextYear, logs, contracts, news: nextNews, worldThreads, storyScenes, pendingConsequences: processedConsequences.consequences, objectives, activeShipEncounter, pursuits, warFronts });
+      await persist(set, get, activeShipEncounter ? 'travel-contact' : 'travel');
+      return { ok: true, message: activeShipEncounter ? 'Перелёт завершён. Обнаружен корабельный контакт.' : 'Перелёт завершён', encounter };
+    }, { ok: false, message: 'Другое действие ещё выполняется' });
+  },
+  async assignCombatStation(systemId, crewId) {
+    const encounter = get().activeShipEncounter;
+    if (!encounter || encounter.phase === 'resolved') return;
+    const crew = get().crew;
+    if (crewId && !crew.some((entry) => entry.id === crewId && entry.status === 'active')) return;
+    const assignments = { ...encounter.stationAssignments };
+    for (const key of Object.keys(assignments) as ShipSystemId[]) if (assignments[key] === crewId) delete assignments[key];
+    if (crewId) assignments[systemId] = crewId;
+    else delete assignments[systemId];
+    set({ activeShipEncounter: { ...encounter, stationAssignments: assignments } });
+    await persist(set, get, 'combat-stations');
+  },
+  async respondToShipContact(action) {
+    return runExclusive('ship-contact', set, get, async () => {
+      const encounter = get().activeShipEncounter;
+      const captain = get().captain;
+      const ship = get().ship;
+      if (!encounter || encounter.phase !== 'contact' || !captain || !ship) return { ok: false, message: 'Контакт недоступен' };
+      const rng = createRng(`${get().galaxy?.seed}:${encounter.id}:contact:${action}`);
+      const diplomat = get().crew.find((entry) => entry.primaryRole === 'diplomat' && entry.status === 'active');
+      const pilot = get().crew.find((entry) => entry.primaryRole === 'pilot' && entry.status === 'active');
+      const smuggler = get().crew.find((entry) => entry.primaryRole === 'smuggler' && entry.status === 'active');
+      const illegalCargo = ship.cargo.filter((entry) => entry.illegal);
+      let nextEncounter = structuredClone(encounter);
+      let nextCaptain = captain;
+      let nextShip = ship;
+      let pursuits = get().pursuits;
+      let message = '';
+      let tone: GameLogEntry['tone'] = 'info';
+
+      const resolvePeacefully = (text: string) => {
+        nextEncounter = { ...nextEncounter, phase: 'resolved', outcome: 'peaceful', combatLog: [text, ...nextEncounter.combatLog] };
+        message = text;
+        tone = 'good';
+      };
+      const startCombat = (text: string) => {
+        nextEncounter = { ...nextEncounter, phase: 'combat', contact: { ...nextEncounter.contact, hostile: true }, combatLog: [text, ...nextEncounter.combatLog] };
+        message = text;
+        tone = 'danger';
+      };
+      const addPursuit = (reason: string, intensity: number) => {
+        const sourceName = get().factions.find((entry) => entry.id === encounter.contact.factionId)?.name ?? encounter.contact.name;
+        const existing = pursuits.find((entry) => entry.sourceFactionId === encounter.contact.factionId && entry.status === 'active');
+        if (existing) pursuits = pursuits.map((entry) => entry.id === existing.id ? { ...entry, intensity: Math.min(100, entry.intensity + intensity), lastKnownSystemId: encounter.contact.systemId, lastUpdateYear: get().gameYear } : entry);
+        else pursuits = [{ id: `pursuit_${encounter.id}`, sourceFactionId: encounter.contact.factionId, sourceName, reason, intensity, knownIdentity: encounter.contact.knowsIdentity, knownTransponder: encounter.contact.knowsTransponder, knownShipProfile: true, lastKnownSystemId: encounter.contact.systemId, createdYear: get().gameYear, lastUpdateYear: get().gameYear, status: 'active' }, ...pursuits];
+      };
+
+      if (action === 'communicate') {
+        const chance = 0.35 + (diplomat ? 0.3 : 0) + systemIntegrity(ship.systems, 'comms') / 350 - encounter.contact.threat / 260;
+        if (!encounter.contact.hostile || rng.chance(chance)) resolvePeacefully(encounter.contact.intent === 'trade' ? 'Канал подтверждён. Контакт передал навигационные данные и разошёлся мирно.' : 'Переговоры сняли угрозу. Корабли расходятся без огня.');
+        else startCombat('Переговоры сорваны. Контакт открывает огонь.');
+      } else if (action === 'documents') {
+        if (encounter.contact.intent !== 'inspection') resolvePeacefully('Документы приняты, но контакту они не были нужны. Корабли расходятся.');
+        else if (!illegalCargo.length || rng.chance(0.2 + (smuggler ? 0.42 : 0))) resolvePeacefully('Регистрация и манифест приняты. Досмотр завершён без задержания.');
+        else {
+          addPursuit('Контрабанда и сопротивление досмотру', 38);
+          startCombat('Сканеры обнаружили запрещённый груз. Патруль блокирует двигатель.');
+        }
+      } else if (action === 'bribe') {
+        const cost = Math.max(120, Math.round(encounter.contact.threat * 8));
+        if (captain.credits < cost) return { ok: false, message: `Нужно ${cost} кредитов` };
+        nextCaptain = { ...captain, credits: captain.credits - cost };
+        if (encounter.contact.kind === 'military' && rng.chance(0.35)) {
+          addPursuit('Попытка подкупа военного патруля', 28);
+          startCombat('Офицер фиксирует попытку подкупа и отдаёт приказ на задержание.');
+        } else resolvePeacefully(`Передано ${cost} кредитов. Контакт отключает захват.`);
+      } else if (action === 'hideCargo') {
+        if (!illegalCargo.length) resolvePeacefully('Скрывать нечего. Проверка не обнаружила нарушений.');
+        else if (rng.chance(0.22 + (smuggler ? 0.46 : 0) + systemIntegrity(ship.systems, 'cargo') / 500)) resolvePeacefully('Тайники выдержали досмотр. Запрещённый груз не обнаружен.');
+        else {
+          addPursuit('Сокрытие запрещённого груза', 44);
+          startCombat('Тайник вскрыт. Контакт требует немедленной сдачи.');
+        }
+      } else if (action === 'help') {
+        if (!['distress', 'trade'].includes(encounter.contact.intent)) return { ok: false, message: 'Контакт не просит помощи' };
+        const fuelGift = Math.min(10, ship.fuel - 8);
+        if (fuelGift <= 0) return { ok: false, message: 'Нет запаса для помощи' };
+        nextShip = { ...ship, fuel: ship.fuel - fuelGift };
+        nextCaptain = { ...captain, reputation: captain.reputation + 2 };
+        resolvePeacefully(`Передано ${fuelGift} единиц топлива. Контакт запомнил помощь.`);
+      } else if (action === 'attack') {
+        if (['patrol', 'military'].includes(encounter.contact.kind)) addPursuit('Нападение на официальный корабль', 62);
+        startCombat('Первый залп произведён без предупреждения.');
+      } else if (action === 'escape') {
+        const chance = 0.28 + (pilot ? 0.28 : 0) + systemIntegrity(ship.systems, 'engine') / 300 + encounter.range * 0.08 - encounter.contact.threat / 320;
+        if (rng.chance(chance)) {
+          nextEncounter = { ...nextEncounter, phase: 'resolved', outcome: 'escaped', combatLog: ['Контакт потерян на манёвре.', ...nextEncounter.combatLog] };
+          message = 'Контакт потерян. Корабль уходит.';
+          tone = 'good';
+        } else startCombat('Манёвр раскрыт. Противник перехватывает курс и открывает огонь.');
+      } else if (action === 'surrender') {
+        const lost = ship.cargo.slice(0, Math.max(1, Math.ceil(ship.cargo.length / 2)));
+        nextShip = { ...ship, cargo: ship.cargo.filter((entry) => !lost.some((lostItem) => lostItem.id === entry.id)), hull: Math.max(18, ship.hull - 8) };
+        nextEncounter = { ...nextEncounter, phase: 'resolved', outcome: 'surrendered', combatLog: ['Корабль подчинился требованиям контакта.', ...nextEncounter.combatLog] };
+        message = lost.length ? `Сдано без боя. Потеряно груза: ${lost.length}.` : 'Сдано без боя. Контакт отпускает корабль после проверки.';
+        tone = 'warning';
+      }
+
+      set({ activeShipEncounter: nextEncounter, captain: nextCaptain, ship: nextShip, pursuits, logs: [makeLog(get().gameYear, 'Корабельный контакт', message, tone), ...get().logs] });
+      await persist(set, get, `ship-contact-${action}`, { immediate: true });
+      return { ok: true, message };
+    }, { ok: false, message: 'Другое действие ещё выполняется' });
+  },
+  async shipCombatAction(action) {
+    return runExclusive('ship-combat', set, get, async () => {
+      const encounter = get().activeShipEncounter;
+      const ship = get().ship;
+      const captain = get().captain;
+      if (!encounter || encounter.phase !== 'combat' || !ship || !captain) return { ok: false, message: 'Бой не активен' };
+      const rng = createRng(`${get().galaxy?.seed}:${encounter.id}:turn:${encounter.turn}:${action}`);
+      const assigned = (systemId: ShipSystemId) => get().crew.find((entry) => entry.id === encounter.stationAssignments[systemId] && entry.status === 'active');
+      const pilotBonus = assigned('engine')?.primaryRole === 'pilot' || assigned('engine')?.secondaryRole === 'pilot' ? 0.2 : assigned('engine') ? 0.08 : 0;
+      const engineerBonus = assigned('reactor')?.primaryRole === 'engineer' || assigned('reactor')?.secondaryRole === 'engineer' ? 0.16 : assigned('reactor') ? 0.06 : 0;
+      const soldierBonus = assigned('weapons')?.primaryRole === 'soldier' || assigned('weapons')?.secondaryRole === 'soldier' ? 0.18 : assigned('weapons') ? 0.06 : 0;
+      const diplomatBonus = assigned('comms')?.primaryRole === 'diplomat' || assigned('comms')?.secondaryRole === 'diplomat' ? 0.22 : assigned('comms') ? 0.06 : 0;
+      let next = structuredClone(encounter);
+      let nextShip = { ...ship, systems: normalizeShipSystems(ship.systems) };
+      let nextCaptain = captain;
+      let pursuits = get().pursuits;
+      let message = '';
+      const append = (text: string) => { next.combatLog = [text, ...next.combatLog].slice(0, 18); message = text; };
+      const enemySystem = (id: ShipSystemId) => next.enemy.systems.find((entry) => entry.id === id);
+      const installedWeaponBonus = ship.modules.filter((entry) => entry.slot === 'weapon').reduce((sum, entry) => sum + entry.rarity * 2, 0);
+      const weaponIntegrity = systemIntegrity(nextShip.systems, 'weapons');
+
+      if (action === 'fire' || action === 'targetEngine' || action === 'targetWeapons') {
+        if (weaponIntegrity <= 0) return { ok: false, message: 'Вооружение отключено' };
+        const targeted = action !== 'fire';
+        const accuracy = 0.58 + soldierBonus + weaponIntegrity / 420 - (targeted ? 0.16 : 0) - next.range * 0.035;
+        if (rng.chance(accuracy)) {
+          const damage = Math.max(6, Math.round(12 + installedWeaponBonus + weaponIntegrity / 9 - next.range * 2 + rng.int(-4, 6)));
+          next.enemy.hull = Math.max(0, next.enemy.hull - damage);
+          if (targeted) {
+            const targetId: ShipSystemId = action === 'targetEngine' ? 'engine' : 'weapons';
+            next.enemy.systems = damageSystem(next.enemy.systems, targetId, Math.round(damage * 1.35));
+            append(`Прицельное попадание: ${enemySystem(targetId)?.label ?? targetId}, урон корпусу ${damage}.`);
+          } else append(`Залп наносит ${damage} урона корпусу противника.`);
+        } else append('Залп проходит мимо цели.');
+      } else if (action === 'close') {
+        next.range = Math.max(1, next.range - 1) as 1 | 2 | 3 | 4;
+        append('Корабль сокращает дистанцию.');
+      } else if (action === 'withdraw') {
+        next.range = Math.min(4, next.range + 1) as 1 | 2 | 3 | 4;
+        append('Корабль уходит на дальнюю дистанцию.');
+      } else if (action === 'evade') {
+        if (systemIntegrity(nextShip.systems, 'engine') <= 0) return { ok: false, message: 'Двигатель отключён' };
+        next.evasion = Math.min(70, 28 + Math.round(pilotBonus * 100) + Math.round(systemIntegrity(nextShip.systems, 'engine') / 5));
+        append('Пилот уводит корабль в уклоняющийся манёвр.');
+      } else if (action === 'jump') {
+        if (next.range < 3) return { ok: false, message: 'Слишком близко для аварийного прыжка' };
+        if (systemIntegrity(nextShip.systems, 'engine') < 25 || systemIntegrity(nextShip.systems, 'reactor') < 25) return { ok: false, message: 'Двигатель или реактор не держит прыжок' };
+        const chance = 0.32 + pilotBonus + systemIntegrity(nextShip.systems, 'engine') / 300;
+        if (rng.chance(chance)) {
+          next.phase = 'resolved'; next.outcome = 'escaped'; append('Аварийный прыжок выполнен. Контакт потерян.');
+          nextShip = { ...nextShip, fuel: Math.max(0, nextShip.fuel - 12) };
+        } else append('Контур прыжка сорван вражескими помехами.');
+      } else if (action === 'negotiate') {
+        if (systemIntegrity(nextShip.systems, 'comms') <= 0) return { ok: false, message: 'Связь отключена' };
+        const chance = 0.18 + diplomatBonus + (100 - next.enemy.morale) / 180 + systemIntegrity(nextShip.systems, 'comms') / 450;
+        if (rng.chance(chance)) { next.phase = 'resolved'; next.outcome = 'peaceful'; append('Противник принимает прекращение огня и отходит.'); }
+        else append('Противник отвергает предложение.');
+      } else if (action === 'board') {
+        if (!next.canBoard || next.range !== 1) return { ok: false, message: 'Абордаж пока невозможен' };
+        next.phase = 'boarding'; append('Шлюзовой захват установлен. Начинается абордаж.');
+      }
+
+      if (next.enemy.hull <= 0) {
+        next.phase = 'resolved'; next.outcome = 'destroyed'; append('Вражеский корабль разрушен. Обломки расходятся по орбите.');
+        nextCaptain = { ...captain, credits: captain.credits + Math.round(next.enemy.cargoValue * 0.22), reputation: captain.reputation + 1 };
+      } else {
+        const engineDown = systemIntegrity(next.enemy.systems, 'engine') <= 15;
+        const weaponsDown = systemIntegrity(next.enemy.systems, 'weapons') <= 15;
+        next.canBoard = engineDown && (weaponsDown || next.enemy.hull <= next.enemy.maxHull * 0.35);
+      }
+
+      if (next.phase === 'combat') {
+        const enemyWeapons = systemIntegrity(next.enemy.systems, 'weapons');
+        if (enemyWeapons > 0) {
+          const hitChance = Math.max(0.18, 0.66 + next.range * -0.045 - next.evasion / 100);
+          if (rng.chance(hitChance)) {
+            let damage = Math.max(4, Math.round(8 + enemyWeapons / 11 - next.range + rng.int(-3, 5) - engineerBonus * 8));
+            if (next.brace) damage = Math.round(damage * 0.65);
+            const targetIds: ShipSystemId[] = ['engine', 'reactor', 'weapons', 'sensors', 'comms', 'lifeSupport', 'cargo'];
+            const targetId = rng.pick(targetIds);
+            const systemDamage = Math.max(4, Math.round(damage * (0.65 + rng.next() * 0.7)));
+            nextShip = { ...nextShip, hull: Math.max(0, nextShip.hull - damage), systems: damageSystem(nextShip.systems, targetId, systemDamage) };
+            append(`Ответный огонь: корпус -${damage}, система «${nextShip.systems.find((entry) => entry.id === targetId)?.label}» -${systemDamage}.`);
+          } else append('Ответный залп противника проходит мимо.');
+        }
+        next.turn += 1;
+        next.evasion = Math.max(0, next.evasion - 20);
+      }
+
+      if (nextShip.hull <= 0) {
+        const cargoLoss = nextShip.cargo.slice(0, Math.ceil(nextShip.cargo.length / 2));
+        nextShip = {
+          ...nextShip,
+          hull: Math.max(8, Math.round(nextShip.maxHull * 0.12)),
+          cargo: nextShip.cargo.filter((entry) => !cargoLoss.some((lost) => lost.id === entry.id)),
+          statuses: [...new Set([...nextShip.statuses, 'аварийное состояние', 'внешний захват'])],
+          systems: nextShip.systems.map((entry) => entry.id === 'lifeSupport' ? { ...entry, integrity: Math.max(12, entry.integrity), disabled: false } : entry)
+        };
+        nextCaptain = { ...nextCaptain, credits: Math.max(-2500, nextCaptain.credits - 650) };
+        next.phase = 'resolved'; next.outcome = 'captured'; append(`Корабль обездвижен. Потеряно ${cargoLoss.length} единиц груза, наложен долг 650 кредитов.`);
+      }
+
+      set({ activeShipEncounter: next, ship: nextShip, captain: nextCaptain, pursuits, logs: [makeLog(get().gameYear, 'Корабельный бой', message, next.outcome ? (next.outcome === 'captured' ? 'danger' : 'good') : 'warning'), ...get().logs] });
+      await persist(set, get, `ship-combat-${action}`, { immediate: true });
+      return { ok: true, message };
+    }, { ok: false, message: 'Другое действие ещё выполняется' });
+  },
+  async boardingAction(action) {
+    return runExclusive('boarding', set, get, async () => {
+      const encounter = get().activeShipEncounter;
+      const ship = get().ship;
+      const captain = get().captain;
+      if (!encounter || encounter.phase !== 'boarding' || !ship || !captain) return { ok: false, message: 'Абордаж не активен' };
+      const rng = createRng(`${get().galaxy?.seed}:${encounter.id}:boarding:${encounter.boardingProgress}:${action}`);
+      const soldiers = get().crew.filter((entry) => entry.primaryRole === 'soldier' && entry.status === 'active').length;
+      const doctors = get().crew.filter((entry) => entry.primaryRole === 'doctor' && entry.status === 'active').length;
+      let next = structuredClone(encounter);
+      let nextShip = ship;
+      let nextCaptain = captain;
+      let message = '';
+      const chance = 0.48 + soldiers * 0.16 + captain.skills.combat * 0.04 - next.enemy.crew * 0.018;
+      if (action === 'withdraw') {
+        next.phase = 'combat'; next.range = 1; message = 'Абордажная группа отходит на свой корабль.';
+      } else if (action === 'cargo') {
+        const loot = Math.max(120, Math.round(next.enemy.cargoValue * 0.45));
+        nextCaptain = { ...captain, credits: captain.credits + loot };
+        next.boardingProgress += 25;
+        message = `Грузовой отсек вскрыт. Получено ${loot} кредитов.`;
+      } else if (action === 'rescue') {
+        next.boardingProgress += 20 + doctors * 10;
+        nextCaptain = { ...captain, reputation: captain.reputation + 2 };
+        message = 'Пленные и раненые эвакуированы на «Странник». Репутация повышена.';
+      } else if (action === 'sabotage') {
+        if (rng.chance(chance + 0.08)) { next.phase = 'resolved'; next.outcome = 'boarded'; message = 'Реактор противника выведен из строя. Корабль оставлен дрейфовать.'; }
+        else { next.boardingProgress += 10; message = 'Доступ к реактору не получен. Группа несёт потери и отступает в коридор.'; }
+      } else if (action === 'bridge') {
+        if (rng.chance(chance + next.boardingProgress / 220)) {
+          next.boardingProgress = 100; next.phase = 'resolved'; next.outcome = 'boarded';
+          const prize = Math.max(450, Math.round(next.enemy.cargoValue * 0.75));
+          nextCaptain = { ...captain, credits: captain.credits + prize, reputation: captain.reputation + 1 };
+          message = `Мостик захвачен. Корабль и данные проданы за ${prize} кредитов.`;
+        } else { next.boardingProgress += 18 + soldiers * 8; message = 'Штурм мостика остановлен у бронированной переборки.'; }
+      }
+      next.combatLog = [message, ...next.combatLog].slice(0, 18);
+      set({ activeShipEncounter: next, ship: nextShip, captain: nextCaptain, logs: [makeLog(get().gameYear, 'Абордаж', message, next.phase === 'resolved' ? 'good' : 'warning'), ...get().logs] });
+      await persist(set, get, `boarding-${action}`, { immediate: true });
+      return { ok: true, message };
+    }, { ok: false, message: 'Другое действие ещё выполняется' });
+  },
+  async closeShipEncounter() {
+    const encounter = get().activeShipEncounter;
+    if (!encounter || encounter.phase !== 'resolved') return;
+    set({ activeShipEncounter: null });
+    await persist(set, get, 'ship-encounter-close', { immediate: true });
+  },
+  async changeTransponder() {
+    return runExclusive('transponder', set, get, async () => {
+      const captain = get().captain;
+      const ship = get().ship;
+      if (!captain || !ship) return { ok: false, message: 'Корабль недоступен' };
+      const cost = 420;
+      if (captain.credits < cost) return { ok: false, message: `Нужно ${cost} кредитов` };
+      const code = `GHOST-${Math.abs((get().gameYear + get().logs.length) * 7919).toString(36).toUpperCase()}`;
+      const pursuits = get().pursuits.map((entry) => entry.status === 'active' ? { ...entry, knownTransponder: false, intensity: Math.max(5, entry.intensity - 18) } : entry);
+      set({ captain: { ...captain, credits: captain.credits - cost }, ship: { ...ship, transponder: code }, pursuits, logs: [makeLog(get().gameYear, 'Транспондер заменён', `Новый позывной: ${code}. Старые ориентировки частично потеряли силу.`, 'good'), ...get().logs] });
+      await persist(set, get, 'transponder-change', { immediate: true });
+      return { ok: true, message: 'Транспондер заменён' };
     }, { ok: false, message: 'Другое действие ещё выполняется' });
   },
   async scanSystem(systemId) {
@@ -1153,18 +1468,23 @@ export const useGameStore = create<GameStore>((set, get) => ({
     const hull = Math.max(0, ship.hull - amount);
     const nextStatus = hull <= 0 ? 'корабль выведен из строя' : status;
     const statuses = nextStatus && !ship.statuses.includes(nextStatus) ? [...ship.statuses, nextStatus] : ship.statuses;
+    const rng = createRng(`${get().galaxy?.seed}:external-damage:${get().gameYear}:${get().logs.length}`);
+    const targets: ShipSystemId[] = ['engine','reactor','weapons','sensors','comms','lifeSupport','cargo'];
+    const systems = damageSystem(normalizeShipSystems(ship.systems), rng.pick(targets), Math.max(2, Math.round(amount * 0.65)));
     const title = hull <= 0 ? 'Корабль выведен из строя' : 'Повреждение корабля';
-    set({ ship: { ...ship, hull, statuses }, logs: [makeLog(get().gameYear, title, `Корпус потерял ${amount} прочности.${nextStatus ? ` Состояние: ${nextStatus}.` : ''}`, 'danger'), ...get().logs] });
+    set({ ship: { ...ship, hull, statuses, systems }, logs: [makeLog(get().gameYear, title, `Корпус потерял ${amount} прочности.${nextStatus ? ` Состояние: ${nextStatus}.` : ''}`, 'danger'), ...get().logs] });
     await persist(set, get, 'ship-damage');
   },
   async repairShip() {
     return runExclusive('repair', set, get, async () => {
       const { ship, captain } = get();
       if (!ship || !captain) return;
-      const missing = ship.maxHull - ship.hull;
-      const cost = Math.ceil(missing * 4);
-      if (missing <= 0 || captain.credits < cost) return;
-      set({ ship: { ...ship, hull: ship.maxHull, statuses: [] }, captain: { ...captain, credits: captain.credits - cost }, logs: [makeLog(get().gameYear, 'Ремонт завершён', `Потрачено ${cost} кредитов.`, 'good'), ...get().logs] });
+      const missingHull = ship.maxHull - ship.hull;
+      const normalizedSystems = normalizeShipSystems(ship.systems);
+      const missingSystems = normalizedSystems.reduce((sum, entry) => sum + (entry.maxIntegrity - entry.integrity), 0);
+      const cost = Math.ceil(missingHull * 4 + missingSystems * 1.5);
+      if ((missingHull <= 0 && missingSystems <= 0) || captain.credits < cost) return;
+      set({ ship: { ...ship, hull: ship.maxHull, systems: createShipSystems(), statuses: [] }, captain: { ...captain, credits: captain.credits - cost }, logs: [makeLog(get().gameYear, 'Ремонт завершён', `Корпус и корабельные системы восстановлены. Потрачено ${cost} кредитов.`, 'good'), ...get().logs] });
       await persist(set, get, 'repair');
     }, undefined);
   },
@@ -1581,6 +1901,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
         pendingConsequences: safe.pendingConsequences,
         objectives: safe.objectives,
         tutorial: safe.tutorial,
+        activeShipEncounter: safe.activeShipEncounter,
+        pursuits: safe.pursuits,
+        warFronts: safe.warFronts,
         saveMeta: safe.saveMeta ?? null,
         hydrationStatus: 'ready',
         saveAvailable: true,
@@ -1594,7 +1917,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   getSnapshot() {
     const {
       galaxy, captain, ship, currentSystemId, gameYear, discoveries, logs, saveMeta,
-      scanReports, pointsOfInterest, evidence, hypotheses, artifactKnowledge, crew, crewCandidates, factions, hubs, contracts, news, locationStates, currentHubId, localNpcs, civilizationContacts, archaeologyChains, researchProjects, technologyBlueprints, equipmentInventory, worldThreads, storyScenes, pendingConsequences, objectives, tutorial
+      scanReports, pointsOfInterest, evidence, hypotheses, artifactKnowledge, crew, crewCandidates, factions, hubs, contracts, news, locationStates, currentHubId, localNpcs, civilizationContacts, archaeologyChains, researchProjects, technologyBlueprints, equipmentInventory, worldThreads, storyScenes, pendingConsequences, objectives, tutorial, activeShipEncounter, pursuits, warFronts
     } = get();
     if (!galaxy || !captain || !ship || !currentSystemId) return null;
     return {
@@ -1630,7 +1953,10 @@ export const useGameStore = create<GameStore>((set, get) => ({
       storyScenes,
       pendingConsequences,
       objectives,
-      tutorial
+      tutorial,
+      activeShipEncounter,
+      pursuits,
+      warFronts
     };
   }
 }));

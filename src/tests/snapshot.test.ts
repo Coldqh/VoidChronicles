@@ -28,7 +28,7 @@ async function makeLegacySnapshot(): Promise<GameStateSnapshot> {
     },
     ship: {
       id: 'ship', name: 'Test Ship', hull: 100, maxHull: 100, fuel: 100, maxFuel: 100,
-      jumpRange: 200, cargoCapacity: 10, cargo: [], modules: [], statuses: []
+      jumpRange: 200, cargoCapacity: 10, cargo: [], modules: [], statuses: [], systems: [], transponder: 'TEST-01', registration: 'TEST-REG'
     },
     currentSystemId: galaxy.startSystemId,
     gameYear: 0,
@@ -42,7 +42,7 @@ async function makeLegacySnapshot(): Promise<GameStateSnapshot> {
     crew: [],
     crewCandidates: [],
     factions: [], hubs: [], contracts: [], news: [], locationStates: [], currentHubId: null,
-    localNpcs: [], civilizationContacts: [], archaeologyChains: [], researchProjects: [], technologyBlueprints: [], equipmentInventory: [], worldThreads: [], storyScenes: [], pendingConsequences: [], objectives: [], tutorial: { enabled: false, active: false, currentStep: 0, completed: true }
+    localNpcs: [], civilizationContacts: [], archaeologyChains: [], researchProjects: [], technologyBlueprints: [], equipmentInventory: [], worldThreads: [], storyScenes: [], pendingConsequences: [], objectives: [], tutorial: { enabled: false, active: false, currentStep: 0, completed: true }, activeShipEncounter: null, pursuits: [], warFronts: []
   };
 }
 
@@ -51,7 +51,7 @@ describe('snapshot validation and migration', () => {
     const legacy = await makeLegacySnapshot();
     const migrated = parseSnapshot(legacy);
     expect(migrated.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
-    expect(migrated.saveMeta?.appVersion).toBe('0.7.1');
+    expect(migrated.saveMeta?.appVersion).toBe('0.8.0');
     expect(migrated.saveMeta?.checksum).toMatch(/^[0-9a-f]{8}$/);
   });
 
@@ -133,4 +133,30 @@ describe('snapshot validation and migration', () => {
     const legacy = await makeLegacySnapshot();
     expect(() => parseSnapshot({ ...legacy, schemaVersion: 99 })).toThrow(/более новой версией/);
   });
+  it('migrates v8 saves into warfare state', async () => {
+    const current = prepareSnapshotForSave(parseSnapshot(await makeLegacySnapshot()), 'v8-fixture');
+    const { activeShipEncounter: _encounter, pursuits: _pursuits, warFronts: _fronts, ...withoutWarfare } = current;
+    const v8 = { ...withoutWarfare, schemaVersion: 8, saveMeta: { ...current.saveMeta!, appVersion: '0.7.1', reason: 'legacy-v8', checksum: '00000000' } };
+    const migrated = parseSnapshot(v8, { verifyChecksum: false });
+    expect(migrated.schemaVersion).toBe(9);
+    expect(migrated.ship.systems).toHaveLength(7);
+    expect(migrated.activeShipEncounter).toBeNull();
+    expect(migrated.warFronts.length).toBeGreaterThan(0);
+  });
+
+  it('restores an ironman save in the middle of ship combat', async () => {
+    const current = parseSnapshot(await makeLegacySnapshot());
+    current.activeShipEncounter = {
+      id: 'encounter-test', phase: 'combat', range: 2, turn: 3, playerInitiative: true, brace: false, evasion: 12, canBoard: false, boardingProgress: 0, stationAssignments: {},
+      contact: { id: 'contact-test', kind: 'pirate', intent: 'robbery', name: 'Test Raider', systemId: current.currentSystemId, threat: 70, demand: 'cargo', description: 'hostile', knowsIdentity: false, knowsTransponder: true, hostile: true },
+      enemy: { name: 'Test Raider', hull: 40, maxHull: 80, systems: current.ship.systems, crew: 5, morale: 60, cargoValue: 900 },
+      combatLog: ['turn 3']
+    };
+    const saved = prepareSnapshotForSave(current, 'mid-combat');
+    const restored = parseSnapshot(saved);
+    expect(restored.activeShipEncounter?.phase).toBe('combat');
+    expect(restored.activeShipEncounter?.turn).toBe(3);
+    expect(restored.activeShipEncounter?.enemy.hull).toBe(40);
+  });
+
 });

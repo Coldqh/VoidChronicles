@@ -10,7 +10,7 @@ import { generatePointsOfInterest } from '../exploration/pointsOfInterest';
 describe('application rendering smoke tests', () => {
   it('renders the boot shell with the current version', () => {
     const html = renderToString(React.createElement(App));
-    expect(html).toContain('0.7.1');
+    expect(html).toContain('0.8.0');
     expect(html).toContain('Проверка локального архива');
   });
 

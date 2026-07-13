@@ -258,6 +258,17 @@ export interface ShipModule {
   effect: string;
 }
 
+export type ShipSystemId = 'engine' | 'reactor' | 'weapons' | 'sensors' | 'comms' | 'lifeSupport' | 'cargo';
+
+export interface ShipSystemState {
+  id: ShipSystemId;
+  label: string;
+  integrity: number;
+  maxIntegrity: number;
+  disabled: boolean;
+  effect: string;
+}
+
 export interface Ship {
   id: string;
   name: string;
@@ -270,6 +281,86 @@ export interface Ship {
   cargo: CargoItem[];
   modules: ShipModule[];
   statuses: string[];
+  systems: ShipSystemState[];
+  transponder: string;
+  registration: string;
+}
+
+
+export type ShipContactKind = 'patrol' | 'pirate' | 'trader' | 'bountyHunter' | 'military' | 'smuggler' | 'refugee' | 'wreck' | 'researcher' | 'unknown';
+export type ShipContactIntent = 'inspection' | 'robbery' | 'trade' | 'distress' | 'hunt' | 'escort' | 'unknown';
+export type ShipEncounterPhase = 'contact' | 'combat' | 'boarding' | 'resolved';
+export type ShipEncounterOutcome = 'victory' | 'escaped' | 'captured' | 'surrendered' | 'destroyed' | 'boarded' | 'peaceful';
+
+export interface ShipContact {
+  id: string;
+  kind: ShipContactKind;
+  intent: ShipContactIntent;
+  name: string;
+  factionId?: string;
+  systemId: string;
+  threat: number;
+  demand: string;
+  description: string;
+  knowsIdentity: boolean;
+  knowsTransponder: boolean;
+  hostile: boolean;
+}
+
+export interface EnemyShipState {
+  name: string;
+  hull: number;
+  maxHull: number;
+  systems: ShipSystemState[];
+  crew: number;
+  morale: number;
+  cargoValue: number;
+}
+
+export interface ShipEncounterState {
+  id: string;
+  phase: ShipEncounterPhase;
+  contact: ShipContact;
+  range: 1 | 2 | 3 | 4;
+  turn: number;
+  playerInitiative: boolean;
+  enemy: EnemyShipState;
+  combatLog: string[];
+  brace: boolean;
+  evasion: number;
+  canBoard: boolean;
+  boardingProgress: number;
+  stationAssignments: Partial<Record<ShipSystemId, string>>;
+  outcome?: ShipEncounterOutcome;
+}
+
+export interface PursuitRecord {
+  id: string;
+  sourceFactionId?: string;
+  sourceName: string;
+  reason: string;
+  intensity: number;
+  knownIdentity: boolean;
+  knownTransponder: boolean;
+  knownShipProfile: boolean;
+  lastKnownSystemId: string;
+  createdYear: number;
+  lastUpdateYear: number;
+  status: 'active' | 'cold' | 'resolved';
+}
+
+export interface WarFront {
+  id: string;
+  attackerFactionId: string;
+  defenderFactionId: string;
+  systemIds: string[];
+  intensity: number;
+  startedYear: number;
+  lastUpdateYear: number;
+  status: 'cold' | 'active' | 'ceasefire' | 'resolved';
+  attackerScore: number;
+  defenderScore: number;
+  playerSide?: string;
 }
 
 export interface CargoItem {
@@ -734,6 +825,9 @@ export interface SaveMetadata {
 }
 
 export interface GameStateSnapshot {
+  activeShipEncounter: ShipEncounterState | null;
+  pursuits: PursuitRecord[];
+  warFronts: WarFront[];
   schemaVersion: number;
   saveMeta?: SaveMetadata;
   galaxy: Galaxy;

@@ -5,6 +5,7 @@ import { initializeLivingGalaxy } from '../world/livingGalaxy';
 import { enrichGalaxyCivilizations, initializeCivilizationLayer } from '../world/civilizations';
 import { initializeWorldThreads } from '../world/storyThreads';
 import { initializeNarrative } from '../narrative/encounters';
+import { createShipSystems, initializeWarFronts, normalizeShipSystems } from '../world/warfare';
 
 export const CURRENT_SCHEMA_VERSION = SAVE_SCHEMA_VERSION;
 export { APP_VERSION };
@@ -197,6 +198,10 @@ const moduleSchema = z.object({
   effect: z.string()
 });
 
+const shipSystemIdSchema = z.enum(['engine','reactor','weapons','sensors','comms','lifeSupport','cargo']);
+const shipSystemSchema = z.object({
+  id: shipSystemIdSchema, label: z.string(), integrity: finiteNumber, maxIntegrity: finiteNumber, disabled: z.boolean(), effect: z.string()
+});
 const shipSchema = z.object({
   id: z.string().min(1),
   name: z.string(),
@@ -208,7 +213,10 @@ const shipSchema = z.object({
   cargoCapacity: finiteNumber,
   cargo: z.array(cargoSchema),
   modules: z.array(moduleSchema),
-  statuses: z.array(z.string())
+  statuses: z.array(z.string()),
+  systems: z.array(shipSystemSchema).default([]),
+  transponder: z.string().default('WANDERER-01'),
+  registration: z.string().default('VC-01-CORE')
 });
 
 const discoverySchema = z.object({
@@ -442,6 +450,28 @@ const objectiveSchema = z.object({
   createdYear: finiteNumber, deadlineYear: finiteNumber.optional(), systemId: z.string().optional(), hubId: z.string().optional(), sourceSceneId: z.string().optional(), progress: finiteNumber
 });
 const tutorialSchema = z.object({ enabled: z.boolean(), active: z.boolean(), currentStep: finiteNumber, completed: z.boolean(), targetPlanetId: z.string().optional(), targetPointOfInterestId: z.string().optional() });
+const shipContactSchema = z.object({
+  id: z.string(), kind: z.enum(['patrol','pirate','trader','bountyHunter','military','smuggler','refugee','wreck','researcher','unknown']),
+  intent: z.enum(['inspection','robbery','trade','distress','hunt','escort','unknown']), name: z.string(), factionId: z.string().optional(),
+  systemId: z.string(), threat: finiteNumber, demand: z.string(), description: z.string(), knowsIdentity: z.boolean(), knowsTransponder: z.boolean(), hostile: z.boolean()
+});
+const enemyShipSchema = z.object({ name: z.string(), hull: finiteNumber, maxHull: finiteNumber, systems: z.array(shipSystemSchema), crew: finiteNumber, morale: finiteNumber, cargoValue: finiteNumber });
+const shipEncounterSchema = z.object({
+  id: z.string(), phase: z.enum(['contact','combat','boarding','resolved']), contact: shipContactSchema, range: z.union([z.literal(1),z.literal(2),z.literal(3),z.literal(4)]),
+  turn: finiteNumber, playerInitiative: z.boolean(), enemy: enemyShipSchema, combatLog: z.array(z.string()), brace: z.boolean(), evasion: finiteNumber,
+  canBoard: z.boolean(), boardingProgress: finiteNumber, stationAssignments: z.record(shipSystemIdSchema, z.string()).default({}), outcome: z.enum(['victory','escaped','captured','surrendered','destroyed','boarded','peaceful']).optional()
+});
+const pursuitSchema = z.object({
+  id: z.string(), sourceFactionId: z.string().optional(), sourceName: z.string(), reason: z.string(), intensity: finiteNumber,
+  knownIdentity: z.boolean(), knownTransponder: z.boolean(), knownShipProfile: z.boolean(), lastKnownSystemId: z.string(), createdYear: finiteNumber,
+  lastUpdateYear: finiteNumber, status: z.enum(['active','cold','resolved'])
+});
+const warFrontSchema = z.object({
+  id: z.string(), attackerFactionId: z.string(), defenderFactionId: z.string(), systemIds: z.array(z.string()), intensity: finiteNumber,
+  startedYear: finiteNumber, lastUpdateYear: finiteNumber, status: z.enum(['cold','active','ceasefire','resolved']), attackerScore: finiteNumber,
+  defenderScore: finiteNumber, playerSide: z.string().optional()
+});
+
 
 const legacyPayloadSchema = z.object({
   galaxy: galaxySchema,
@@ -490,6 +520,11 @@ const v8PayloadSchema = v7PayloadSchema.extend({
   objectives: z.array(objectiveSchema),
   tutorial: tutorialSchema
 });
+const v9PayloadSchema = v8PayloadSchema.extend({
+  activeShipEncounter: shipEncounterSchema.nullable(),
+  pursuits: z.array(pursuitSchema),
+  warFronts: z.array(warFrontSchema)
+});
 
 const saveMetadataSchema = z.object({
   savedAt: z.string().datetime(),
@@ -507,8 +542,9 @@ const snapshotV5Schema = v5PayloadSchema.extend({ schemaVersion: z.literal(5), s
 const snapshotV6Schema = v6PayloadSchema.extend({ schemaVersion: z.literal(6), saveMeta: saveMetadataSchema });
 const snapshotV7Schema = v7PayloadSchema.extend({ schemaVersion: z.literal(7), saveMeta: saveMetadataSchema });
 const snapshotV8Schema = v8PayloadSchema.extend({ schemaVersion: z.literal(8), saveMeta: saveMetadataSchema });
+const snapshotV9Schema = v9PayloadSchema.extend({ schemaVersion: z.literal(9), saveMeta: saveMetadataSchema });
 
-type SnapshotCurrent = z.infer<typeof snapshotV8Schema>;
+type SnapshotCurrent = z.infer<typeof snapshotV9Schema>;
 
 function hashText(value: string): string {
   let hash = 0x811c9dc5;
@@ -531,6 +567,7 @@ function emptyExploration() {
   return { scanReports: [], pointsOfInterest: [], evidence: [], hypotheses: [], artifactKnowledge: [] };
 }
 function emptyCrew() { return { crew: [], crewCandidates: [] }; }
+function emptyWarfare(galaxy: z.infer<typeof galaxySchema>, factions: z.infer<typeof factionSchema>[], year = 0) { return { activeShipEncounter: null, pursuits: [], warFronts: initializeWarFronts(galaxy.seed, factions, galaxy.systems, year) }; }
 function livingState(galaxy: z.infer<typeof galaxySchema>) {
   const living = initializeLivingGalaxy(galaxy);
   const layer = initializeCivilizationLayer(galaxy as GameStateSnapshot['galaxy'], living.hubs);
@@ -612,9 +649,15 @@ function normalizeSnapshot(snapshot: SnapshotCurrent): SnapshotCurrent {
     storyScenes: snapshot.storyScenes.filter((scene) => systemIds.has(scene.systemId)).slice(0, 160),
     pendingConsequences: snapshot.pendingConsequences.slice(0, 300),
     objectives: snapshot.objectives.filter((objective) => !objective.systemId || systemIds.has(objective.systemId)).slice(0, 250),
-    tutorial: { ...snapshot.tutorial, currentStep: Math.max(0, Math.min(7, Math.floor(snapshot.tutorial.currentStep))) }
+    tutorial: { ...snapshot.tutorial, currentStep: Math.max(0, Math.min(7, Math.floor(snapshot.tutorial.currentStep))) },
+    activeShipEncounter: snapshot.activeShipEncounter && systemIds.has(snapshot.activeShipEncounter.contact.systemId) ? snapshot.activeShipEncounter : null,
+    pursuits: snapshot.pursuits.filter((entry) => systemIds.has(entry.lastKnownSystemId)).slice(0, 100),
+    warFronts: snapshot.warFronts.map((entry) => ({ ...entry, systemIds: entry.systemIds.filter((id) => systemIds.has(id)) })).filter((entry) => entry.systemIds.length > 0).slice(0, 50)
   };
 
+  normalized.ship.systems = normalizeShipSystems(normalized.ship.systems);
+  normalized.ship.transponder ||= 'WANDERER-01';
+  normalized.ship.registration ||= 'VC-01-CORE';
   normalized.ship.hull = Math.max(0, Math.min(normalized.ship.maxHull, normalized.ship.hull));
   normalized.ship.fuel = Math.max(0, Math.min(normalized.ship.maxFuel, normalized.ship.fuel));
   normalized.captain.health = Math.max(0, Math.min(normalized.captain.maxHealth, normalized.captain.health));
@@ -629,37 +672,42 @@ export function parseSnapshot(input: unknown, options: ParseSnapshotOptions = {}
 
   if (header.schemaVersion === 1) {
     const legacy = snapshotV1Schema.parse(input);
-    migrated = { ...legacy, ...emptyExploration(), ...emptyCrew(), ...livingState(legacy.galaxy), schemaVersion: CURRENT_SCHEMA_VERSION, saveMeta: { savedAt: new Date().toISOString(), appVersion: APP_VERSION, sequence: 0, reason: 'migration-v1', checksum: '00000000' } };
+    migrated = { ...legacy, ...emptyExploration(), ...emptyCrew(), ...livingState(legacy.galaxy), ...emptyWarfare(legacy.galaxy, livingState(legacy.galaxy).factions, legacy.gameYear), schemaVersion: CURRENT_SCHEMA_VERSION, saveMeta: { savedAt: new Date().toISOString(), appVersion: APP_VERSION, sequence: 0, reason: 'migration-v1', checksum: '00000000' } };
     migrated.saveMeta.checksum = computeSnapshotChecksum(migrated);
   } else if (header.schemaVersion === 2) {
     const legacy = snapshotV2Schema.parse(input);
-    migrated = { ...legacy, ...emptyExploration(), ...emptyCrew(), ...livingState(legacy.galaxy), schemaVersion: CURRENT_SCHEMA_VERSION, saveMeta: { ...legacy.saveMeta, appVersion: APP_VERSION, reason: 'migration-v2', checksum: '00000000' } };
+    migrated = { ...legacy, ...emptyExploration(), ...emptyCrew(), ...livingState(legacy.galaxy), ...emptyWarfare(legacy.galaxy, livingState(legacy.galaxy).factions, legacy.gameYear), schemaVersion: CURRENT_SCHEMA_VERSION, saveMeta: { ...legacy.saveMeta, appVersion: APP_VERSION, reason: 'migration-v2', checksum: '00000000' } };
     migrated.saveMeta.checksum = computeSnapshotChecksum(migrated);
   } else if (header.schemaVersion === 3) {
     const previous = snapshotV3Schema.parse(input);
-    migrated = { ...previous, ...emptyCrew(), ...livingState(previous.galaxy), schemaVersion: CURRENT_SCHEMA_VERSION, saveMeta: { ...previous.saveMeta, appVersion: APP_VERSION, reason: 'migration-v3', checksum: '00000000' } };
+    migrated = { ...previous, ...emptyCrew(), ...livingState(previous.galaxy), ...emptyWarfare(previous.galaxy, livingState(previous.galaxy).factions, previous.gameYear), schemaVersion: CURRENT_SCHEMA_VERSION, saveMeta: { ...previous.saveMeta, appVersion: APP_VERSION, reason: 'migration-v3', checksum: '00000000' } };
     migrated.saveMeta.checksum = computeSnapshotChecksum(migrated);
   } else if (header.schemaVersion === 4) {
     const previous = snapshotV4Schema.parse(input);
-    migrated = { ...previous, ...livingState(previous.galaxy), schemaVersion: CURRENT_SCHEMA_VERSION, saveMeta: { ...previous.saveMeta, appVersion: APP_VERSION, reason: 'migration-v4', checksum: '00000000' } };
+    migrated = { ...previous, ...livingState(previous.galaxy), ...emptyWarfare(previous.galaxy, livingState(previous.galaxy).factions, previous.gameYear), schemaVersion: CURRENT_SCHEMA_VERSION, saveMeta: { ...previous.saveMeta, appVersion: APP_VERSION, reason: 'migration-v4', checksum: '00000000' } };
     migrated.saveMeta.checksum = computeSnapshotChecksum(migrated);
   } else if (header.schemaVersion === 5) {
     const previous = snapshotV5Schema.parse(input);
     const layer = initializeCivilizationLayer(previous.galaxy as GameStateSnapshot['galaxy'], previous.hubs as GameStateSnapshot['hubs']);
-    migrated = { ...previous, galaxy: layer.galaxy, hubs: layer.hubs, localNpcs: layer.localNpcs, civilizationContacts: layer.civilizationContacts, archaeologyChains: layer.archaeologyChains, researchProjects: [], technologyBlueprints: [], equipmentInventory: livingState(previous.galaxy).equipmentInventory, worldThreads: initializeWorldThreads(layer.galaxy.civilizations, previous.factions, layer.archaeologyChains, previous.gameYear), ...initializeNarrative(layer.galaxy, layer.hubs, previous.factions as GameStateSnapshot['factions'], false), schemaVersion: CURRENT_SCHEMA_VERSION, saveMeta: { ...previous.saveMeta, appVersion: APP_VERSION, reason: 'migration-v5', checksum: '00000000' } };
+    migrated = { ...previous, galaxy: layer.galaxy, hubs: layer.hubs, localNpcs: layer.localNpcs, civilizationContacts: layer.civilizationContacts, archaeologyChains: layer.archaeologyChains, researchProjects: [], technologyBlueprints: [], equipmentInventory: livingState(previous.galaxy).equipmentInventory, worldThreads: initializeWorldThreads(layer.galaxy.civilizations, previous.factions, layer.archaeologyChains, previous.gameYear), ...initializeNarrative(layer.galaxy, layer.hubs, previous.factions as GameStateSnapshot['factions'], false), ...emptyWarfare(layer.galaxy, previous.factions, previous.gameYear), schemaVersion: CURRENT_SCHEMA_VERSION, saveMeta: { ...previous.saveMeta, appVersion: APP_VERSION, reason: 'migration-v5', checksum: '00000000' } };
     migrated.saveMeta.checksum = computeSnapshotChecksum(migrated);
   } else if (header.schemaVersion === 6) {
     const previous = snapshotV6Schema.parse(input);
     const threads = initializeWorldThreads(previous.galaxy.civilizations, previous.factions, previous.archaeologyChains, previous.gameYear);
-    migrated = { ...previous, researchProjects: [], technologyBlueprints: [], equipmentInventory: livingState(previous.galaxy).equipmentInventory, worldThreads: threads, ...initializeNarrative(previous.galaxy as GameStateSnapshot['galaxy'], previous.hubs as GameStateSnapshot['hubs'], previous.factions as GameStateSnapshot['factions'], false), schemaVersion: CURRENT_SCHEMA_VERSION, saveMeta: { ...previous.saveMeta, appVersion: APP_VERSION, reason: 'migration-v6', checksum: '00000000' } };
+    migrated = { ...previous, researchProjects: [], technologyBlueprints: [], equipmentInventory: livingState(previous.galaxy).equipmentInventory, worldThreads: threads, ...initializeNarrative(previous.galaxy as GameStateSnapshot['galaxy'], previous.hubs as GameStateSnapshot['hubs'], previous.factions as GameStateSnapshot['factions'], false), ...emptyWarfare(previous.galaxy, previous.factions, previous.gameYear), schemaVersion: CURRENT_SCHEMA_VERSION, saveMeta: { ...previous.saveMeta, appVersion: APP_VERSION, reason: 'migration-v6', checksum: '00000000' } };
     migrated.saveMeta.checksum = computeSnapshotChecksum(migrated);
   } else if (header.schemaVersion === 7) {
     const previous = snapshotV7Schema.parse(input);
     const narrative = initializeNarrative(previous.galaxy as GameStateSnapshot['galaxy'], previous.hubs as GameStateSnapshot['hubs'], previous.factions as GameStateSnapshot['factions'], false);
-    migrated = { ...previous, ...narrative, schemaVersion: CURRENT_SCHEMA_VERSION, saveMeta: { ...previous.saveMeta, appVersion: APP_VERSION, reason: 'migration-v7', checksum: '00000000' } };
+    migrated = { ...previous, ...narrative, ...emptyWarfare(previous.galaxy, previous.factions, previous.gameYear), schemaVersion: CURRENT_SCHEMA_VERSION, saveMeta: { ...previous.saveMeta, appVersion: APP_VERSION, reason: 'migration-v7', checksum: '00000000' } };
+    migrated.saveMeta.checksum = computeSnapshotChecksum(migrated);
+  } else if (header.schemaVersion === 8) {
+    const previous = snapshotV8Schema.parse(input);
+    const warfare = emptyWarfare(previous.galaxy, previous.factions, previous.gameYear);
+    migrated = { ...previous, ship: { ...previous.ship, systems: normalizeShipSystems(previous.ship.systems), transponder: previous.ship.transponder || 'WANDERER-01', registration: previous.ship.registration || 'VC-01-CORE' }, ...warfare, schemaVersion: CURRENT_SCHEMA_VERSION, saveMeta: { ...previous.saveMeta, appVersion: APP_VERSION, reason: 'migration-v8', checksum: '00000000' } };
     migrated.saveMeta.checksum = computeSnapshotChecksum(migrated);
   } else if (header.schemaVersion === CURRENT_SCHEMA_VERSION) {
-    migrated = snapshotV8Schema.parse(input);
+    migrated = snapshotV9Schema.parse(input);
     if (options.verifyChecksum !== false) {
       const expected = computeSnapshotChecksum(migrated);
       if (migrated.saveMeta.checksum !== expected) throw new Error('Контрольная сумма сохранения не совпадает');
