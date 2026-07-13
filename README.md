@@ -2,16 +2,15 @@
 
 Procedural single-player space exploration roguelike built with React, TypeScript and Canvas.
 
-## v0.8 War, Pursuit & Ship Operations
+## v0.9 Legacy & Continuity
 
-- ship contacts begin with intent, demands and incomplete information instead of automatic gunfire;
-- tactical ship combat uses range, engines, reactor, weapons, sensors, communications, life support and cargo damage;
-- disabled targets can be boarded for prisoners, cargo, sabotage or capture;
-- pursuit records track who knows the captain, transponder and ship profile;
-- local wars affect systems, routes and the contacts generated during travel;
-- defeat can lead to capture, debt, confiscation and emergency recovery instead of always ending the run;
-- active battles and damaged systems survive refreshes and version updates through save schema v9;
-- heavy dependencies are split into production chunks for faster loading.
+- captain loss can lead to death, capture, disappearance, retirement or an interrupted command instead of deleting the run;
+- living crew members and the ship AI can inherit command with different strengths and restrictions;
+- lost expeditions, captain records, memorials and a readable campaign chronicle persist in the ironman archive;
+- a finished run enters Chronicle mode where the galaxy can be observed for future years;
+- ship defeat now interrupts command and opens succession instead of silently restoring the captured captain;
+- Settings, succession and chronicle screens include confirmed campaign reset and start-over actions;
+- save schema v10 migrates v9 warfare saves automatically.
 
 ## Development
 

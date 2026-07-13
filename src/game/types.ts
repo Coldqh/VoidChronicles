@@ -10,7 +10,10 @@ export type EquipmentId = 'pistol' | 'rifle' | 'armor' | 'medkit' | 'scanner' | 
 export type EvidenceKind = 'record' | 'body' | 'weapon' | 'architecture' | 'sample' | 'terminal' | 'damage' | 'signal';
 export type HypothesisStatus = 'tentative' | 'supported' | 'confirmed' | 'disproved';
 export type CrewRole = 'pilot' | 'engineer' | 'doctor' | 'scientist' | 'archaeologist' | 'soldier' | 'diplomat' | 'biologist' | 'smuggler';
-export type CrewStatus = 'active' | 'injured' | 'unpaid' | 'missing';
+export type CrewStatus = 'active' | 'injured' | 'unpaid' | 'missing' | 'deceased';
+export type CaptainCondition = 'active' | 'dead' | 'missing' | 'captured' | 'coma' | 'stranded' | 'retired';
+export type CommandIdentity = 'organic' | 'shipAI';
+export type LegacyMode = 'active' | 'succession' | 'ai' | 'chronicle';
 export type ContactStage = 'unknown' | 'observed' | 'signals' | 'translated' | 'contacted' | 'trusted' | 'failed';
 export type LocalNpcRole = 'administrator' | 'merchant' | 'scientist' | 'doctor' | 'fixer' | 'priest' | 'guard' | 'resident';
 export type HypothesisDisposition = 'private' | 'published' | 'sold' | 'suppressed';
@@ -210,6 +213,8 @@ export interface Captain {
   skills: Record<'research' | 'archaeology' | 'trade' | 'combat' | 'crime', number>;
   injuries: Injury[];
   alive: boolean;
+  condition: CaptainCondition;
+  commandIdentity: CommandIdentity;
 }
 
 
@@ -269,6 +274,16 @@ export interface ShipSystemState {
   effect: string;
 }
 
+export interface ShipAIState {
+  id: string;
+  name: string;
+  personality: string;
+  directives: string[];
+  integrity: number;
+  operational: boolean;
+  journal: string[];
+}
+
 export interface Ship {
   id: string;
   name: string;
@@ -284,6 +299,7 @@ export interface Ship {
   systems: ShipSystemState[];
   transponder: string;
   registration: string;
+  aiCore: ShipAIState;
 }
 
 
@@ -816,6 +832,84 @@ export interface GameLogEntry {
   tone: 'info' | 'good' | 'warning' | 'danger';
 }
 
+
+export interface CaptainLegacyRecord {
+  id: string;
+  captainId: string;
+  name: string;
+  commandIdentity: CommandIdentity;
+  startedYear: number;
+  endedYear?: number;
+  fate?: CaptainCondition;
+  finalSystemId?: string;
+  shipName: string;
+  systemsVisited: number;
+  discoveries: number;
+  battles: number;
+  reputation: number;
+  epitaph?: string;
+  memorialId?: string;
+}
+
+export interface SuccessionCandidate {
+  id: string;
+  source: 'crew' | 'ai';
+  sourceId: string;
+  name: string;
+  role: string;
+  loyalty: number;
+  eligible: boolean;
+  consequences: string[];
+}
+
+export interface LostExpedition {
+  id: string;
+  year: number;
+  systemId: string;
+  pointOfInterestId?: string;
+  captainRecordId: string;
+  crewIds: string[];
+  cargoIds: string[];
+  status: 'unrecovered' | 'recovered' | 'lost';
+  summary: string;
+  recoveredYear?: number;
+}
+
+export interface Memorial {
+  id: string;
+  captainRecordId: string;
+  type: 'space' | 'archive' | 'homeworld' | 'hidden';
+  year: number;
+  systemId: string;
+  text: string;
+  public: boolean;
+}
+
+export interface ChronicleEntry {
+  id: string;
+  year: number;
+  category: 'command' | 'death' | 'succession' | 'discovery' | 'war' | 'memorial' | 'recovery' | 'world';
+  title: string;
+  text: string;
+  tone: GameLogEntry['tone'];
+  captainRecordId?: string;
+  systemId?: string;
+}
+
+export interface LegacyState {
+  mode: LegacyMode;
+  campaignEnded: boolean;
+  continuityReason?: string;
+  currentCaptainRecordId: string;
+  captains: CaptainLegacyRecord[];
+  successionCandidates: SuccessionCandidate[];
+  lostExpeditions: LostExpedition[];
+  memorials: Memorial[];
+  chronicle: ChronicleEntry[];
+  observerYear: number;
+  aiTurns: number;
+}
+
 export interface SaveMetadata {
   savedAt: string;
   appVersion: string;
@@ -828,6 +922,7 @@ export interface GameStateSnapshot {
   activeShipEncounter: ShipEncounterState | null;
   pursuits: PursuitRecord[];
   warFronts: WarFront[];
+  legacy: LegacyState;
   schemaVersion: number;
   saveMeta?: SaveMetadata;
   galaxy: Galaxy;

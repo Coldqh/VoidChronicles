@@ -1,5 +1,19 @@
 # Changelog
 
+## v0.9.0 — Legacy & Continuity
+
+- added captain conditions for death, capture, disappearance, coma, stranding and retirement;
+- added succession after captain loss with eligible crew candidates and role-specific consequences;
+- added autonomous ship-AI command when no organic captain remains;
+- preserved ship, archive, crew, contracts, debts, pursuits and world state across succession;
+- added persistent captain records, memorials, lost expeditions and a readable campaign chronicle;
+- added Chronicle mode with accelerated observation of wars and galaxy changes after the run ends;
+- made ship capture interrupt command and open succession instead of returning the same captain automatically;
+- added confirmed **Reset campaign** and **Start over** actions in Settings, succession and Chronicle screens;
+- start-over keeps galaxy generation settings while deleting the current ironman, backups and browser rescue copy;
+- migrated save schema from v9 to v10 with automatic legacy initialization;
+- added legacy, migration and destructive-reset persistence coverage; total suite: 53 tests.
+
 ## v0.8.0 — War, Pursuit & Ship Operations
 
 - replaced instant random ship battles with a contact phase: patrols, pirates, traders, refugees, researchers, smugglers, military vessels and bounty hunters;

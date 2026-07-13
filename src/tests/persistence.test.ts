@@ -112,6 +112,20 @@ describe.sequential('IndexedDB save coordinator', () => {
   });
 
 
+  it('deletes the active campaign, backups and browser rescue copy', async () => {
+    const snapshot = await makeSnapshot();
+    await saveSnapshotImmediately(snapshot, 'before-reset');
+    await createManualBackup('before-reset-backup');
+    expect(await loadSnapshot()).toBeTruthy();
+
+    await deleteSnapshot();
+
+    expect(await loadSnapshot()).toBeNull();
+    expect(await db.saves.count()).toBe(0);
+    expect(globalThis.localStorage.length).toBe(0);
+  });
+
+
   it('prefers a newer synchronous rescue copy over an older valid IndexedDB record', async () => {
     const initial = await makeSnapshot();
     initial.captain.credits = 100;
