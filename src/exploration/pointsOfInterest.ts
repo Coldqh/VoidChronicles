@@ -55,7 +55,7 @@ const rewardPools: Record<PointOfInterestType, readonly string[]> = {
   settlement: ['контакт', 'торговый доступ', 'контракт', 'местная технология'],
   laboratory: ['научные данные', 'образец', 'технология', 'опасный препарат'],
   cave: ['редкий минерал', 'биологический образец', 'скрытый проход', 'древняя камера'],
-  ancientFactory: ['прототип', 'чертёж', 'военная технология', 'активный ИИ'],
+  ancientFactory: ['прототип', 'чертёж', 'военная технология', 'автономный управляющий модуль'],
   graveyard: ['генетические данные', 'личные записи', 'ритуальный предмет', 'доказательство преступления'],
   smugglerCamp: ['контрабанда', 'наркотики', 'оружие', 'данные картеля'],
   anomaly: ['аномальный материал', 'неизвестная энергия', 'координаты', 'искажённый артефакт'],
@@ -74,7 +74,7 @@ const origins: Record<PointOfInterestType, readonly string[]> = {
   smugglerCamp: ['лагерь связан с межзвёздным картелем', 'склад принадлежал правительственной разведке', 'наркотик создан из местной формы жизни'],
   anomaly: ['явление является распределённым разумом', 'объект построен цивилизацией, исчезнувшей из галактики', 'аномалия реагирует на память наблюдателя'],
   biosphere: ['экосистема представляет единый организм', 'вид был искусственно занесён сюда', 'лес хранит записи в генетической памяти'],
-  distress: ['экспедиция нашла то, что не должна была', 'сигнал передаёт не выживший, а корабельный ИИ', 'лагерь уничтожен собственными членами']
+  distress: ['экспедиция нашла то, что не должна была', 'аварийный маяк продолжает работать после гибели экипажа', 'лагерь уничтожен собственными членами']
 };
 
 function dangerScore(planet: Planet, index: number): PointOfInterest['danger'] {
@@ -87,6 +87,15 @@ function chooseCivilization(galaxy: Galaxy, planet: Planet, system: StarSystem, 
   if (planet.civilizationId) return galaxy.civilizations.find((entry) => entry.id === planet.civilizationId);
   const candidates = galaxy.civilizations.filter((entry) => entry.controlledSystems.includes(system.id) || entry.status === 'dead');
   return candidates[index % Math.max(1, candidates.length)];
+}
+
+function accessFor(type: PointOfInterestType, planet: Planet, rng: ReturnType<typeof createRng>): PointOfInterest['access'] {
+  if (planet.type === 'gas') return type === 'anomaly' ? 'remote' : 'orbital';
+  if (type === 'anomaly') return rng.chance(.62) ? 'remote' : rng.chance(.55) ? 'orbital' : 'surface';
+  if (type === 'wreck') return rng.chance(.34) ? 'orbital' : 'surface';
+  if (type === 'distress') return rng.chance(.26) ? 'orbital' : 'surface';
+  if (type === 'laboratory' && (planet.type === 'ocean' || planet.type === 'artificial')) return rng.chance(.2) ? 'orbital' : 'surface';
+  return 'surface';
 }
 
 export function generatePointsOfInterest(galaxy: Galaxy, system: StarSystem, planet: Planet): PointOfInterest[] {
@@ -107,7 +116,8 @@ export function generatePointsOfInterest(galaxy: Galaxy, system: StarSystem, pla
       possibleRewards: ['навигационные данные', 'технический образец'],
       scanConfidence: 88,
       visits: 0,
-      discoveredYear: galaxy.currentYear
+      discoveredYear: galaxy.currentYear,
+      access: 'surface'
     }];
   }
   const count = Math.max(1, Math.min(8, planet.pointsOfInterest));
@@ -133,6 +143,7 @@ export function generatePointsOfInterest(galaxy: Galaxy, system: StarSystem, pla
     const possibleRewards = Array.from(new Set([rng.pick(rewardPools[type]), rng.pick(rewardPools[type])]));
     const origin = rng.pick(origins[type]);
     const id = `poi_${stableHash(`${galaxy.seed}:${planet.id}:${index}`)}`;
+    const access = accessFor(type, planet, rng);
     result.push({
       id,
       systemId: system.id,
@@ -144,13 +155,14 @@ export function generatePointsOfInterest(galaxy: Galaxy, system: StarSystem, pla
       age,
       civilizationId: civilization?.id,
       origin,
-      publicSummary: `Сигнал типа «${type}». Оценочный возраст: ${age.toLocaleString('ru-RU')} лет. Данные неполные.`,
+      publicSummary: `${access === 'surface' ? 'Поверхностный' : access === 'orbital' ? 'Орбитальный' : 'Дистанционный'} сигнал типа «${type}». Возраст: ${age.toLocaleString('ru-RU')} лет.`,
       truth: `${origin}. ${civilization ? `Объект связан с ${civilization.name}.` : 'Происхождение не установлено.'}`,
       requiredEquipment,
       possibleRewards,
       scanConfidence: rng.int(38, 72),
       visits: 0,
-      discoveredYear: galaxy.currentYear
+      discoveredYear: galaxy.currentYear,
+      access
     });
   }
 

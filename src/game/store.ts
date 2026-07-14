@@ -65,10 +65,10 @@ import { culturalArtifactMultiplier, initializeCivilizationLayer } from '../worl
 import { blueprintFromProject, createResearchProject, researchPower } from '../research/technology';
 import { initializeWorldThreads, syncWorldThreads } from '../world/storyThreads';
 import { advanceWarFronts, createShipSystems, createTravelEncounter, damageSystem, initializeWarFronts, normalizeShipSystems, systemIntegrity } from '../world/warfare';
-import { buildSuccessionCandidates, captainFromAI, captainFromCrew, chronicleEntry, closeCurrentCaptain, createInitialLegacy, successorRecord } from '../world/legacy';
-import { generateHubScene, generateTravelScene, initializeNarrative, processDueConsequences } from '../narrative/encounters';
+import { chronicleEntry, closeCurrentCaptain, createInitialLegacy } from '../world/legacy';
+import { generateHubScene, generateScanScene, generateTravelScene, initializeNarrative, processDueConsequences } from '../narrative/encounters';
 
-export type MainScreen = 'menu' | 'command' | 'continuity' | 'chronicle' | 'encounters' | 'galaxy' | 'system' | 'hub' | 'contracts' | 'factions' | 'civilizations' | 'crew' | 'archive' | 'laboratory' | 'world' | 'operations' | 'ship' | 'settings';
+export type MainScreen = 'menu' | 'command' | 'continuity' | 'chronicle' | 'galaxy' | 'system' | 'hub' | 'contracts' | 'factions' | 'civilizations' | 'crew' | 'archive' | 'laboratory' | 'world' | 'operations' | 'ship' | 'settings';
 export type HydrationStatus = 'idle' | 'loading' | 'ready' | 'error';
 export type SaveStatus = 'idle' | 'pending' | 'saving' | 'saved' | 'error';
 
@@ -103,6 +103,7 @@ interface GameStore {
   equipmentInventory: EquipmentItem[];
   worldThreads: WorldThread[];
   storyScenes: StoryScene[];
+  activeStorySceneId: string | null;
   pendingConsequences: PendingConsequence[];
   objectives: PlayerObjective[];
   tutorial: TutorialState;
@@ -125,6 +126,8 @@ interface GameStore {
   skipTutorial(): Promise<void>;
   restartTutorial(): Promise<void>;
   resolveStoryScene(sceneId: string, choiceId: string): Promise<{ ok: boolean; message: string }>;
+  openStoryScene(sceneId: string): void;
+  closeStoryScene(): void;
   hydrateFromStorage(): Promise<void>;
   dismissSaveError(): void;
   dismissRecoveryNotice(): void;
@@ -132,11 +135,9 @@ interface GameStore {
   resumeGame(): Promise<boolean>;
   clearGame(): Promise<void>;
   triggerCaptainLoss(reason: string, condition?: CaptainCondition, pointOfInterestId?: string): Promise<void>;
-  chooseSuccessor(candidateId: string): Promise<{ ok: boolean; message: string }>;
   createMemorial(type: 'space' | 'archive' | 'homeworld' | 'hidden'): Promise<void>;
   enterChronicleMode(): Promise<void>;
   advanceChronicle(years: number): Promise<void>;
-  voluntarilyTransferCommand(): Promise<void>;
   createBackup(): Promise<boolean>;
   selectSystem(id: string | null): void;
   travelTo(systemId: string): Promise<{ ok: boolean; message: string; encounter?: 'shipContact' }>;
@@ -148,6 +149,7 @@ interface GameStore {
   changeTransponder(): Promise<{ ok: boolean; message: string }>;
   scanSystem(systemId: string): Promise<void>;
   detailedScanPlanet(planetId: string): Promise<{ ok: boolean; message: string }>;
+  investigatePoint(pointId: string): Promise<{ ok: boolean; message: string }>;
   completeExpedition(result: ExpeditionResult): Promise<void>;
   analyzeArtifact(artifactId: string): Promise<void>;
   startResearch(artifactId: string): Promise<{ ok: boolean; message: string }>;
@@ -216,15 +218,6 @@ const initialShip = (): Ship => ({
   systems: createShipSystems(),
   transponder: 'WANDERER-01',
   registration: 'VC-01-CORE',
-  aiCore: {
-    id: 'ship_ai_mnemosyne',
-    name: 'МНЕМОЗИНА',
-    personality: 'сдержанная, наблюдательная, преданная архиву экспедиции',
-    directives: ['сохранить корабль', 'защитить архив', 'найти нового капитана'],
-    integrity: 100,
-    operational: true,
-    journal: ['Ядро активировано перед первым выходом из дока.']
-  }
 });
 
 function buildStationAssignments(crew: CrewMember[]): Partial<Record<ShipSystemId, string>> {
@@ -252,8 +245,7 @@ const emptyLegacyState = (): LegacyState => ({
   lostExpeditions: [],
   memorials: [],
   chronicle: [],
-  observerYear: 0,
-  aiTurns: 0
+  observerYear: 0
 });
 
 const initialEquipment = (): EquipmentItem[] => ([
@@ -454,6 +446,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   equipmentInventory: [],
   worldThreads: [],
   storyScenes: [],
+  activeStorySceneId: null,
   pendingConsequences: [],
   objectives: [],
   tutorial: { enabled: false, active: false, currentStep: 0, completed: true },
@@ -549,6 +542,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       } : null;
       set({
         storyScenes: get().storyScenes.map((entry) => entry.id === scene.id ? { ...entry, status: 'resolved' as const, resolvedChoiceId: choice.id } : entry),
+        activeStorySceneId: get().activeStorySceneId === scene.id ? null : get().activeStorySceneId,
         pendingConsequences: consequence ? [consequence, ...get().pendingConsequences] : get().pendingConsequences,
         objectives: objective ? [objective, ...get().objectives] : get().objectives,
         factions,
@@ -560,6 +554,10 @@ export const useGameStore = create<GameStore>((set, get) => ({
       return { ok: true, message: 'Решение принято. Мир запомнил выбор.' };
     }, { ok: false, message: 'Другое действие ещё выполняется' });
   },
+  openStoryScene(sceneId) {
+    if (get().storyScenes.some((scene) => scene.id === sceneId && scene.status === 'available')) set({ activeStorySceneId: sceneId });
+  },
+  closeStoryScene() { set({ activeStorySceneId: null }); },
   async hydrateFromStorage() {
     if (get().hydrationStatus === 'ready') return;
     if (hydrationTask) return hydrationTask;
@@ -604,6 +602,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
           equipmentInventory: safe.equipmentInventory,
           worldThreads: safe.worldThreads,
           storyScenes: safe.storyScenes,
+          activeStorySceneId: null,
           pendingConsequences: safe.pendingConsequences,
           objectives: safe.objectives,
           tutorial: safe.tutorial,
@@ -681,6 +680,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
         equipmentInventory: initialEquipment(),
         worldThreads: initializeWorldThreads(enrichedGalaxy.civilizations, living.factions, civilizationLayer.archaeologyChains, 0),
         storyScenes: narrative.storyScenes,
+        activeStorySceneId: null,
         pendingConsequences: narrative.pendingConsequences,
         objectives: narrative.objectives,
         tutorial: { ...narrative.tutorial, targetPlanetId: preparedStart.tutorialPlanetId },
@@ -717,7 +717,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
         set({
           screen: 'menu', galaxy: null, captain: null, ship: null, currentSystemId: null,
           selectedSystemId: null, gameYear: 0, discoveries: [], logs: [], scanReports: [],
-          pointsOfInterest: [], evidence: [], hypotheses: [], artifactKnowledge: [], crew: [], crewCandidates: [], factions: [], hubs: [], contracts: [], news: [], locationStates: [], currentHubId: null, localNpcs: [], civilizationContacts: [], archaeologyChains: [], researchProjects: [], technologyBlueprints: [], equipmentInventory: [], worldThreads: [], storyScenes: [], pendingConsequences: [], objectives: [], tutorial: { enabled: false, active: false, currentStep: 0, completed: true }, activeShipEncounter: null, pursuits: [], warFronts: [], legacy: emptyLegacyState(),
+          pointsOfInterest: [], evidence: [], hypotheses: [], artifactKnowledge: [], crew: [], crewCandidates: [], factions: [], hubs: [], contracts: [], news: [], locationStates: [], currentHubId: null, localNpcs: [], civilizationContacts: [], archaeologyChains: [], researchProjects: [], technologyBlueprints: [], equipmentInventory: [], worldThreads: [], storyScenes: [], activeStorySceneId: null, pendingConsequences: [], objectives: [], tutorial: { enabled: false, active: false, currentStep: 0, completed: true }, activeShipEncounter: null, pursuits: [], warFronts: [], legacy: emptyLegacyState(),
           hydrationStatus: 'ready', saveAvailable: false, saveError: null,
           saveStatus: 'idle', saveMeta: null, backupCount: 0, recoveryNotice: null
         });
@@ -734,7 +734,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
         battles: get().logs.filter((entry) => /бой|абордаж|сражение/i.test(entry.title)).length
       };
       let nextLegacy = closeCurrentCaptain(legacy, captain, ship, crew, gameYear, currentSystemId, condition, reason, stats);
-      nextLegacy = { ...nextLegacy, successionCandidates: buildSuccessionCandidates(crew, ship) };
+      nextLegacy = { ...nextLegacy, mode: 'succession', campaignEnded: true, successionCandidates: [] };
       if (pointOfInterestId) {
         nextLegacy = {
           ...nextLegacy,
@@ -757,67 +757,11 @@ export const useGameStore = create<GameStore>((set, get) => ({
         legacy: nextLegacy,
         screen: 'continuity',
         activeShipEncounter: null,
+        activeStorySceneId: null,
         logs: [makeLog(gameYear, 'Командование прервано', reason, 'danger'), ...get().logs]
       });
       await persist(set, get, 'captain-loss', { immediate: true, backup: true });
     }, undefined);
-  },
-  async chooseSuccessor(candidateId) {
-    return runExclusive('choose-successor', set, get, async () => {
-      const { legacy, captain: previous, ship, currentSystemId, gameYear } = get();
-      if (!previous || !ship || !currentSystemId || legacy.mode !== 'succession') return { ok: false, message: 'Преемственность сейчас не требуется' };
-      const candidate = legacy.successionCandidates.find((entry) => entry.id === candidateId && entry.eligible);
-      if (!candidate) return { ok: false, message: 'Преемник недоступен' };
-      let nextCaptain: Captain;
-      let crew = get().crew;
-      let equipmentInventory = get().equipmentInventory;
-      let mode: LegacyState['mode'] = 'active';
-      let aiTurns = legacy.aiTurns;
-      if (candidate.source === 'crew') {
-        const member = crew.find((entry) => entry.id === candidate.sourceId);
-        if (!member) return { ok: false, message: 'Кандидат покинул экипаж' };
-        nextCaptain = captainFromCrew(member, previous);
-        crew = crew.filter((entry) => entry.id !== member.id);
-        equipmentInventory = equipmentInventory.map((item) => item.assignedToId === previous.id || item.assignedToId === member.id ? { ...item, assignedToId: nextCaptain.id } : item);
-      } else {
-        if (!ship.aiCore.operational || ship.aiCore.integrity <= 0) return { ok: false, message: 'Ядро ИИ не отвечает' };
-        nextCaptain = captainFromAI(ship, previous);
-        mode = 'ai';
-        aiTurns += 1;
-      }
-      const record = successorRecord(nextCaptain, ship, gameYear, currentSystemId);
-      const nextLegacy: LegacyState = {
-        ...legacy,
-        mode,
-        campaignEnded: false,
-        continuityReason: undefined,
-        currentCaptainRecordId: record.id,
-        captains: [...legacy.captains, record].slice(-100),
-        successionCandidates: [],
-        aiTurns,
-        chronicle: [chronicleEntry({
-          year: gameYear,
-          category: 'succession',
-          title: mode === 'ai' ? 'Корабль продолжил путь сам' : 'Новый капитан',
-          text: mode === 'ai' ? `${ship.aiCore.name} приняла управление кораблём и начала поиск живого командира.` : `${nextCaptain.name} принял командование «${ship.name}».`,
-          tone: 'good',
-          captainRecordId: record.id,
-          systemId: currentSystemId
-        }), ...legacy.chronicle].slice(0, 1000)
-      };
-      set({
-        captain: nextCaptain,
-        crew,
-        equipmentInventory,
-        legacy: nextLegacy,
-        screen: 'command',
-        activeShipEncounter: null,
-        ship: mode === 'ai' ? { ...ship, aiCore: { ...ship.aiCore, journal: [`Год ${gameYear}: автономное командование принято.`, ...ship.aiCore.journal].slice(0, 50) } } : ship,
-        logs: [makeLog(gameYear, 'Преемственность восстановлена', `${nextCaptain.name} продолжает историю экспедиции.`, 'good'), ...get().logs]
-      });
-      await persist(set, get, 'choose-successor', { immediate: true, backup: true });
-      return { ok: true, message: 'Командование восстановлено' };
-    }, { ok: false, message: 'Другое действие ещё выполняется' });
   },
   async createMemorial(type) {
     return runExclusive('memorial', set, get, async () => {
@@ -876,9 +820,6 @@ export const useGameStore = create<GameStore>((set, get) => ({
       set({ gameYear: nextYear, warFronts: fronts, legacy: { ...legacy, observerYear: nextYear, chronicle: [entry, ...legacy.chronicle].slice(0, 1000) } });
       await persist(set, get, 'chronicle-advance');
     }, undefined);
-  },
-  async voluntarilyTransferCommand() {
-    await get().triggerCaptainLoss('Капитан добровольно сложил полномочия и потребовал выбрать преемника.', 'retired');
   },
   async createBackup() {
     return runExclusive('backup', set, get, async () => {
@@ -952,7 +893,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       ].slice(0, 160);
       const objectives = get().objectives.map((objective) => objective.status === 'active' && objective.deadlineYear !== undefined && objective.deadlineYear < nextYear ? { ...objective, status: 'failed' as const } : objective);
       const pursuits = get().pursuits.map((entry) => entry.status === 'active' && (entry.knownIdentity || entry.knownTransponder) ? { ...entry, lastKnownSystemId: target.id, lastUpdateYear: nextYear } : entry);
-      set({ galaxy: updatedGalaxy, ship: updatedShip, currentSystemId: target.id, selectedSystemId: target.id, currentHubId: null, gameYear: nextYear, logs, contracts, news: nextNews, worldThreads, storyScenes, pendingConsequences: processedConsequences.consequences, objectives, activeShipEncounter, pursuits, warFronts });
+      set({ galaxy: updatedGalaxy, ship: updatedShip, currentSystemId: target.id, selectedSystemId: target.id, currentHubId: null, gameYear: nextYear, logs, contracts, news: nextNews, worldThreads, storyScenes, activeStorySceneId: generatedScene?.id ?? null, pendingConsequences: processedConsequences.consequences, objectives, activeShipEncounter, pursuits, warFronts });
       await persist(set, get, activeShipEncounter ? 'travel-contact' : 'travel');
       return { ok: true, message: activeShipEncounter ? 'Перелёт завершён. Обнаружен корабельный контакт.' : 'Перелёт завершён', encounter };
     }, { ok: false, message: 'Другое действие ещё выполняется' });
@@ -1183,7 +1124,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
             'Капитан захвачен после уничтожения боеспособности корабля.',
             stats
           );
-          nextLegacy = { ...nextLegacy, successionCandidates: buildSuccessionCandidates(get().crew, nextShip) };
+          nextLegacy = { ...nextLegacy, mode: 'succession', campaignEnded: true, successionCandidates: [] };
           nextScreen = 'continuity';
           nextActiveEncounter = null;
         }
@@ -1289,11 +1230,15 @@ export const useGameStore = create<GameStore>((set, get) => ({
       };
       const tutorial = get().tutorial;
       const tutorialUpdate = tutorial.active && tutorial.currentStep === 1 ? { ...tutorial, currentStep: 2 } : tutorial;
+      const scanScene = generateScanScene(updatedGalaxy.seed, system.id, system.name, gameYear);
+      const storyScenes = scanScene && !get().storyScenes.some((scene) => scene.id === scanScene.id) ? [scanScene, ...get().storyScenes].slice(0, 160) : get().storyScenes;
       set({
         galaxy: updatedGalaxy,
         tutorial: tutorialUpdate,
         scanReports: [report, ...get().scanReports.filter((entry) => entry.id !== report.id)],
         civilizationContacts,
+        storyScenes,
+        activeStorySceneId: scanScene?.id ?? null,
         logs: [makeLog(gameYear, `Система ${system.name} просканирована`, 'Получены орбиты, первичные характеристики планет и признаки разумной активности.', 'good'), ...get().logs]
       });
       await persist(set, get, 'system-scan');
@@ -1359,6 +1304,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
       const tutorialUpdate = tutorial.active && tutorial.currentStep === 3
         ? { ...tutorial, currentStep: 4, targetPointOfInterestId: tutorialPoint?.id ?? tutorial.targetPointOfInterestId }
         : tutorial;
+      const scanScene = generateScanScene(updatedGalaxy.seed, system.id, system.name, gameYear, planet.name);
+      const storyScenes = scanScene && !get().storyScenes.some((scene) => scene.id === scanScene.id) ? [scanScene, ...get().storyScenes].slice(0, 160) : get().storyScenes;
       set({
         galaxy: updatedGalaxy,
         tutorial: tutorialUpdate,
@@ -1370,10 +1317,55 @@ export const useGameStore = create<GameStore>((set, get) => ({
         captain,
         archaeologyChains,
         civilizationContacts,
+        storyScenes,
+        activeStorySceneId: scanScene?.id ?? null,
         logs: [makeLog(gameYear, `Детальный скан: ${planet.name}`, `Обнаружено ${generated.length} точек интереса.${reward ? ` Контракт закрыт: +${reward} кредитов.` : ''}`, 'good'), ...get().logs]
       });
       await persist(set, get, 'detail-scan');
       return { ok: true, message: `Обнаружено сигналов: ${generated.length}` };
+    }, { ok: false, message: 'Другое действие ещё выполняется' });
+  },
+  async investigatePoint(pointId) {
+    return runExclusive('investigate-point', set, get, async () => {
+      const { galaxy, captain, gameYear } = get();
+      const point = get().pointsOfInterest.find((entry) => entry.id === pointId);
+      if (!galaxy || !captain || !point) return { ok: false, message: 'Сигнал недоступен' };
+      if (point.status === 'resolved') return { ok: false, message: 'Сигнал уже исследован' };
+      if (point.access === 'surface') return { ok: false, message: 'Для этой цели требуется высадка' };
+      const system = galaxy.systems.find((entry) => entry.id === point.systemId);
+      const planet = system?.planets.find((entry) => entry.id === point.planetId);
+      if (!system || !planet) return { ok: false, message: 'Источник сигнала потерян' };
+      const method = point.access === 'orbital' ? 'Орбитальный анализ' : 'Дистанционный анализ';
+      const discovery: Discovery = {
+        id: `disc_remote_${point.id}`,
+        kind: point.type === 'biosphere' ? 'biosphere' : point.type === 'settlement' ? 'settlement' : point.type === 'anomaly' ? 'anomaly' : 'signal',
+        name: point.name,
+        systemId: point.systemId,
+        planetId: point.planetId,
+        pointOfInterestId: point.id,
+        description: `${method} завершён. ${point.publicSummary}`,
+        confidence: Math.max(point.scanConfidence, point.access === 'orbital' ? 86 : 74),
+        year: gameYear,
+        tags: [point.type, point.access, point.danger]
+      };
+      const scanScene = generateScanScene(galaxy.seed, system.id, system.name, gameYear, point.name);
+      const storyScenes = scanScene && !get().storyScenes.some((scene) => scene.id === scanScene.id) ? [scanScene, ...get().storyScenes].slice(0, 160) : get().storyScenes;
+      const civilizationContacts = get().civilizationContacts.map((contact) => point.civilizationId === contact.civilizationId && ['unknown','observed'].includes(contact.stage) ? {
+        ...contact,
+        stage: 'signals' as const,
+        lastContactYear: gameYear,
+        notes: [...contact.notes, `${method} сигнала «${point.name}» подтвердил искусственное происхождение.`].slice(-12)
+      } : contact);
+      set({
+        pointsOfInterest: get().pointsOfInterest.map((entry) => entry.id === point.id ? { ...entry, status: 'resolved' as const, visits: entry.visits + 1, lastVisitedYear: gameYear } : entry),
+        discoveries: get().discoveries.some((entry) => entry.id === discovery.id) ? get().discoveries : [discovery, ...get().discoveries],
+        civilizationContacts,
+        storyScenes,
+        activeStorySceneId: scanScene?.id ?? null,
+        logs: [makeLog(gameYear, method, `${point.name}: анализ завершён без высадки.`, 'good'), ...get().logs]
+      });
+      await persist(set, get, 'investigate-point');
+      return { ok: true, message: `${method} завершён` };
     }, { ok: false, message: 'Другое действие ещё выполняется' });
   },
   async completeExpedition(result) {
@@ -1550,7 +1542,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
         legacy = closeCurrentCaptain(legacy, updatedCaptain, updatedShip, updatedCrew, gameYear, currentSystemId, 'dead', `Капитан погиб во время экспедиции «${point.name}».`, stats);
         legacy = {
           ...legacy,
-          successionCandidates: buildSuccessionCandidates(updatedCrew, updatedShip),
+          mode: 'succession' as const,
+          campaignEnded: true,
+          successionCandidates: [],
           lostExpeditions: [{
             id: `lost_expedition_${point.id}_${gameYear}`,
             year: gameYear,
@@ -1917,6 +1911,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
         factions: updatedFactions,
         contracts: updatedContracts,
         storyScenes,
+        activeStorySceneId: hubScene?.id ?? null,
         logs
       });
       await persist(set, get, 'dock');
@@ -2166,6 +2161,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
         equipmentInventory: safe.equipmentInventory,
         worldThreads: safe.worldThreads,
         storyScenes: safe.storyScenes,
+        activeStorySceneId: null,
         pendingConsequences: safe.pendingConsequences,
         objectives: safe.objectives,
         tutorial: safe.tutorial,

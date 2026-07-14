@@ -147,18 +147,40 @@ function createSystems(settings: GalaxySettings): StarSystem[] {
   return systems;
 }
 
+function expandTerritory(home: StarSystem, systems: StarSystem[], targetSize: number): string[] {
+  const index = new Map(systems.map((system) => [system.id, system]));
+  const queue = [home.id];
+  const visited = new Set<string>();
+  while (queue.length && visited.size < targetSize) {
+    const id = queue.shift();
+    if (!id || visited.has(id)) continue;
+    visited.add(id);
+    const system = index.get(id);
+    for (const neighbor of system?.neighbors ?? []) if (!visited.has(neighbor)) queue.push(neighbor);
+  }
+  return [...visited];
+}
+
 function createCivilizations(settings: GalaxySettings, systems: StarSystem[]): Civilization[] {
   const rng = createRng(`${settings.seed}:civilizations`);
-  const candidateSystems = systems.filter((system) => system.planets.some((planet) => planet.habitability > 30));
+  const candidateSystems = systems.filter((system) => system.planets.some((planet) => planet.habitability > 30 && planet.type !== 'gas'));
+  const homes = candidateSystems.length ? candidateSystems : systems;
+  const usedHomes = new Set<string>();
   const civilizations: Civilization[] = [];
+  const territoryBase = Math.max(2, Math.min(12, Math.round(settings.systemCount / Math.max(2, settings.civilizationCount) * .32)));
+
   for (let i = 0; i < settings.civilizationCount; i += 1) {
     const species = speciesName(rng);
-    const home = candidateSystems[(i * 17 + rng.int(0, Math.max(0, candidateSystems.length - 1))) % candidateSystems.length] ?? systems[i % systems.length];
+    const spacedIndex = Math.floor(i * homes.length / settings.civilizationCount);
+    let home = homes[(spacedIndex + rng.int(0, Math.max(0, Math.floor(homes.length / Math.max(2, settings.civilizationCount))))) % homes.length];
+    if (!home || usedHomes.has(home.id)) home = homes.find((entry) => !usedHomes.has(entry.id)) ?? home ?? systems[i % systems.length];
     if (!home) continue;
-    const status: Civilization['status'] = i % 5 === 0 ? 'dead' : i % 11 === 0 ? 'hidden' : 'living';
+    usedHomes.add(home.id);
+
+    const status: Civilization['status'] = i % 6 === 0 ? 'dead' : i % 13 === 0 ? 'hidden' : 'living';
     const id = `civ_${i.toString(36)}_${stableHash(`${settings.seed}:civ:${i}`)}`;
-    const reach = status === 'dead' ? rng.int(1, 12) : rng.int(1, Math.max(2, Math.round(2 + i / 4)));
-    const controlled = [home.id, ...home.neighbors.slice(0, reach)].slice(0, reach + 1);
+    const reach = status === 'dead' ? rng.int(2, Math.max(3, territoryBase + 4)) : status === 'hidden' ? rng.int(1, Math.max(2, Math.floor(territoryBase / 2))) : rng.int(Math.max(2, territoryBase - 1), territoryBase + 2);
+    const controlled = expandTerritory(home, systems, reach);
     const foundedYear = -rng.int(800, Math.min(settings.historyYears, 1_800_000));
     const civilization: Civilization = {
       id,
@@ -174,14 +196,16 @@ function createCivilizations(settings: GalaxySettings, systems: StarSystem[]): C
       traits: Array.from(new Set([rng.pick(civTraits), rng.pick(civTraits), rng.pick(civTraits)]))
     };
     civilizations.push(civilization);
-    for (const systemId of controlled) {
+    controlled.forEach((systemId, territoryIndex) => {
       const system = systems.find((entry) => entry.id === systemId);
-      if (!system) continue;
-      system.civilizationIds.push(id);
+      if (!system) return;
+      if (!system.civilizationIds.includes(id)) system.civilizationIds.push(id);
       if (status === 'living' && !system.factionId) system.factionId = id;
-      const habitable = system.planets.find((planet) => planet.habitability > 30 && planet.type !== 'gas');
-      if (habitable && !habitable.civilizationId) habitable.civilizationId = id;
-    }
+      const habitable = system.planets
+        .filter((planet) => planet.habitability > 30 && planet.type !== 'gas')
+        .sort((a, b) => b.habitability - a.habitability)[0];
+      if (habitable && !habitable.civilizationId && (territoryIndex === 0 || status === 'living' || rng.chance(.48))) habitable.civilizationId = id;
+    });
   }
   return civilizations;
 }

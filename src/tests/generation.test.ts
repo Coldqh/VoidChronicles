@@ -52,4 +52,15 @@ describe('galaxy generation', () => {
     expect(normalized.civilizationCount).toBe(80);
   });
 
+
+  it('spreads living civilizations across visible connected territories', async () => {
+    const galaxy = await generateGalaxy({ ...settings, seed: 'LIVING-TERRITORIES', systemCount: 120, civilizationCount: 18 });
+    const living = galaxy.civilizations.filter((civilization) => civilization.status === 'living');
+    expect(living.length).toBeGreaterThan(galaxy.civilizations.length / 2);
+    expect(living.every((civilization) => civilization.controlledSystems.length >= 2)).toBe(true);
+    for (const civilization of living) {
+      expect(civilization.controlledSystems.every((systemId) => galaxy.systems.find((system) => system.id === systemId)?.civilizationIds.includes(civilization.id))).toBe(true);
+    }
+  });
+
 });

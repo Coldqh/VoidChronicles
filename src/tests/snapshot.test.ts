@@ -28,7 +28,7 @@ async function makeLegacySnapshot(): Promise<GameStateSnapshot> {
     },
     ship: {
       id: 'ship', name: 'Test Ship', hull: 100, maxHull: 100, fuel: 100, maxFuel: 100,
-      jumpRange: 200, cargoCapacity: 10, cargo: [], modules: [], statuses: [], systems: [], transponder: 'TEST-01', registration: 'TEST-REG', aiCore: { id: 'test-ai', name: 'TEST AI', personality: 'neutral', directives: [], integrity: 100, operational: true, journal: [] }
+      jumpRange: 200, cargoCapacity: 10, cargo: [], modules: [], statuses: [], systems: [], transponder: 'TEST-01', registration: 'TEST-REG'
     },
     currentSystemId: galaxy.startSystemId,
     gameYear: 0,
@@ -42,7 +42,7 @@ async function makeLegacySnapshot(): Promise<GameStateSnapshot> {
     crew: [],
     crewCandidates: [],
     factions: [], hubs: [], contracts: [], news: [], locationStates: [], currentHubId: null,
-    localNpcs: [], civilizationContacts: [], archaeologyChains: [], researchProjects: [], technologyBlueprints: [], equipmentInventory: [], worldThreads: [], storyScenes: [], pendingConsequences: [], objectives: [], tutorial: { enabled: false, active: false, currentStep: 0, completed: true }, activeShipEncounter: null, pursuits: [], warFronts: [], legacy: { mode: 'active', campaignEnded: false, currentCaptainRecordId: '', captains: [], successionCandidates: [], lostExpeditions: [], memorials: [], chronicle: [], observerYear: 0, aiTurns: 0 }
+    localNpcs: [], civilizationContacts: [], archaeologyChains: [], researchProjects: [], technologyBlueprints: [], equipmentInventory: [], worldThreads: [], storyScenes: [], pendingConsequences: [], objectives: [], tutorial: { enabled: false, active: false, currentStep: 0, completed: true }, activeShipEncounter: null, pursuits: [], warFronts: [], legacy: { mode: 'active', campaignEnded: false, currentCaptainRecordId: '', captains: [], successionCandidates: [], lostExpeditions: [], memorials: [], chronicle: [], observerYear: 0 }
   };
 }
 
@@ -51,7 +51,7 @@ describe('snapshot validation and migration', () => {
     const legacy = await makeLegacySnapshot();
     const migrated = parseSnapshot(legacy);
     expect(migrated.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
-    expect(migrated.saveMeta?.appVersion).toBe('0.9.7');
+    expect(migrated.saveMeta?.appVersion).toBe('0.9.8');
     expect(migrated.saveMeta?.checksum).toMatch(/^[0-9a-f]{8}$/);
   });
 
@@ -168,6 +168,25 @@ describe('snapshot validation and migration', () => {
     expect(restored.activeShipEncounter?.phase).toBe('combat');
     expect(restored.activeShipEncounter?.turn).toBe(3);
     expect(restored.activeShipEncounter?.enemy.hull).toBe(40);
+  });
+
+
+  it('strips retired ship continuation data and ends old autonomous campaigns', async () => {
+    const current = prepareSnapshotForSave(parseSnapshot(await makeLegacySnapshot()), 'retired-continuation');
+    const legacyInput = structuredClone(current) as any;
+    legacyInput.ship.aiCore = { id: 'retired-core', name: 'OLD CORE', personality: 'neutral', directives: [], integrity: 100, operational: true, journal: [] };
+    legacyInput.captain.commandIdentity = 'shipAI';
+    legacyInput.legacy.mode = 'ai';
+    legacyInput.legacy.aiTurns = 7;
+    legacyInput.legacy.successionCandidates = [{ id: 'ai-candidate', source: 'ai', sourceId: 'retired-core', name: 'OLD CORE', role: 'core', loyalty: 100, eligible: true, consequences: [] }];
+    const migrated = parseSnapshot(legacyInput, { verifyChecksum: false }) as any;
+    expect(migrated.ship.aiCore).toBeUndefined();
+    expect(migrated.captain.commandIdentity).toBe('organic');
+    expect(migrated.captain.alive).toBe(false);
+    expect(migrated.legacy.mode).toBe('succession');
+    expect(migrated.legacy.campaignEnded).toBe(true);
+    expect(migrated.legacy.successionCandidates).toEqual([]);
+    expect(migrated.legacy.aiTurns).toBeUndefined();
   });
 
 });

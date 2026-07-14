@@ -1,5 +1,19 @@
 # Changelog
 
+## v0.9.8 — Expedition Flow & Roguelike Cleanup
+
+- made every generated expedition map square and added a compact enemy inspection panel;
+- added shortest-path movement to distant cells with visible step-by-step player and enemy turns;
+- restored ship crew recruitment as a permanently available game section;
+- removed the separate Scenes section and now opens contextual scenes after scans, travel and docking;
+- removed the Ship subtab from Operations;
+- split planetary signals into surface landing, orbital analysis and remote analysis;
+- expanded and redistributed living civilizations so they occupy visible connected territories;
+- made every ship-contact phase and loadout window fit its real content without empty vertical space;
+- rebuilt the death screen as a compact final roguelike result;
+- removed ship AI, AI succession and post-death continuation from current gameplay and save data;
+- save schema remains v10 and old AI-era snapshots are sanitized during loading.
+
 ## v0.9.7 — Mobile Combat & Windows
 
 - moved expedition and ship-operation windows above the mobile HUD and dock;

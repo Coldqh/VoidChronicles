@@ -1,12 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Captain, CrewMember, Ship } from '../game/types';
-import {
-  buildSuccessionCandidates,
-  captainFromAI,
-  captainFromCrew,
-  closeCurrentCaptain,
-  createInitialLegacy
-} from '../world/legacy';
+import { closeCurrentCaptain, createInitialLegacy } from '../world/legacy';
 import { createShipSystems } from '../world/warfare';
 
 const captain: Captain = {
@@ -19,8 +13,7 @@ const captain: Captain = {
 const ship: Ship = {
   id: 'ship-one', name: 'Странник', hull: 72, maxHull: 100, fuel: 60, maxFuel: 100,
   jumpRange: 230, cargoCapacity: 10, cargo: [], modules: [], statuses: [],
-  systems: createShipSystems(), transponder: 'VOID-001', registration: 'REG-001',
-  aiCore: { id: 'ai-one', name: 'МНЕМОЗИНА', personality: 'наблюдательная', directives: ['сохранить архив'], integrity: 88, operational: true, journal: [] }
+  systems: createShipSystems(), transponder: 'VOID-001', registration: 'REG-001'
 };
 
 const crew: CrewMember[] = [{
@@ -30,7 +23,7 @@ const crew: CrewMember[] = [{
   traits: ['верная', 'бережливая'], belief: 'экипаж нельзя бросать', status: 'active', injuries: [], memories: []
 }];
 
-describe('legacy and continuity', () => {
+describe('ironman legacy', () => {
   it('creates the first captain record and command chronicle', () => {
     const legacy = createInitialLegacy(captain, ship, 0, 'sys-start');
     expect(legacy.mode).toBe('active');
@@ -39,37 +32,27 @@ describe('legacy and continuity', () => {
     expect(legacy.chronicle[0]?.title).toBe('Начало командования');
   });
 
-  it('offers living crew and the operational ship AI as successors', () => {
-    const candidates = buildSuccessionCandidates(crew, ship);
-    expect(candidates.some((entry) => entry.source === 'crew' && entry.sourceId === 'crew-engineer')).toBe(true);
-    expect(candidates.some((entry) => entry.source === 'ai' && entry.sourceId === 'ai-one')).toBe(true);
-  });
-
-  it('closes the old command and enters succession mode', () => {
+  it('ends the playable campaign when the captain dies', () => {
     const legacy = createInitialLegacy(captain, ship, 0, 'sys-start');
     const closed = closeCurrentCaptain(
       legacy, captain, ship, crew, 9, 'sys-loss', 'dead', 'Капитан погиб во время абордажа.',
       { systemsVisited: 6, discoveries: 13, battles: 4 }
     );
     expect(closed.mode).toBe('succession');
+    expect(closed.campaignEnded).toBe(true);
     expect(closed.captains[0]?.fate).toBe('dead');
     expect(closed.captains[0]?.endedYear).toBe(9);
-    expect(closed.successionCandidates).toHaveLength(2);
+    expect(closed.successionCandidates).toEqual([]);
+    expect(closed.continuityReason).toContain('погиб');
   });
 
-  it('promotes a crew member without copying the old personal reputation completely', () => {
-    const successor = captainFromCrew(crew[0]!, captain);
-    expect(successor.id).toBe('crew-engineer');
-    expect(successor.commandIdentity).toBe('organic');
-    expect(successor.skills.research).toBeGreaterThan(1);
-    expect(successor.reputation).toBeLessThan(captain.reputation);
-  });
-
-  it('allows the ship AI to continue when no organic captain remains', () => {
-    const successor = captainFromAI(ship, captain);
-    expect(successor.id).toBe('ai-one');
-    expect(successor.commandIdentity).toBe('shipAI');
-    expect(successor.health).toBe(88);
-    expect(successor.credits).toBe(captain.credits);
+  it('does not turn surviving crew or the ship into a successor', () => {
+    const legacy = createInitialLegacy(captain, ship, 0, 'sys-start');
+    const closed = closeCurrentCaptain(
+      legacy, captain, ship, crew, 3, 'sys-loss', 'dead', 'Экспедиция уничтожена.',
+      { systemsVisited: 2, discoveries: 1, battles: 1 }
+    );
+    expect(closed.successionCandidates).toHaveLength(0);
+    expect(closed.campaignEnded).toBe(true);
   });
 });

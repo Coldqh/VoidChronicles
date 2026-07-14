@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { LocationState, Planet, PointOfInterest } from '../game/types';
 import { generateSurface } from '../generation/surface';
+import { findFastestPath } from '../components/ExpeditionModal';
 
 const planet: Planet = {
   id: 'planet-memory', name: 'Memory', type: 'rocky', orbit: 1, moons: 0,
@@ -9,7 +10,7 @@ const planet: Planet = {
 };
 const point: PointOfInterest = {
   id: 'poi-memory', systemId: 'system-memory', planetId: planet.id, name: 'Persistent Ruin',
-  type: 'ruin', status: 'visited', danger: 'extreme', age: 1000, origin: 'test', publicSummary: 'test', truth: 'test',
+  type: 'ruin', access: 'surface', status: 'visited', danger: 'extreme', age: 1000, origin: 'test', publicSummary: 'test', truth: 'test',
   requiredEquipment: ['scanner'], possibleRewards: ['data'], scanConfidence: 70, visits: 1, discoveredYear: 0
 };
 
@@ -70,9 +71,31 @@ describe('persistent expedition locations', () => {
     const tutorialPlanet = { ...planet, id: 'tutorial-planet', imageKey: 'tutorial-target' };
     const tutorialPoint = { ...point, id: 'tutorial-point', danger: 'caution' as const };
     const map = generateSurface('TUTORIAL-SEED', tutorialPlanet, tutorialPoint);
-    expect(map.width).toBe(16);
-    expect(map.height).toBe(11);
+    expect(map.width).toBe(13);
+    expect(map.height).toBe(13);
+    expect(map.width).toBe(map.height);
     expect(map.objects).toHaveLength(2);
     expect(map.objects.some((object) => Math.abs(object.x - map.player.x) + Math.abs(object.y - map.player.y) <= 5)).toBe(true);
   });
+
+  it('finds a shortest traversable route to a distant cell', () => {
+    const map = generateSurface('PATH-SEED', planet, point);
+    const open = {
+      ...map,
+      enemies: [],
+      tiles: map.tiles.map((tile) => ({ ...tile, revealed: true }))
+    };
+    const targets = open.tiles
+      .filter((tile) => tile.kind !== 'rock')
+      .sort((a, b) => (Math.abs(b.x - open.player.x) + Math.abs(b.y - open.player.y)) - (Math.abs(a.x - open.player.x) + Math.abs(a.y - open.player.y)));
+    const route = targets.map((target) => findFastestPath(open, target)).find((path) => path.length > 4);
+    expect(route).toBeDefined();
+    expect(route?.[0]).toEqual(open.player);
+    for (let index = 1; index < (route?.length ?? 0); index += 1) {
+      const previous = route![index - 1]!;
+      const current = route![index]!;
+      expect(Math.abs(previous.x - current.x) + Math.abs(previous.y - current.y)).toBe(1);
+    }
+  });
+
 });

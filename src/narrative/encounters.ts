@@ -239,3 +239,38 @@ export function generateHubScene(seed: string, hub: Hub, faction: Faction | unde
     ]
   };
 }
+
+export function generateScanScene(
+  seed: string,
+  systemId: string,
+  systemName: string,
+  year: number,
+  planetName?: string
+): StoryScene | null {
+  const rng = createRng(`${seed}:scan-scene:${systemId}:${planetName ?? 'system'}:${year}`);
+  if (!rng.chance(planetName ? .68 : .52)) return null;
+  const title = planetName ? `Ответ на сканирование ${planetName}` : `Неожиданный ответ из системы ${systemName}`;
+  return {
+    id: `scene_scan_${systemId}_${planetName ?? 'system'}_${year}`.replace(/\s+/g, '_'),
+    category: 'mystery',
+    status: 'available',
+    title,
+    summary: planetName
+      ? 'Фокусировка сканера вызвала короткий направленный ответ.'
+      : 'После системного импульса один из неизвестных источников изменил частоту.',
+    body: planetName
+      ? `Источник рядом с ${planetName} передал пакет координат, затем замолчал. Сигнал не совпадает с гражданскими протоколами.`
+      : `В системе ${systemName} появился узкий канал связи. Отправитель не называет себя и просит отключить повторный скан.`,
+    source: 'сенсорный комплекс',
+    systemId,
+    npcIds: [],
+    factionIds: [],
+    createdYear: year,
+    expiresYear: year + 2,
+    choices: [
+      { id: 'trace', label: 'Отследить ответ', summary: 'Сохранить направление и открыть новую цель.', risk: 'medium', effect: { objectiveTitle: 'Источник встречного сигнала', objectiveDescription: `Найти источник ответа в системе ${systemName}.`, objectiveSystemId: systemId, reputation: 1 } },
+      { id: 'reply', label: 'Ответить', summary: 'Передать идентификатор корабля и запросить контакт.', risk: 'high', effect: { consequenceDelay: 1, consequenceTitle: 'Неизвестный получил идентификатор', consequenceText: 'После ответа в сети появился запрос по транспондеру корабля.', consequenceTone: 'warning' } },
+      { id: 'silence', label: 'Закрыть канал', summary: 'Не раскрывать присутствие.', risk: 'low', effect: {} }
+    ]
+  };
+}

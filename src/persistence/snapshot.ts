@@ -178,7 +178,7 @@ const captainSchema = z.object({
   injuries: z.array(injurySchema),
   alive: z.boolean(),
   condition: z.enum(['active','dead','missing','captured','coma','stranded','retired']).default('active'),
-  commandIdentity: z.enum(['organic','shipAI']).default('organic')
+  commandIdentity: z.preprocess(() => 'organic', z.literal('organic'))
 });
 
 const cargoSchema = z.object({
@@ -205,12 +205,6 @@ const shipSystemIdSchema = z.enum(['engine','reactor','weapons','sensors','comms
 const shipSystemSchema = z.object({
   id: shipSystemIdSchema, label: z.string(), integrity: finiteNumber, maxIntegrity: finiteNumber, disabled: z.boolean(), effect: z.string()
 });
-const shipAiSchema = z.object({
-  id: z.string(), name: z.string(), personality: z.string(), directives: z.array(z.string()), integrity: finiteNumber,
-  operational: z.boolean(), journal: z.array(z.string())
-});
-const defaultShipAi = { id: 'ship_ai_mnemosyne', name: 'МНЕМОЗИНА', personality: 'сдержанная, наблюдательная', directives: ['сохранить корабль','защитить архив','найти нового капитана'], integrity: 100, operational: true, journal: [] };
-
 const shipSchema = z.object({
   id: z.string().min(1),
   name: z.string(),
@@ -225,8 +219,7 @@ const shipSchema = z.object({
   statuses: z.array(z.string()),
   systems: z.array(shipSystemSchema).default([]),
   transponder: z.string().default('WANDERER-01'),
-  registration: z.string().default('VC-01-CORE'),
-  aiCore: shipAiSchema.default(defaultShipAi)
+  registration: z.string().default('VC-01-CORE')
 });
 
 const discoverySchema = z.object({
@@ -285,7 +278,8 @@ const pointOfInterestSchema = z.object({
   scanConfidence: finiteNumber,
   visits: finiteNumber,
   discoveredYear: finiteNumber,
-  lastVisitedYear: finiteNumber.optional()
+  lastVisitedYear: finiteNumber.optional(),
+  access: z.enum(['surface','orbital','remote']).default('surface')
 });
 
 const evidenceSchema = z.object({
@@ -484,19 +478,19 @@ const warFrontSchema = z.object({
 
 
 const captainLegacyRecordSchema = z.object({
-  id: z.string(), captainId: z.string(), name: z.string(), commandIdentity: z.enum(['organic','shipAI']), startedYear: finiteNumber,
+  id: z.string(), captainId: z.string(), name: z.string(), commandIdentity: z.preprocess(() => 'organic', z.literal('organic')), startedYear: finiteNumber,
   endedYear: finiteNumber.optional(), fate: z.enum(['active','dead','missing','captured','coma','stranded','retired']).optional(), finalSystemId: z.string().optional(),
   shipName: z.string(), systemsVisited: finiteNumber, discoveries: finiteNumber, battles: finiteNumber, reputation: finiteNumber,
   epitaph: z.string().optional(), memorialId: z.string().optional()
 });
-const successionCandidateSchema = z.object({ id: z.string(), source: z.enum(['crew','ai']), sourceId: z.string(), name: z.string(), role: z.string(), loyalty: finiteNumber, eligible: z.boolean(), consequences: z.array(z.string()) });
+const successionCandidateSchema = z.object({ id: z.string(), source: z.literal('crew'), sourceId: z.string(), name: z.string(), role: z.string(), loyalty: finiteNumber, eligible: z.boolean(), consequences: z.array(z.string()) });
 const lostExpeditionSchema = z.object({ id: z.string(), year: finiteNumber, systemId: z.string(), pointOfInterestId: z.string().optional(), captainRecordId: z.string(), crewIds: z.array(z.string()), cargoIds: z.array(z.string()), status: z.enum(['unrecovered','recovered','lost']), summary: z.string(), recoveredYear: finiteNumber.optional() });
 const memorialSchema = z.object({ id: z.string(), captainRecordId: z.string(), type: z.enum(['space','archive','homeworld','hidden']), year: finiteNumber, systemId: z.string(), text: z.string(), public: z.boolean() });
 const chronicleEntrySchema = z.object({ id: z.string(), year: finiteNumber, category: z.enum(['command','death','succession','discovery','war','memorial','recovery','world']), title: z.string(), text: z.string(), tone: z.enum(['info','good','warning','danger']), captainRecordId: z.string().optional(), systemId: z.string().optional() });
 const legacyStateSchema = z.object({
-  mode: z.enum(['active','succession','ai','chronicle']), campaignEnded: z.boolean(), continuityReason: z.string().optional(), currentCaptainRecordId: z.string(),
+  mode: z.enum(['active','succession','chronicle']), campaignEnded: z.boolean(), continuityReason: z.string().optional(), currentCaptainRecordId: z.string(),
   captains: z.array(captainLegacyRecordSchema), successionCandidates: z.array(successionCandidateSchema), lostExpeditions: z.array(lostExpeditionSchema),
-  memorials: z.array(memorialSchema), chronicle: z.array(chronicleEntrySchema), observerYear: finiteNumber, aiTurns: finiteNumber
+  memorials: z.array(memorialSchema), chronicle: z.array(chronicleEntrySchema), observerYear: finiteNumber
 });
 
 
@@ -686,30 +680,57 @@ function normalizeSnapshot(snapshot: SnapshotCurrent): SnapshotCurrent {
     legacy: {
       ...snapshot.legacy,
       captains: snapshot.legacy.captains.slice(-100),
-      successionCandidates: snapshot.legacy.successionCandidates.slice(0, 12),
+      successionCandidates: snapshot.legacy.successionCandidates.filter((entry) => entry.source === 'crew').slice(0, 12),
       lostExpeditions: snapshot.legacy.lostExpeditions.filter((entry) => systemIds.has(entry.systemId)).slice(0, 100),
       memorials: snapshot.legacy.memorials.filter((entry) => systemIds.has(entry.systemId)).slice(0, 200),
       chronicle: snapshot.legacy.chronicle.slice(0, 1000),
-      observerYear: Math.max(snapshot.gameYear, snapshot.legacy.observerYear),
-      aiTurns: Math.max(0, snapshot.legacy.aiTurns)
+      observerYear: Math.max(snapshot.gameYear, snapshot.legacy.observerYear)
     }
   };
 
   normalized.ship.systems = normalizeShipSystems(normalized.ship.systems);
   normalized.ship.transponder ||= 'WANDERER-01';
   normalized.ship.registration ||= 'VC-01-CORE';
-  normalized.ship.aiCore = { ...defaultShipAi, ...normalized.ship.aiCore, integrity: Math.max(0, Math.min(100, normalized.ship.aiCore.integrity)), journal: normalized.ship.aiCore.journal.slice(0, 50) };
   normalized.ship.hull = Math.max(0, Math.min(normalized.ship.maxHull, normalized.ship.hull));
   normalized.ship.fuel = Math.max(0, Math.min(normalized.ship.maxFuel, normalized.ship.fuel));
   normalized.captain.health = Math.max(0, Math.min(normalized.captain.maxHealth, normalized.captain.health));
   normalized.captain.condition ||= normalized.captain.alive ? 'active' : 'dead';
-  normalized.captain.commandIdentity ||= 'organic';
+  normalized.captain.commandIdentity = 'organic';
   return normalized;
 }
 
 export interface ParseSnapshotOptions { verifyChecksum?: boolean; }
 
+function sanitizeRetiredContinuation(input: unknown): unknown {
+  if (!input || typeof input !== 'object') return input;
+  const sanitized = structuredClone(input) as Record<string, any>;
+  const captain = sanitized.captain as Record<string, any> | undefined;
+  const ship = sanitized.ship as Record<string, any> | undefined;
+  const legacy = sanitized.legacy as Record<string, any> | undefined;
+  const retiredContinuation = captain?.commandIdentity === 'shipAI' || legacy?.mode === 'ai';
+  if (ship) delete ship.aiCore;
+  if (captain) captain.commandIdentity = 'organic';
+  if (legacy) {
+    if (legacy.mode === 'ai') legacy.mode = 'succession';
+    legacy.captains = Array.isArray(legacy.captains) ? legacy.captains.map((record: Record<string, any>) => ({ ...record, commandIdentity: 'organic' })) : [];
+    legacy.successionCandidates = Array.isArray(legacy.successionCandidates) ? legacy.successionCandidates.filter((candidate: Record<string, any>) => candidate.source === 'crew') : [];
+    delete legacy.aiTurns;
+  }
+  if (retiredContinuation) {
+    if (captain) { captain.alive = false; captain.health = 0; captain.condition = 'dead'; }
+    if (legacy) {
+      legacy.mode = 'succession';
+      legacy.campaignEnded = true;
+      legacy.continuityReason ||= 'Капитан погиб. Кампания завершена по правилам ironman.';
+      legacy.successionCandidates = [];
+    }
+  }
+  return sanitized;
+}
+
 export function parseSnapshot(input: unknown, options: ParseSnapshotOptions = {}): GameStateSnapshot {
+  const rawInput = input;
+  input = sanitizeRetiredContinuation(input);
   const header = z.object({ schemaVersion: z.number().int() }).passthrough().parse(input);
   let migrated: any;
 
@@ -765,7 +786,11 @@ export function parseSnapshot(input: unknown, options: ParseSnapshotOptions = {}
     migrated = snapshotV10Schema.parse(input);
     if (options.verifyChecksum !== false) {
       const expected = computeSnapshotChecksum(migrated);
-      if (migrated.saveMeta.checksum !== expected) throw new Error('Контрольная сумма сохранения не совпадает');
+      if (migrated.saveMeta.checksum !== expected) {
+        const raw = rawInput as SnapshotCurrent;
+        const rawExpected = hashText(JSON.stringify({ ...raw, saveMeta: { ...raw.saveMeta, checksum: '00000000' } }));
+        if (raw.saveMeta?.checksum !== rawExpected) throw new Error('Контрольная сумма сохранения не совпадает');
+      }
     }
   } else if (header.schemaVersion > CURRENT_SCHEMA_VERSION) {
     throw new Error(`Сохранение создано более новой версией игры: v${header.schemaVersion}`);

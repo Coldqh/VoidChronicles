@@ -6,14 +6,15 @@ export type DiscoveryKind = 'signal' | 'ruin' | 'biosphere' | 'artifact' | 'sett
 export type ScanLevel = 0 | 1 | 2 | 3;
 export type PointOfInterestType = 'ruin' | 'wreck' | 'settlement' | 'laboratory' | 'cave' | 'ancientFactory' | 'graveyard' | 'smugglerCamp' | 'anomaly' | 'biosphere' | 'distress';
 export type PointOfInterestStatus = 'detected' | 'visited' | 'blocked' | 'resolved';
+export type PointOfInterestAccess = 'surface' | 'orbital' | 'remote';
 export type EquipmentId = 'pistol' | 'rifle' | 'armor' | 'medkit' | 'scanner' | 'cutter' | 'translator' | 'sampleContainer' | 'explosives' | 'oxygen';
 export type EvidenceKind = 'record' | 'body' | 'weapon' | 'architecture' | 'sample' | 'terminal' | 'damage' | 'signal';
 export type HypothesisStatus = 'tentative' | 'supported' | 'confirmed' | 'disproved';
 export type CrewRole = 'pilot' | 'engineer' | 'doctor' | 'scientist' | 'archaeologist' | 'soldier' | 'diplomat' | 'biologist' | 'smuggler';
 export type CrewStatus = 'active' | 'injured' | 'unpaid' | 'missing' | 'deceased';
 export type CaptainCondition = 'active' | 'dead' | 'missing' | 'captured' | 'coma' | 'stranded' | 'retired';
-export type CommandIdentity = 'organic' | 'shipAI';
-export type LegacyMode = 'active' | 'succession' | 'ai' | 'chronicle';
+export type CommandIdentity = 'organic';
+export type LegacyMode = 'active' | 'succession' | 'chronicle';
 export type ContactStage = 'unknown' | 'observed' | 'signals' | 'translated' | 'contacted' | 'trusted' | 'failed';
 export type LocalNpcRole = 'administrator' | 'merchant' | 'scientist' | 'doctor' | 'fixer' | 'priest' | 'guard' | 'resident';
 export type HypothesisDisposition = 'private' | 'published' | 'sold' | 'suppressed';
@@ -274,15 +275,6 @@ export interface ShipSystemState {
   effect: string;
 }
 
-export interface ShipAIState {
-  id: string;
-  name: string;
-  personality: string;
-  directives: string[];
-  integrity: number;
-  operational: boolean;
-  journal: string[];
-}
 
 export interface Ship {
   id: string;
@@ -299,7 +291,6 @@ export interface Ship {
   systems: ShipSystemState[];
   transponder: string;
   registration: string;
-  aiCore: ShipAIState;
 }
 
 
@@ -436,6 +427,7 @@ export interface PointOfInterest {
   visits: number;
   discoveredYear: number;
   lastVisitedYear?: number;
+  access: PointOfInterestAccess;
 }
 
 export interface ExpeditionLoadout {
@@ -853,7 +845,7 @@ export interface CaptainLegacyRecord {
 
 export interface SuccessionCandidate {
   id: string;
-  source: 'crew' | 'ai';
+  source: 'crew';
   sourceId: string;
   name: string;
   role: string;
@@ -907,7 +899,6 @@ export interface LegacyState {
   memorials: Memorial[];
   chronicle: ChronicleEntry[];
   observerYear: number;
-  aiTurns: number;
 }
 
 export interface SaveMetadata {

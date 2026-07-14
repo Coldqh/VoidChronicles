@@ -6,6 +6,7 @@ interface Props {
   currentSystemId: string;
   selectedSystemId: string | null;
   jumpRange: number;
+  livingCivilizationIds?: string[];
   onSelect(id: string): void;
 }
 
@@ -22,7 +23,7 @@ export interface GalaxyCanvasHandle {
 const clampZoom = (value: number) => Math.max(0.32, Math.min(4.8, value));
 
 export const GalaxyCanvas = forwardRef<GalaxyCanvasHandle, Props>(function GalaxyCanvas(
-  { systems, currentSystemId, selectedSystemId, jumpRange, onSelect },
+  { systems, currentSystemId, selectedSystemId, jumpRange, livingCivilizationIds = [], onSelect },
   ref
 ) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -35,6 +36,7 @@ export const GalaxyCanvas = forwardRef<GalaxyCanvasHandle, Props>(function Galax
   const systemIndex = useMemo(() => new Map(systems.map((system) => [system.id, system])), [systems]);
   const current = systemIndex.get(currentSystemId);
   const knownSystems = useMemo(() => systems.filter((system) => system.known), [systems]);
+  const livingCivilizations = useMemo(() => new Set(livingCivilizationIds), [livingCivilizationIds]);
 
   const fitSystems = useCallback((targets: StarSystem[], padding = 72, minimumZoom = 0.32, maximumZoom = 4.8) => {
     const canvas = canvasRef.current;
@@ -178,7 +180,19 @@ export const GalaxyCanvas = forwardRef<GalaxyCanvasHandle, Props>(function Galax
       if (point.x < -30 || point.y < -30 || point.x > width + 30 || point.y > height + 30) continue;
       const selected = system.id === selectedSystemId;
       const active = system.id === currentSystemId;
+      const livingPresence = system.civilizationIds.some((id) => livingCivilizations.has(id));
       const radius = active ? 7 : selected ? 6 : system.region === 'core' ? 4 : 3;
+      if (livingPresence) {
+        ctx.save();
+        ctx.strokeStyle = 'rgba(111, 218, 167, .8)';
+        ctx.lineWidth = 1.25;
+        ctx.shadowBlur = 10;
+        ctx.shadowColor = '#6fdaa7';
+        ctx.beginPath();
+        ctx.arc(point.x, point.y, radius + 5, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+      }
       ctx.shadowBlur = active || selected ? 18 : 8;
       ctx.shadowColor = system.anomaly ? '#d28cff' : active ? '#62e8ff' : '#5ea3c6';
       ctx.fillStyle = system.anomaly ? '#d28cff' : active ? '#e8fcff' : system.danger === 'extreme' ? '#ff5d68' : system.danger === 'danger' ? '#ff9d55' : '#7dc6df';
@@ -190,7 +204,7 @@ export const GalaxyCanvas = forwardRef<GalaxyCanvasHandle, Props>(function Galax
         ctx.fillText(system.name, point.x + 9, point.y - 8);
       }
     }
-  }, [current, currentSystemId, jumpRange, selectedSystemId, systemIndex, systems, toScreen, view]);
+  }, [current, currentSystemId, jumpRange, livingCivilizations, selectedSystemId, systemIndex, systems, toScreen, view]);
 
   useEffect(() => {
     const frame = window.requestAnimationFrame(draw);

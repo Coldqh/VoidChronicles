@@ -31,4 +31,17 @@ describe('deep discovery generation', () => {
     const many: Evidence[] = [...one, { id: 'e2', pointOfInterestId: point.id, systemId: system.id, planetId: planet.id, kind: 'damage', title: 'B', description: 'B', reliability: 88, discoveredYear: 0, tags: [] }];
     expect(buildHypothesis(point, many, 0).confidence).toBeGreaterThan(buildHypothesis(point, one, 0).confidence);
   });
+
+  it('creates signals that require orbital or remote analysis instead of landing', async () => {
+    const galaxy = await generateGalaxy({
+      seed: 'SIGNAL-ACCESS', systemCount: 40, historyYears: 100_000,
+      civilizationCount: 6, lifeFrequency: 0.35, anomalyFrequency: 0.06, difficulty: 'standard'
+    });
+    const pair = galaxy.systems.flatMap((system) => system.planets.map((planet) => ({ system, planet }))).find((entry) => entry.planet.type === 'gas');
+    expect(pair).toBeDefined();
+    const points = generatePointsOfInterest(galaxy, pair!.system, pair!.planet);
+    expect(points.length).toBeGreaterThan(0);
+    expect(points.every((point) => point.access !== 'surface')).toBe(true);
+  });
+
 });

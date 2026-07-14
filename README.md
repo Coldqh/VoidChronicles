@@ -1,8 +1,18 @@
 # Void Chronicles
 
-**Current version: v0.9.7 — Mobile Combat & Windows**
+**Current version: v0.9.8 — Expedition Flow & Roguelike Cleanup**
 
 Procedural single-player space exploration roguelike built with React, TypeScript and Canvas.
+
+## v0.9.8 Expedition Flow & Roguelike Cleanup
+
+- square tactical expedition maps with enemy inspection;
+- tap-to-path movement with animated turns;
+- contextual event windows instead of a separate scene database;
+- restored crew recruitment and clearer signal access rules;
+- denser living-civilization territories;
+- strict roguelike death with no AI continuation;
+- compact loadout, combat and game-over windows.
 
 ## v0.9.7 Mobile Combat & Windows
 

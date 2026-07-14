@@ -3,7 +3,7 @@ import { createRng } from './rng';
 
 export type SurfaceTileKind = 'floor' | 'rock' | 'hazard' | 'ruin' | 'exit' | 'artifact' | 'evidence' | 'door' | 'terminal' | 'sample' | 'cover';
 export interface SurfaceTile { x: number; y: number; kind: SurfaceTileKind; revealed: boolean; resolved?: boolean; }
-export interface SurfaceEnemy { id: string; x: number; y: number; health: number; name: string; damage: number; }
+export interface SurfaceEnemy { id: string; x: number; y: number; health: number; maxHealth: number; name: string; damage: number; }
 export interface SurfaceObject {
   id: string;
   x: number;
@@ -121,8 +121,9 @@ function edgeStart(width: number, height: number, rng: ReturnType<typeof createR
 export function generateSurface(seed: string, planet: Planet, point: PointOfInterest, locationState?: LocationState, width?: number, height?: number): SurfaceMap {
   const rng = createRng(`${seed}:surface:v2:${point.id}`);
   const tutorialMap = planet.imageKey === 'tutorial-target';
-  const mapWidth = width ?? (tutorialMap ? 16 : rng.int(17, point.type === 'cave' ? 25 : 29));
-  const mapHeight = height ?? (tutorialMap ? 11 : rng.int(12, point.type === 'ancientFactory' ? 20 : 18));
+  const generatedSize = tutorialMap ? 13 : rng.int(13, point.type === 'ancientFactory' || point.type === 'cave' ? 18 : 17);
+  const mapWidth = width ?? height ?? generatedSize;
+  const mapHeight = height ?? width ?? generatedSize;
   const tiles: SurfaceTile[] = [];
   const rockChance = point.type === 'cave' ? 0.27 : point.type === 'ancientFactory' || point.type === 'laboratory' ? 0.18 : 0.12;
   const hazardChance = planet.danger === 'extreme' ? 0.16 : planet.danger === 'danger' ? 0.11 : 0.07;
@@ -187,11 +188,14 @@ export function generateSurface(seed: string, planet: Planet, point: PointOfInte
   const enemies = enemyPositions.map((position, index) => {
     const id = `enemy_${point.id}_${index}`;
     const saved = locationState?.enemyStates.find((entry) => entry.id === id);
+    const generatedHealth = tutorialMap ? 28 : rng.int(30, 78);
+    const health = saved?.health ?? generatedHealth;
     return {
       id,
       x: saved?.x ?? position.x,
       y: saved?.y ?? position.y,
-      health: saved?.health ?? (tutorialMap ? 28 : rng.int(30, 78)),
+      health,
+      maxHealth: Math.max(generatedHealth, health),
       damage: tutorialMap ? 5 : rng.int(7, 16),
       name: tutorialMap ? 'повреждённый сервисный дрон' : rng.pick(enemyNames[point.type])
     };
