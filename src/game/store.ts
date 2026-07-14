@@ -39,9 +39,7 @@ import type {
   TechnologyBlueprint,
   WarFront,
   CaptainCondition,
-  WorldThread,
-  SimulationState,
-  KnowledgeRecord
+  WorldThread
 } from './types';
 import {
   createManualBackup,
@@ -62,14 +60,17 @@ import { recordDiagnostic } from '../runtime/diagnostics';
 import { generatePointsOfInterest } from '../exploration/pointsOfInterest';
 import { buildHypothesis } from '../exploration/hypotheses';
 import { generateCrewCandidates } from '../crew/generateCrew';
-import { generateContracts, generateMarket, generateNews, initializeLivingGalaxy } from '../world/livingGalaxy';
+import { generateContracts, generateMarket, initializeLivingGalaxy } from '../world/livingGalaxy';
 import { culturalArtifactMultiplier, initializeCivilizationLayer } from '../world/civilizations';
 import { blueprintFromProject, createResearchProject, researchPower } from '../research/technology';
-import { initializeWorldThreads, syncWorldThreads } from '../world/storyThreads';
 import { advanceWarFronts, createShipSystems, createTravelEncounter, damageSystem, initializeWarFronts, normalizeShipSystems, systemIntegrity } from '../world/warfare';
 import { chronicleEntry, closeCurrentCaptain, createInitialLegacy } from '../world/legacy';
 import { generateHubScene, generateScanScene, generateTravelScene, initializeNarrative, processDueConsequences } from '../narrative/encounters';
-import { advanceSimulation, initializeSimulation, migrateLegacyKnowledge, revealKnowledge } from '../simulation';
+import type { PlayerKnowledgeState, SimulationState, WorldEvent } from '../simulation/types';
+import { ACTION_TIME, expeditionHours, HOURS_PER_YEAR, travelHours, worldYear } from '../simulation/clock';
+import { adjustEcosystem, adjustSystemEconomy, advanceSimulation, initializeSimulation, recordWorldEvent } from '../simulation/kernel';
+import { createKnowledgeFromLegacy, emptyKnowledge, projectKnowledgeToGalaxy, revealKnowledge } from '../simulation/knowledge';
+import { projectContractsFromEvents, projectNewsFromEvents, projectWorldThreads } from '../simulation/projections';
 
 export type MainScreen = 'menu' | 'command' | 'continuity' | 'chronicle' | 'galaxy' | 'system' | 'hub' | 'contracts' | 'factions' | 'civilizations' | 'crew' | 'archive' | 'laboratory' | 'world' | 'operations' | 'ship' | 'settings';
 export type HydrationStatus = 'idle' | 'loading' | 'ready' | 'error';
@@ -83,8 +84,8 @@ interface GameStore {
   currentSystemId: string | null;
   selectedSystemId: string | null;
   gameYear: number;
-  simulation: SimulationState;
-  knowledge: KnowledgeRecord[];
+  simulation: SimulationState | null;
+  knowledge: PlayerKnowledgeState;
   discoveries: Discovery[];
   logs: GameLogEntry[];
   scanReports: ScanReport[];
@@ -127,7 +128,7 @@ interface GameStore {
   busyAction: string | null;
   setScreen(screen: MainScreen): void;
   setGenerationActive(active: boolean): void;
-  advanceWorld(hours: number, reason: string): Promise<void>;
+  advanceWorld(hours: number, reason: string): Promise<WorldEvent[]>;
   advanceTutorial(expectedStep?: number): Promise<void>;
   skipTutorial(): Promise<void>;
   restartTutorial(): Promise<void>;
@@ -263,21 +264,8 @@ const initialEquipment = (): EquipmentItem[] => ([
 
 function prepareStartingGalaxy(galaxy: Galaxy, tutorialEnabled: boolean): { galaxy: Galaxy; tutorialPlanetId?: string } {
   const prepared = structuredClone(galaxy);
-  for (const system of prepared.systems) {
-    system.known = false;
-    system.visited = false;
-    system.scanned = false;
-    for (const planet of system.planets) {
-      planet.scanned = false;
-      planet.scanLevel = 0;
-      planet.lastScanYear = undefined;
-    }
-  }
   const start = prepared.systems.find((system) => system.id === prepared.startSystemId) ?? prepared.systems[0];
   if (!start) return { galaxy: prepared };
-  start.known = true;
-  start.visited = true;
-  start.scanned = false;
   start.danger = 'safe';
   start.anomaly = false;
 
@@ -419,6 +407,65 @@ async function runExclusive<T>(
   }
 }
 
+
+interface WorldAdvanceOverrides {
+  galaxy?: Galaxy;
+  knowledge?: PlayerKnowledgeState;
+  factions?: Faction[];
+  hubs?: Hub[];
+  contracts?: Contract[];
+  news?: NewsItem[];
+  researchProjects?: ResearchProject[];
+  warFronts?: WarFront[];
+  currentSystemId?: string | null;
+}
+
+function buildWorldAdvance(
+  state: GameStore,
+  hours: number,
+  reason: string,
+  overrides: WorldAdvanceOverrides = {}
+): { patch: Partial<GameStore>; emittedEvents: WorldEvent[] } {
+  const galaxy = overrides.galaxy ?? state.galaxy;
+  const simulation = state.simulation;
+  if (!galaxy || !simulation) return { patch: {}, emittedEvents: [] };
+  const factions = overrides.factions ?? state.factions;
+  const hubs = overrides.hubs ?? state.hubs;
+  const knowledge = overrides.knowledge ?? state.knowledge;
+  const currentSystemId = overrides.currentSystemId === undefined ? state.currentSystemId : overrides.currentSystemId;
+  const advanced = advanceSimulation(simulation, { seed: galaxy.seed, galaxy, factions, hubs }, hours, reason);
+  const previousYear = worldYear(simulation.clock);
+  const nextYear = worldYear(advanced.simulation.clock);
+  let warFronts = overrides.warFronts ?? state.warFronts;
+  for (let year = previousYear + 1; year <= nextYear; year += 1) {
+    warFronts = advanceWarFronts(`${galaxy.seed}:kernel`, warFronts, year);
+  }
+  const baseContracts = (overrides.contracts ?? state.contracts).map((contract) => contract.status === 'active' && nextYear > contract.deadlineYear ? { ...contract, status: 'expired' as const } : contract);
+  const contracts = projectContractsFromEvents({ events: advanced.emittedEvents, existing: baseContracts, hubs, year: nextYear });
+  const news = projectNewsFromEvents(advanced.emittedEvents, knowledge, overrides.news ?? state.news, currentSystemId ?? undefined);
+  const researchProjects = overrides.researchProjects ?? state.researchProjects;
+  const worldThreads = projectWorldThreads({ simulation: advanced.simulation, warFronts, factions, contracts, research: researchProjects });
+  const consequences = processDueConsequences(state.pendingConsequences, nextYear);
+  const logs = [...consequences.due.map((entry) => makeLog(nextYear, entry.title, entry.text, entry.tone)), ...state.logs];
+  const projectedGalaxy = projectKnowledgeToGalaxy({ ...galaxy, currentYear: nextYear }, knowledge);
+  return {
+    emittedEvents: advanced.emittedEvents,
+    patch: {
+      simulation: advanced.simulation,
+      galaxy: projectedGalaxy,
+      gameYear: nextYear,
+      contracts,
+      news,
+      worldThreads,
+      warFronts,
+      pendingConsequences: consequences.consequences,
+      storyScenes: state.storyScenes.map((scene) => scene.status === 'available' && scene.expiresYear !== undefined && scene.expiresYear < nextYear ? { ...scene, status: 'expired' as const } : scene),
+      objectives: state.objectives.map((objective) => objective.status === 'active' && objective.deadlineYear !== undefined && objective.deadlineYear < nextYear ? { ...objective, status: 'failed' as const } : objective),
+      logs: logs.slice(0, 750)
+    }
+  };
+}
+
 let hydrationTask: Promise<void> | null = null;
 
 export const useGameStore = create<GameStore>((set, get) => ({
@@ -429,8 +476,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
   currentSystemId: null,
   selectedSystemId: null,
   gameYear: 0,
-  simulation: initializeSimulation('VOID'),
-  knowledge: [],
+  simulation: null,
+  knowledge: { version: 1, records: {} },
   discoveries: [],
   logs: [],
   scanReports: [],
@@ -483,12 +530,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
   },
   setGenerationActive: (generationActive) => set({ generationActive }),
   async advanceWorld(hours, reason) {
-    const galaxy = get().galaxy;
-    if (!galaxy || hours <= 0) return;
-    const result = advanceSimulation({ galaxy, factions: get().factions, hubs: get().hubs, warFronts: get().warFronts, contracts: get().contracts, news: get().news, simulation: get().simulation }, hours);
-    const eventLogs = result.generatedEvents.map((event) => makeLog(event.year, event.title, event.summary, event.severity >= 70 ? 'danger' as const : event.severity >= 40 ? 'warning' as const : 'info' as const));
-    set({ simulation: result.simulation, gameYear: result.simulation.time.year, factions: result.factions, hubs: result.hubs, warFronts: result.warFronts, contracts: result.contracts, news: result.news, logs: [...eventLogs, ...get().logs].slice(0, 750) });
-    await persist(set, get, `world-time-${reason}`);
+    const advanced = buildWorldAdvance(get(), hours, reason);
+    if (Object.keys(advanced.patch).length) set(advanced.patch);
+    return advanced.emittedEvents;
   },
   async advanceTutorial(expectedStep) {
     const tutorial = get().tutorial;
@@ -594,7 +638,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
           ship: safe.ship,
           currentSystemId: safe.currentSystemId,
           selectedSystemId: safe.currentSystemId,
-          gameYear: safe.simulation.time.year,
+          gameYear: safe.gameYear,
           simulation: safe.simulation,
           knowledge: safe.knowledge,
           discoveries: safe.discoveries,
@@ -668,16 +712,19 @@ export const useGameStore = create<GameStore>((set, get) => ({
       if (!start) throw new Error('Стартовая система не найдена');
       const captain = initialCaptain();
       const ship = initialShip();
-      const simulation = initializeSimulation(enrichedGalaxy.seed);
-      const knowledge = migrateLegacyKnowledge(enrichedGalaxy);
+      let knowledge = emptyKnowledge();
+      knowledge = revealKnowledge(knowledge, 'system', start.id, ['identity', 'coordinates', 'star', 'routes', 'visited'], 0, 'direct', 94);
+      const simulation = initializeSimulation({ seed: enrichedGalaxy.seed, galaxy: enrichedGalaxy, factions: living.factions, hubs: civilizationLayer.hubs });
+      const projectedGalaxy = projectKnowledgeToGalaxy(enrichedGalaxy, knowledge);
+      const warFronts = initializeWarFronts(enrichedGalaxy.seed, living.factions, enrichedGalaxy.systems, 0);
       set({
         screen: 'command',
-        galaxy: enrichedGalaxy,
+        galaxy: projectedGalaxy,
         captain,
         ship,
         currentSystemId: start.id,
         selectedSystemId: start.id,
-        gameYear: simulation.time.year,
+        gameYear: 0,
         simulation,
         knowledge,
         discoveries: [],
@@ -700,7 +747,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
         researchProjects: [],
         technologyBlueprints: [],
         equipmentInventory: initialEquipment(),
-        worldThreads: initializeWorldThreads(enrichedGalaxy.civilizations, living.factions, civilizationLayer.archaeologyChains, 0),
+        worldThreads: projectWorldThreads({ simulation, warFronts, factions: living.factions, contracts: living.contracts, research: [] }),
         storyScenes: narrative.storyScenes,
         activeStorySceneId: null,
         pendingConsequences: narrative.pendingConsequences,
@@ -708,7 +755,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
         tutorial: { ...narrative.tutorial, targetPlanetId: preparedStart.tutorialPlanetId },
         activeShipEncounter: null,
         pursuits: [],
-        warFronts: initializeWarFronts(enrichedGalaxy.seed, living.factions, enrichedGalaxy.systems, 0),
+        warFronts,
         legacy: createInitialLegacy(captain, ship, 0, start.id),
         logs: [],
         hydrationStatus: 'ready',
@@ -738,7 +785,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       } finally {
         set({
           screen: 'menu', galaxy: null, captain: null, ship: null, currentSystemId: null,
-          selectedSystemId: null, gameYear: 0, simulation: initializeSimulation('VOID'), knowledge: [], discoveries: [], logs: [], scanReports: [],
+          selectedSystemId: null, gameYear: 0, simulation: null, knowledge: { version: 1, records: {} }, discoveries: [], logs: [], scanReports: [],
           pointsOfInterest: [], evidence: [], hypotheses: [], artifactKnowledge: [], crew: [], crewCandidates: [], factions: [], hubs: [], contracts: [], news: [], locationStates: [], currentHubId: null, localNpcs: [], civilizationContacts: [], archaeologyChains: [], researchProjects: [], technologyBlueprints: [], equipmentInventory: [], worldThreads: [], storyScenes: [], activeStorySceneId: null, pendingConsequences: [], objectives: [], tutorial: { enabled: false, active: false, currentStep: 0, completed: true }, activeShipEncounter: null, pursuits: [], warFronts: [], legacy: emptyLegacyState(),
           hydrationStatus: 'ready', saveAvailable: false, saveError: null,
           saveStatus: 'idle', saveMeta: null, backupCount: 0, recoveryNotice: null
@@ -825,21 +872,27 @@ export const useGameStore = create<GameStore>((set, get) => ({
   },
   async advanceChronicle(years) {
     return runExclusive('chronicle-advance', set, get, async () => {
-      const { legacy, galaxy, factions, warFronts, gameYear } = get();
-      if (!galaxy || legacy.mode !== 'chronicle') return;
-      const span = Math.max(1, Math.min(50, Math.floor(years)));
-      const nextYear = gameYear + span;
-      let fronts = warFronts;
-      for (let year = gameYear + 1; year <= nextYear; year += 1) fronts = advanceWarFronts(`${galaxy.seed}:observer`, fronts, year);
+      const state = get();
+      if (!state.galaxy || !state.simulation || state.legacy.mode !== 'chronicle') return;
+      const span = Math.max(1, Math.min(20, Math.floor(years)));
+      const advanced = buildWorldAdvance(state, span * HOURS_PER_YEAR, `chronicle-observation:${span}`);
+      const nextYear = advanced.patch.gameYear ?? state.gameYear;
+      const fronts = (advanced.patch.warFronts as WarFront[] | undefined) ?? state.warFronts;
       const active = fronts.filter((entry) => entry.status === 'active');
+      const significant = advanced.emittedEvents.filter((entry) => entry.severity >= 4);
       const entry = chronicleEntry({
         year: nextYear,
         category: active.length ? 'war' : 'world',
         title: `${span} лет наблюдения`,
-        text: active.length ? `Активных фронтов: ${active.length}. Границы и влияние продолжают меняться.` : 'Крупных войн не зафиксировано. Торговля и миграции продолжаются.',
-        tone: active.length ? 'warning' : 'info'
+        text: significant.length
+          ? `Зафиксировано крупных изменений: ${significant.length}. Активных фронтов: ${active.length}.`
+          : 'Галактика продолжила демографические, торговые и политические циклы без участия игрока.',
+        tone: active.length || significant.some((event) => event.severity >= 7) ? 'warning' : 'info'
       });
-      set({ gameYear: nextYear, warFronts: fronts, legacy: { ...legacy, observerYear: nextYear, chronicle: [entry, ...legacy.chronicle].slice(0, 1000) } });
+      set({
+        ...advanced.patch,
+        legacy: { ...state.legacy, observerYear: nextYear, chronicle: [entry, ...state.legacy.chronicle].slice(0, 1000) }
+      });
       await persist(set, get, 'chronicle-advance');
     }, undefined);
   },
@@ -859,9 +912,10 @@ export const useGameStore = create<GameStore>((set, get) => ({
   selectSystem(selectedSystemId) { set({ selectedSystemId }); },
   async travelTo(systemId) {
     return runExclusive('travel', set, get, async () => {
-      const { galaxy, ship, currentSystemId, gameYear } = get();
-      if (!galaxy || !ship || !currentSystemId) return { ok: false, message: 'Нет активной партии' };
-      if (get().activeShipEncounter && get().activeShipEncounter?.phase !== 'resolved') return { ok: false, message: 'Сначала завершите корабельный контакт' };
+      const state = get();
+      const { galaxy, ship, currentSystemId } = state;
+      if (!galaxy || !ship || !currentSystemId || !state.simulation) return { ok: false, message: 'Нет активной партии' };
+      if (state.activeShipEncounter && state.activeShipEncounter.phase !== 'resolved') return { ok: false, message: 'Сначала завершите корабельный контакт' };
       const current = galaxy.systems.find((system) => system.id === currentSystemId);
       const target = galaxy.systems.find((system) => system.id === systemId);
       if (!current || !target) return { ok: false, message: 'Система не найдена' };
@@ -873,52 +927,49 @@ export const useGameStore = create<GameStore>((set, get) => ({
       const fuelCost = Math.max(7, Math.ceil(jumpDistance / 14));
       if (ship.fuel < fuelCost) return { ok: false, message: `Нужно ${fuelCost} топлива` };
       if (ship.hull <= 0) return { ok: false, message: 'Корабль не способен к прыжку' };
-      const updatedGalaxy = structuredClone(galaxy);
-      const updatedTarget = updatedGalaxy.systems.find((system) => system.id === target.id);
-      if (updatedTarget) {
-        updatedTarget.known = true;
-        updatedTarget.visited = true;
-        updatedTarget.neighbors.forEach((neighborId) => {
-          const neighbor = updatedGalaxy.systems.find((system) => system.id === neighborId);
-          if (neighbor) neighbor.known = true;
-        });
-      }
+
+      const arrivalHour = state.simulation.clock.absoluteHour + travelHours(jumpDistance);
+      let knowledge = revealKnowledge(state.knowledge, 'system', target.id, ['identity', 'coordinates', 'star', 'routes', 'visited'], arrivalHour, 'direct', 92);
+      for (const neighborId of target.neighbors) knowledge = revealKnowledge(knowledge, 'system', neighborId, ['identity', 'coordinates'], arrivalHour, 'scan', 42);
       const updatedShip = { ...ship, systems: normalizeShipSystems(ship.systems), fuel: ship.fuel - fuelCost };
-      const travelHours = Math.max(8, Math.round(jumpDistance * 1.8));
-      const simulationResult = advanceSimulation({ galaxy: updatedGalaxy, factions: get().factions, hubs: get().hubs, warFronts: get().warFronts, contracts: get().contracts, news: get().news, simulation: get().simulation }, travelHours);
-      const nextYear = simulationResult.simulation.time.year;
-      const logs = [makeLog(nextYear, 'Прыжок завершён', `${current.name} → ${target.name}. Потрачено ${fuelCost} топлива. Мир прожил ещё ${travelHours} ч.`, 'info'), ...get().logs];
-      const warFronts = simulationResult.warFronts;
+      const advanced = buildWorldAdvance(state, travelHours(jumpDistance), `travel:${current.id}:${target.id}`, { galaxy, knowledge, currentSystemId: target.id });
+      const nextYear = advanced.patch.gameYear ?? state.gameYear;
+      const warFronts = advanced.patch.warFronts ?? state.warFronts;
       let activeShipEncounter = createTravelEncounter({
-        seed: updatedGalaxy.seed,
+        seed: galaxy.seed,
         system: target,
-        factions: get().factions,
-        pursuits: get().pursuits,
+        factions: state.factions,
+        pursuits: state.pursuits,
         warFronts,
         year: nextYear,
-        serial: get().logs.length + get().storyScenes.length
+        serial: state.logs.length + state.storyScenes.length + (advanced.patch.simulation?.nextSequence ?? 0)
       });
-      if (activeShipEncounter) activeShipEncounter = { ...activeShipEncounter, stationAssignments: buildStationAssignments(get().crew) };
+      if (activeShipEncounter) activeShipEncounter = { ...activeShipEncounter, stationAssignments: buildStationAssignments(state.crew) };
       const encounter = activeShipEncounter ? 'shipContact' as const : undefined;
-      const targetFaction = get().factions.find((entry) => entry.id === target.factionId);
-      const hasCivilianHub = get().hubs.some((hub) => hub.systemId === target.id && hub.safety !== 'danger');
+      const targetFaction = state.factions.find((entry) => entry.id === target.factionId);
+      const hasCivilianHub = state.hubs.some((hub) => hub.systemId === target.id && hub.safety !== 'danger');
+      const logs = [makeLog(nextYear, 'Прыжок завершён', `${current.name} → ${target.name}. Потрачено ${fuelCost} топлива.`, 'info'), ...((advanced.patch.logs as GameLogEntry[] | undefined) ?? state.logs)];
       if (activeShipEncounter) logs.unshift(makeLog(nextYear, 'Корабельный контакт', `${activeShipEncounter.contact.name}: ${activeShipEncounter.contact.demand}`, activeShipEncounter.contact.hostile ? 'danger' : 'warning'));
       else if (targetFaction?.disposition === 'friendly' || hasCivilianHub) logs.unshift(makeLog(nextYear, 'Гражданский контроль', 'Диспетчер передал коридор движения и список открытых портов.', 'good'));
-      const contracts = simulationResult.contracts.map((contract) => contract.status === 'active' && nextYear > contract.deadlineYear ? { ...contract, status: 'expired' as const } : contract);
-      const newsItem = generateNews(updatedGalaxy.seed, updatedGalaxy.systems, simulationResult.hubs, nextYear, simulationResult.news.length);
-      const nextNews = [newsItem, ...simulationResult.news].slice(0, 500);
-      const worldThreads = syncWorldThreads(get().worldThreads, contracts, nextNews, get().researchProjects, nextYear);
-      const generatedScene = activeShipEncounter ? null : generateTravelScene(updatedGalaxy.seed, current.id, target.id, target.name, nextYear, get().hubs, get().factions);
-      const processedConsequences = processDueConsequences(get().pendingConsequences, nextYear);
-      processedConsequences.due.forEach((entry) => logs.unshift(makeLog(nextYear, entry.title, entry.text, entry.tone)));
+      const generatedScene = activeShipEncounter ? null : generateTravelScene(galaxy.seed, current.id, target.id, target.name, nextYear, state.hubs, state.factions);
       const storyScenes = [
         ...(generatedScene ? [generatedScene] : []),
-        ...get().storyScenes.map((scene) => scene.status === 'available' && scene.expiresYear !== undefined && scene.expiresYear < nextYear ? { ...scene, status: 'expired' as const } : scene)
+        ...((advanced.patch.storyScenes as StoryScene[] | undefined) ?? state.storyScenes)
       ].slice(0, 160);
-      const objectives = get().objectives.map((objective) => objective.status === 'active' && objective.deadlineYear !== undefined && objective.deadlineYear < nextYear ? { ...objective, status: 'failed' as const } : objective);
-      const pursuits = get().pursuits.map((entry) => entry.status === 'active' && (entry.knownIdentity || entry.knownTransponder) ? { ...entry, lastKnownSystemId: target.id, lastUpdateYear: nextYear } : entry);
-      const knowledge = revealKnowledge(get().knowledge, { entityId: target.id, entityType: 'system', fields: ['position', 'star', 'routes'], confidence: 82, atHour: simulationResult.simulation.time.absoluteHour, source: 'direct' });
-      set({ galaxy: updatedGalaxy, ship: updatedShip, currentSystemId: target.id, selectedSystemId: target.id, currentHubId: null, gameYear: nextYear, simulation: simulationResult.simulation, knowledge, factions: simulationResult.factions, hubs: simulationResult.hubs, logs, contracts, news: nextNews, worldThreads, storyScenes, activeStorySceneId: generatedScene?.id ?? null, pendingConsequences: processedConsequences.consequences, objectives, activeShipEncounter, pursuits, warFronts });
+      const pursuits = state.pursuits.map((entry) => entry.status === 'active' && (entry.knownIdentity || entry.knownTransponder) ? { ...entry, lastKnownSystemId: target.id, lastUpdateYear: nextYear } : entry);
+      set({
+        ...advanced.patch,
+        knowledge,
+        ship: updatedShip,
+        currentSystemId: target.id,
+        selectedSystemId: target.id,
+        currentHubId: null,
+        logs: logs.slice(0, 750),
+        storyScenes,
+        activeStorySceneId: generatedScene?.id ?? null,
+        activeShipEncounter,
+        pursuits
+      });
       await persist(set, get, activeShipEncounter ? 'travel-contact' : 'travel');
       return { ok: true, message: activeShipEncounter ? 'Перелёт завершён. Обнаружен корабельный контакт.' : 'Перелёт завершён', encounter };
     }, { ok: false, message: 'Другое действие ещё выполняется' });
@@ -1210,94 +1261,112 @@ export const useGameStore = create<GameStore>((set, get) => ({
   },
   async changeTransponder() {
     return runExclusive('transponder', set, get, async () => {
-      const captain = get().captain;
-      const ship = get().ship;
+      const state = get();
+      const captain = state.captain;
+      const ship = state.ship;
       if (!captain || !ship) return { ok: false, message: 'Корабль недоступен' };
       const cost = 420;
       if (captain.credits < cost) return { ok: false, message: `Нужно ${cost} кредитов` };
-      const code = `GHOST-${Math.abs((get().gameYear + get().logs.length) * 7919).toString(36).toUpperCase()}`;
-      const pursuits = get().pursuits.map((entry) => entry.status === 'active' ? { ...entry, knownTransponder: false, intensity: Math.max(5, entry.intensity - 18) } : entry);
-      set({ captain: { ...captain, credits: captain.credits - cost }, ship: { ...ship, transponder: code }, pursuits, logs: [makeLog(get().gameYear, 'Транспондер заменён', `Новый позывной: ${code}. Старые ориентировки частично потеряли силу.`, 'good'), ...get().logs] });
+      const advanced = buildWorldAdvance(state, ACTION_TIME.transponderChange, 'transponder-change');
+      const nextYear = advanced.patch.gameYear ?? state.gameYear;
+      const code = `GHOST-${Math.abs(((advanced.patch.simulation?.clock.absoluteHour ?? 0) + state.logs.length) * 7919).toString(36).toUpperCase()}`;
+      const pursuits = state.pursuits.map((entry) => entry.status === 'active' ? { ...entry, knownTransponder: false, intensity: Math.max(5, entry.intensity - 18) } : entry);
+      set({
+        ...advanced.patch,
+        captain: { ...captain, credits: captain.credits - cost },
+        ship: { ...ship, transponder: code },
+        pursuits,
+        logs: [makeLog(nextYear, 'Транспондер заменён', `Новый позывной: ${code}. Старые ориентировки частично потеряли силу.`, 'good'), ...((advanced.patch.logs as GameLogEntry[] | undefined) ?? state.logs)].slice(0, 750)
+      });
       await persist(set, get, 'transponder-change', { immediate: true });
       return { ok: true, message: 'Транспондер заменён' };
     }, { ok: false, message: 'Другое действие ещё выполняется' });
   },
   async scanSystem(systemId) {
     return runExclusive('system-scan', set, get, async () => {
-      const { galaxy, gameYear } = get();
-      if (!galaxy || systemId !== get().currentSystemId) return;
-      const updatedGalaxy = structuredClone(galaxy);
-      const system = updatedGalaxy.systems.find((entry) => entry.id === systemId);
+      const state = get();
+      const { galaxy, simulation } = state;
+      if (!galaxy || !simulation || systemId !== state.currentSystemId) return;
+      const system = galaxy.systems.find((entry) => entry.id === systemId);
       if (!system) return;
-      system.scanned = true;
-      system.known = true;
-      system.neighbors.forEach((neighborId) => { const neighbor = updatedGalaxy.systems.find((entry) => entry.id === neighborId); if (neighbor) neighbor.known = true; });
-      system.planets.forEach((planet) => {
-        planet.scanned = true;
-        planet.scanLevel = Math.max(planet.scanLevel ?? 0, 1) as 1;
-        planet.lastScanYear = gameYear;
-      });
-      const civilizationContacts = get().civilizationContacts.map((contact) => system.civilizationIds.includes(contact.civilizationId) && contact.stage === 'unknown' ? {
+      const atHour = simulation.clock.absoluteHour + ACTION_TIME.systemScan;
+      let knowledge = revealKnowledge(state.knowledge, 'system', system.id, ['identity', 'coordinates', 'star', 'planets', 'routes', 'danger', 'civilizations', 'fullScan', 'visited'], atHour, 'scan', 96);
+      for (const neighborId of system.neighbors) knowledge = revealKnowledge(knowledge, 'system', neighborId, ['identity', 'coordinates'], atHour, 'scan', 48);
+      for (const planet of system.planets) knowledge = revealKnowledge(knowledge, 'planet', planet.id, ['identity', 'orbit', 'type'], atHour, 'scan', 54);
+      const advanced = buildWorldAdvance(state, ACTION_TIME.systemScan, `scan-system:${system.id}`, { knowledge });
+      const nextYear = advanced.patch.gameYear ?? state.gameYear;
+      const civilizationContacts = state.civilizationContacts.map((contact) => system.civilizationIds.includes(contact.civilizationId) && contact.stage === 'unknown' ? {
         ...contact,
         stage: 'observed' as const,
-        lastContactYear: gameYear,
+        lastContactYear: nextYear,
         notes: [...contact.notes, `Зафиксированы признаки присутствия в системе ${system.name}.`].slice(-12)
       } : contact);
       const report: ScanReport = {
-        id: `scan_system_${system.id}_${gameYear}`,
+        id: `scan_system_${system.id}_${simulation.clock.absoluteHour}`,
         systemId: system.id,
         level: 1,
-        confidence: 46,
-        createdYear: gameYear,
+        confidence: 54,
+        createdYear: nextYear,
         summary: `Определены орбиты ${system.planets.length} планет. Детальные сигналы требуют фокусировки сканера.`,
         warnings: system.anomaly ? ['В системе присутствуют нестабильные показания.'] : [],
         detectedPointOfInterestIds: []
       };
-      const tutorial = get().tutorial;
+      const tutorial = state.tutorial;
       const tutorialUpdate = tutorial.active && tutorial.currentStep === 1 ? { ...tutorial, currentStep: 2 } : tutorial;
-      const scanScene = generateScanScene(updatedGalaxy.seed, system.id, system.name, gameYear);
-      const storyScenes = scanScene && !get().storyScenes.some((scene) => scene.id === scanScene.id) ? [scanScene, ...get().storyScenes].slice(0, 160) : get().storyScenes;
+      const scanScene = generateScanScene(galaxy.seed, system.id, system.name, nextYear);
+      const storyScenes = scanScene && !state.storyScenes.some((scene) => scene.id === scanScene.id) ? [scanScene, ...((advanced.patch.storyScenes as StoryScene[] | undefined) ?? state.storyScenes)].slice(0, 160) : ((advanced.patch.storyScenes as StoryScene[] | undefined) ?? state.storyScenes);
       set({
-        galaxy: updatedGalaxy,
+        ...advanced.patch,
+        knowledge,
         tutorial: tutorialUpdate,
-        scanReports: [report, ...get().scanReports.filter((entry) => entry.id !== report.id)],
+        scanReports: [report, ...state.scanReports.filter((entry) => entry.id !== report.id)],
         civilizationContacts,
         storyScenes,
         activeStorySceneId: scanScene?.id ?? null,
-        logs: [makeLog(gameYear, `Система ${system.name} просканирована`, 'Получены орбиты, первичные характеристики планет и признаки разумной активности.', 'good'), ...get().logs]
+        logs: [makeLog(nextYear, `Система ${system.name} просканирована`, 'Получены орбиты, первичные характеристики планет и признаки разумной активности.', 'good'), ...((advanced.patch.logs as GameLogEntry[] | undefined) ?? state.logs)].slice(0, 750)
       });
       await persist(set, get, 'system-scan');
     }, undefined);
   },
   async detailedScanPlanet(planetId) {
     return runExclusive('detail-scan', set, get, async () => {
-      const { galaxy, currentSystemId, gameYear } = get();
-      if (!galaxy || !currentSystemId) return { ok: false, message: 'Нет активной системы' };
-      const updatedGalaxy = structuredClone(galaxy);
-      const system = updatedGalaxy.systems.find((entry) => entry.id === currentSystemId);
+      const state = get();
+      const { galaxy, currentSystemId, simulation } = state;
+      if (!galaxy || !currentSystemId || !simulation) return { ok: false, message: 'Нет активной системы' };
+      const system = galaxy.systems.find((entry) => entry.id === currentSystemId);
       const planet = system?.planets.find((entry) => entry.id === planetId);
       if (!system || !planet || !system.scanned) return { ok: false, message: 'Сначала выполните системный скан' };
-      planet.scanLevel = Math.max(planet.scanLevel ?? 0, 2) as 2;
-      planet.scanned = true;
-      planet.lastScanYear = gameYear;
-      const existing = get().pointsOfInterest.filter((entry) => entry.planetId === planetId);
-      const generated = existing.length > 0 ? existing : generatePointsOfInterest(updatedGalaxy, system, planet).map((entry) => ({ ...entry, discoveredYear: gameYear }));
-      const allPoints = existing.length > 0 ? get().pointsOfInterest : [...generated, ...get().pointsOfInterest];
-      const archaeologyChains = bindArchaeologyPoints(get().archaeologyChains, allPoints);
-      const civilizationContacts = get().civilizationContacts.map((contact) => planet.civilizationId === contact.civilizationId && (contact.stage === 'unknown' || contact.stage === 'observed') ? {
+      const atHour = simulation.clock.absoluteHour + ACTION_TIME.planetScan;
+      let knowledge = revealKnowledge(state.knowledge, 'planet', planet.id, ['identity', 'orbit', 'type', 'habitability', 'danger', 'signals', 'life', 'civilization'], atHour, 'scan', 88);
+      const ecology = simulation.ecosystems[planet.id];
+      if (ecology) {
+        knowledge = revealKnowledge(knowledge, 'ecosystem', planet.id, ['biomes', 'biomass', 'biodiversity', 'climate', 'resources', 'foodWeb', 'pathogens'], atHour, 'scan', 76);
+      }
+      const advanced = buildWorldAdvance(state, ACTION_TIME.planetScan, `scan-planet:${planet.id}`, { knowledge });
+      const nextYear = advanced.patch.gameYear ?? state.gameYear;
+      const projectedGalaxy = advanced.patch.galaxy as Galaxy | undefined;
+      const projectedSystem = projectedGalaxy?.systems.find((entry) => entry.id === system.id) ?? system;
+      const projectedPlanet = projectedSystem.planets.find((entry) => entry.id === planet.id) ?? planet;
+      const existing = state.pointsOfInterest.filter((entry) => entry.planetId === planetId);
+      const generated = existing.length > 0 ? existing : generatePointsOfInterest(projectedGalaxy ?? galaxy, projectedSystem, projectedPlanet).map((entry) => ({ ...entry, discoveredYear: nextYear }));
+      const allPoints = existing.length > 0 ? state.pointsOfInterest : [...generated, ...state.pointsOfInterest];
+      const archaeologyChains = bindArchaeologyPoints(state.archaeologyChains, allPoints);
+      const civilizationContacts = state.civilizationContacts.map((contact) => planet.civilizationId === contact.civilizationId && (contact.stage === 'unknown' || contact.stage === 'observed') ? {
         ...contact,
         stage: 'signals' as const,
-        lastContactYear: gameYear,
+        lastContactYear: nextYear,
         notes: [...contact.notes, `Детальный скан ${planet.name} выделил искусственные сигналы.`].slice(-12)
       } : contact);
       const report: ScanReport = {
-        id: `scan_planet_${planet.id}_${gameYear}_${get().scanReports.length}`,
+        id: `scan_planet_${planet.id}_${simulation.clock.absoluteHour}`,
         systemId: system.id,
         planetId: planet.id,
         level: 2,
         confidence: Math.min(92, 55 + planet.habitability / 3),
-        createdYear: gameYear,
-        summary: `Обнаружено ${generated.length} сигналов. Часть угроз может быть скрыта средой.`,
+        createdYear: nextYear,
+        summary: ecology
+          ? `Обнаружено ${generated.length} сигналов. Биомов: ${ecology.biomes.length}, видов в каталоге: ${ecology.species.filter((entry) => entry.status !== 'extinct').length}.`
+          : `Обнаружено ${generated.length} сигналов. Часть угроз может быть скрыта средой.`,
         warnings: generated.filter((entry) => entry.danger === 'danger' || entry.danger === 'extreme').map((entry) => `${entry.name}: повышенная угроза`).slice(0, 3),
         detectedPointOfInterestIds: generated.map((entry) => entry.id)
       };
@@ -1310,33 +1379,34 @@ export const useGameStore = create<GameStore>((set, get) => ({
         pointOfInterestId: entry.id,
         description: entry.publicSummary,
         confidence: entry.scanConfidence,
-        year: gameYear,
+        year: nextYear,
         tags: [entry.type, entry.danger]
       }));
-      const unique = signalDiscoveries.filter((entry) => !get().discoveries.some((existingEntry) => existingEntry.id === entry.id));
-      let captain = get().captain;
-      let factions = get().factions;
+      const unique = signalDiscoveries.filter((entry) => !state.discoveries.some((existingEntry) => existingEntry.id === entry.id));
+      let captain = state.captain;
+      let factions = (advanced.patch.factions as Faction[] | undefined) ?? state.factions;
       let reward = 0;
-      const contracts = get().contracts.map((contract) => {
+      const baseContracts = (advanced.patch.contracts as Contract[] | undefined) ?? state.contracts;
+      const contracts = baseContracts.map((contract) => {
         if (contract.status !== 'active' || contract.type !== 'survey' || contract.targetSystemId !== system.id) return contract;
         reward += contract.reward;
-        factions = adjustFactionStanding(factions, contract.issuerFactionId, gameYear, 'contract-complete', 6, `Выполнен контракт «${contract.title}».`);
-        return completedContract(contract, gameYear);
+        factions = adjustFactionStanding(factions, contract.issuerFactionId, nextYear, 'contract-complete', 6, `Выполнен контракт «${contract.title}».`);
+        return completedContract(contract, nextYear);
       });
       if (captain && reward > 0) captain = { ...captain, credits: captain.credits + reward, reputation: captain.reputation + 2 };
-      const tutorial = get().tutorial;
+      const tutorial = state.tutorial;
       const tutorialPoint = generated.find((entry) => entry.planetId === tutorial.targetPlanetId) ?? generated[0];
-      const tutorialUpdate = tutorial.active && tutorial.currentStep === 3
-        ? { ...tutorial, currentStep: 4, targetPointOfInterestId: tutorialPoint?.id ?? tutorial.targetPointOfInterestId }
-        : tutorial;
-      const scanScene = generateScanScene(updatedGalaxy.seed, system.id, system.name, gameYear, planet.name);
-      const storyScenes = scanScene && !get().storyScenes.some((scene) => scene.id === scanScene.id) ? [scanScene, ...get().storyScenes].slice(0, 160) : get().storyScenes;
+      const tutorialUpdate = tutorial.active && tutorial.currentStep === 3 ? { ...tutorial, currentStep: 4, targetPointOfInterestId: tutorialPoint?.id ?? tutorial.targetPointOfInterestId } : tutorial;
+      const scanScene = generateScanScene(galaxy.seed, system.id, system.name, nextYear, planet.name);
+      const storyScenes = scanScene && !state.storyScenes.some((scene) => scene.id === scanScene.id) ? [scanScene, ...((advanced.patch.storyScenes as StoryScene[] | undefined) ?? state.storyScenes)].slice(0, 160) : ((advanced.patch.storyScenes as StoryScene[] | undefined) ?? state.storyScenes);
+      const advancedSimulation = advanced.patch.simulation as SimulationState;
       set({
-        galaxy: updatedGalaxy,
+        ...advanced.patch,
+        knowledge,
         tutorial: tutorialUpdate,
         pointsOfInterest: allPoints,
-        scanReports: [report, ...get().scanReports],
-        discoveries: [...unique, ...get().discoveries],
+        scanReports: [report, ...state.scanReports],
+        discoveries: [...unique, ...state.discoveries],
         contracts,
         factions,
         captain,
@@ -1344,7 +1414,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
         civilizationContacts,
         storyScenes,
         activeStorySceneId: scanScene?.id ?? null,
-        logs: [makeLog(gameYear, `Детальный скан: ${planet.name}`, `Обнаружено ${generated.length} точек интереса.${reward ? ` Контракт закрыт: +${reward} кредитов.` : ''}`, 'good'), ...get().logs]
+        worldThreads: projectWorldThreads({ simulation: advancedSimulation, warFronts: (advanced.patch.warFronts as WarFront[] | undefined) ?? state.warFronts, factions, contracts, research: state.researchProjects }),
+        logs: [makeLog(nextYear, `Детальный скан: ${planet.name}`, `${ecology ? `Экосистема: биомасса ${ecology.biomass}/100, разнообразие ${ecology.biodiversity}/100. ` : ''}Обнаружено ${generated.length} точек интереса.${reward ? ` Контракт закрыт: +${reward} кредитов.` : ''}`, 'good'), ...((advanced.patch.logs as GameLogEntry[] | undefined) ?? state.logs)].slice(0, 750)
       });
       await persist(set, get, 'detail-scan');
       return { ok: true, message: `Обнаружено сигналов: ${generated.length}` };
@@ -1352,8 +1423,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
   },
   async investigatePoint(pointId) {
     return runExclusive('investigate-point', set, get, async () => {
-      const { galaxy, captain, gameYear } = get();
-      const point = get().pointsOfInterest.find((entry) => entry.id === pointId);
+      const state = get();
+      const { galaxy, captain } = state;
+      const point = state.pointsOfInterest.find((entry) => entry.id === pointId);
       if (!galaxy || !captain || !point) return { ok: false, message: 'Сигнал недоступен' };
       if (point.status === 'resolved') return { ok: false, message: 'Сигнал уже исследован' };
       if (point.access === 'surface') return { ok: false, message: 'Для этой цели требуется высадка' };
@@ -1361,6 +1433,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
       const planet = system?.planets.find((entry) => entry.id === point.planetId);
       if (!system || !planet) return { ok: false, message: 'Источник сигнала потерян' };
       const method = point.access === 'orbital' ? 'Орбитальный анализ' : 'Дистанционный анализ';
+      const hours = point.access === 'orbital' ? ACTION_TIME.orbitalSignal : ACTION_TIME.remoteSignal;
+      const advanced = buildWorldAdvance(state, hours, `investigate:${point.id}`);
+      const nextYear = advanced.patch.gameYear ?? state.gameYear;
       const discovery: Discovery = {
         id: `disc_remote_${point.id}`,
         kind: point.type === 'biosphere' ? 'biosphere' : point.type === 'settlement' ? 'settlement' : point.type === 'anomaly' ? 'anomaly' : 'signal',
@@ -1370,24 +1445,25 @@ export const useGameStore = create<GameStore>((set, get) => ({
         pointOfInterestId: point.id,
         description: `${method} завершён. ${point.publicSummary}`,
         confidence: Math.max(point.scanConfidence, point.access === 'orbital' ? 86 : 74),
-        year: gameYear,
+        year: nextYear,
         tags: [point.type, point.access, point.danger]
       };
-      const scanScene = generateScanScene(galaxy.seed, system.id, system.name, gameYear, point.name);
-      const storyScenes = scanScene && !get().storyScenes.some((scene) => scene.id === scanScene.id) ? [scanScene, ...get().storyScenes].slice(0, 160) : get().storyScenes;
-      const civilizationContacts = get().civilizationContacts.map((contact) => point.civilizationId === contact.civilizationId && ['unknown','observed'].includes(contact.stage) ? {
+      const scanScene = generateScanScene(galaxy.seed, system.id, system.name, nextYear, point.name);
+      const storyScenes = scanScene && !state.storyScenes.some((scene) => scene.id === scanScene.id) ? [scanScene, ...((advanced.patch.storyScenes as StoryScene[] | undefined) ?? state.storyScenes)].slice(0, 160) : ((advanced.patch.storyScenes as StoryScene[] | undefined) ?? state.storyScenes);
+      const civilizationContacts = state.civilizationContacts.map((contact) => point.civilizationId === contact.civilizationId && ['unknown','observed'].includes(contact.stage) ? {
         ...contact,
         stage: 'signals' as const,
-        lastContactYear: gameYear,
+        lastContactYear: nextYear,
         notes: [...contact.notes, `${method} сигнала «${point.name}» подтвердил искусственное происхождение.`].slice(-12)
       } : contact);
       set({
-        pointsOfInterest: get().pointsOfInterest.map((entry) => entry.id === point.id ? { ...entry, status: 'resolved' as const, visits: entry.visits + 1, lastVisitedYear: gameYear } : entry),
-        discoveries: get().discoveries.some((entry) => entry.id === discovery.id) ? get().discoveries : [discovery, ...get().discoveries],
+        ...advanced.patch,
+        pointsOfInterest: state.pointsOfInterest.map((entry) => entry.id === point.id ? { ...entry, status: 'resolved' as const, visits: entry.visits + 1, lastVisitedYear: nextYear } : entry),
+        discoveries: state.discoveries.some((entry) => entry.id === discovery.id) ? state.discoveries : [discovery, ...state.discoveries],
         civilizationContacts,
         storyScenes,
         activeStorySceneId: scanScene?.id ?? null,
-        logs: [makeLog(gameYear, method, `${point.name}: анализ завершён без высадки.`, 'good'), ...get().logs]
+        logs: [makeLog(nextYear, method, `${point.name}: анализ завершён без высадки.`, 'good'), ...((advanced.patch.logs as GameLogEntry[] | undefined) ?? state.logs)].slice(0, 750)
       });
       await persist(set, get, 'investigate-point');
       return { ok: true, message: `${method} завершён` };
@@ -1395,13 +1471,16 @@ export const useGameStore = create<GameStore>((set, get) => ({
   },
   async completeExpedition(result) {
     return runExclusive('expedition-complete', set, get, async () => {
-      const { galaxy, captain, ship, gameYear, currentSystemId } = get();
-      if (!galaxy || !captain || !ship || !currentSystemId) return;
-      const point = get().pointsOfInterest.find((entry) => entry.id === result.pointOfInterestId);
+      const state = get();
+      const { galaxy, captain, ship, currentSystemId } = state;
+      if (!galaxy || !captain || !ship || !currentSystemId || !state.simulation) return;
+      const advanced = buildWorldAdvance(state, expeditionHours(result.turnsSpent), `expedition:${result.pointOfInterestId}`);
+      const gameYear = advanced.patch.gameYear ?? state.gameYear;
+      const point = state.pointsOfInterest.find((entry) => entry.id === result.pointOfInterestId);
       if (!point) return;
       const system = galaxy.systems.find((entry) => entry.id === point.systemId);
       const planet = system?.planets.find((entry) => entry.id === point.planetId);
-      const updatedGalaxy = structuredClone(galaxy);
+      const updatedGalaxy = structuredClone((advanced.patch.galaxy as Galaxy | undefined) ?? galaxy);
       const updatedPoints = get().pointsOfInterest.map((entry) => entry.id === point.id ? {
         ...entry,
         status: result.outcome === 'resolved' ? 'resolved' as const : result.blockedReason ? 'blocked' as const : 'visited' as const,
@@ -1410,12 +1489,14 @@ export const useGameStore = create<GameStore>((set, get) => ({
       } : entry);
       let updatedShip = { ...ship, cargo: [...ship.cargo] };
       let updatedCaptain = { ...captain, injuries: [...captain.injuries] };
-      const logs = [...get().logs];
-      const newDiscoveries = [...get().discoveries];
+      const logs = [...((advanced.patch.logs as GameLogEntry[] | undefined) ?? state.logs)];
+      const newDiscoveries = [...state.discoveries];
+      let playerKnowledge = state.knowledge;
 
       if (result.artifact && !updatedShip.cargo.some((item) => item.artifactId === result.artifact?.id)) {
         const storedArtifact = updatedGalaxy.artifacts.find((entry) => entry.id === result.artifact?.id);
         if (storedArtifact) storedArtifact.discovered = true;
+        playerKnowledge = revealKnowledge(playerKnowledge, 'artifact', result.artifact.id, ['identity', 'kind', 'location'], advanced.patch.simulation?.clock.absoluteHour ?? state.simulation.clock.absoluteHour, 'direct', 82);
         if (updatedShip.cargo.length < updatedShip.cargoCapacity) {
           updatedShip.cargo.push({ id: `cargo_${result.artifact.id}`, name: result.artifact.name, kind: result.artifact.kind, quantity: 1, value: result.artifact.value, artifactId: result.artifact.id });
           if (!newDiscoveries.some((entry) => entry.artifactId === result.artifact?.id)) {
@@ -1596,8 +1677,43 @@ export const useGameStore = create<GameStore>((set, get) => ({
         }
       }
 
+      let simulation = (advanced.patch.simulation as SimulationState | undefined) ?? state.simulation;
+      if (point.type === 'biosphere' && planet) {
+        const extraction = result.outcome === 'resolved' ? -Math.max(1, Math.min(4, newEvidence.length)) : -1;
+        simulation = adjustEcosystem(simulation, planet.id, {
+          biomass: extraction,
+          contamination: result.outcome === 'failed' ? 3 : 1
+        });
+        playerKnowledge = revealKnowledge(playerKnowledge, 'ecosystem', planet.id, ['biomes', 'biomass', 'biodiversity', 'fieldSample'], simulation.clock.absoluteHour, 'direct', 88);
+        const ecology = simulation.ecosystems[planet.id];
+        if (ecology) {
+          logs.unshift(makeLog(gameYear, 'Полевое воздействие', `Экосистема ${planet.name}: биомасса ${ecology.biomass}/100, загрязнение ${ecology.contamination}/100.`, result.outcome === 'failed' ? 'warning' : 'info'));
+          const sampleId = `eco_sample_${point.id}`;
+          if (result.outcome === 'resolved' && newEvidence.length > 0 && !updatedShip.cargo.some((item) => item.commodityId === sampleId)) {
+            if (updatedShip.cargo.length < updatedShip.cargoCapacity) {
+              const resources = Object.entries(ecology.resources).sort((a, b) => b[1] - a[1]);
+              const [resourceType, richness] = resources[0] ?? ['biomass', 20];
+              updatedShip.cargo.push({
+                id: `cargo_${sampleId}`,
+                name: `Биологический образец: ${planet.name}`,
+                kind: 'biological-sample',
+                quantity: 1,
+                value: 180 + Math.round(richness * 6),
+                commodityId: sampleId
+              });
+              logs.unshift(makeLog(gameYear, 'Образец изолирован', `В трюм помещён образец класса «${resourceType}».`, 'good'));
+            } else {
+              logs.unshift(makeLog(gameYear, 'Образец оставлен', 'В трюме нет свободного места для биологического контейнера.', 'warning'));
+            }
+          }
+        }
+      }
+      const projectedGalaxy = projectKnowledgeToGalaxy(updatedGalaxy, playerKnowledge);
       set({
-        galaxy: updatedGalaxy,
+        ...advanced.patch,
+        simulation,
+        galaxy: projectedGalaxy,
+        knowledge: playerKnowledge,
         ship: updatedShip,
         captain: updatedCaptain,
         pointsOfInterest: updatedPoints,
@@ -1610,7 +1726,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
         factions,
         locationStates,
         archaeologyChains,
-        worldThreads: syncWorldThreads(get().worldThreads, contracts, get().news, get().researchProjects, gameYear),
+        worldThreads: projectWorldThreads({ simulation, warFronts: (advanced.patch.warFronts as WarFront[] | undefined) ?? state.warFronts, factions, contracts, research: state.researchProjects }),
         legacy,
         screen: nextScreen,
         logs
@@ -1620,13 +1736,16 @@ export const useGameStore = create<GameStore>((set, get) => ({
   },
   async analyzeArtifact(artifactId) {
     return runExclusive('artifact-analysis', set, get, async () => {
-      const { galaxy, captain } = get();
+      const state = get();
+      const { galaxy, captain } = state;
       if (!galaxy || !captain) return;
       const artifact = galaxy.artifacts.find((entry) => entry.id === artifactId);
       if (!artifact) return;
       const cost = 120;
       if (captain.credits < cost) return;
-      const previous = get().artifactKnowledge.find((entry) => entry.artifactId === artifactId) ?? { artifactId, level: 0, knownFields: [], notes: [] };
+      const advanced = buildWorldAdvance(state, 12, `artifact-analysis:${artifactId}`);
+      const nextYear = advanced.patch.gameYear ?? state.gameYear;
+      const previous = state.artifactKnowledge.find((entry) => entry.artifactId === artifactId) ?? { artifactId, level: 0, knownFields: [], notes: [] };
       const level = Math.min(4, previous.level + 1);
       const fieldByLevel: Record<number, string[]> = {
         1: ['kind', 'age'],
@@ -1642,30 +1761,38 @@ export const useGameStore = create<GameStore>((set, get) => ({
         notes: [...previous.notes, level === 4 ? artifact.truth : `Этап анализа ${level}: открыты поля ${fieldByLevel[level]?.join(', ') ?? ''}.`],
         revealedTruth: level === 4 ? artifact.truth : previous.revealedTruth
       };
+      const playerKnowledge = revealKnowledge(state.knowledge, 'artifact', artifactId, ['identity', ...knownFields], advanced.patch.simulation?.clock.absoluteHour ?? state.simulation?.clock.absoluteHour ?? 0, 'direct', 55 + level * 10);
       set({
+        ...advanced.patch,
+        knowledge: playerKnowledge,
         captain: { ...captain, credits: captain.credits - cost },
-        artifactKnowledge: [next, ...get().artifactKnowledge.filter((entry) => entry.artifactId !== artifactId)],
-        logs: [makeLog(get().gameYear, 'Анализ артефакта', `${artifact.name}: уровень знаний ${level}/4.`, 'good'), ...get().logs]
+        artifactKnowledge: [next, ...state.artifactKnowledge.filter((entry) => entry.artifactId !== artifactId)],
+        logs: [makeLog(nextYear, 'Анализ артефакта', `${artifact.name}: уровень знаний ${level}/4.`, 'good'), ...((advanced.patch.logs as GameLogEntry[] | undefined) ?? state.logs)].slice(0, 750)
       });
       await persist(set, get, 'artifact-analysis');
     }, undefined);
   },
   async startResearch(artifactId) {
     return runExclusive('research-start', set, get, async () => {
-      const { galaxy, ship, captain, gameYear } = get();
+      const state = get();
+      const { galaxy, ship, captain } = state;
       const artifact = galaxy?.artifacts.find((entry) => entry.id === artifactId);
       const carried = ship?.cargo.some((item) => item.artifactId === artifactId);
       if (!galaxy || !ship || !captain || !artifact || !carried) return { ok: false, message: 'Артефакт должен находиться на борту' };
-      if (get().researchProjects.some((entry) => entry.artifactId === artifactId && entry.status !== 'failed')) return { ok: false, message: 'Исследование уже создано' };
+      if (state.researchProjects.some((entry) => entry.artifactId === artifactId && entry.status !== 'failed')) return { ok: false, message: 'Исследование уже создано' };
       const cost = 180 + artifact.danger * 25;
       if (captain.credits < cost) return { ok: false, message: `Нужно ${cost} кредитов на изоляцию и расходники` };
-      const project = createResearchProject(artifact, gameYear);
-      const researchProjects = [project, ...get().researchProjects];
+      const advanced = buildWorldAdvance(state, 8, `research-start:${artifactId}`);
+      const nextYear = advanced.patch.gameYear ?? state.gameYear;
+      const project = createResearchProject(artifact, nextYear);
+      const researchProjects = [project, ...state.researchProjects];
+      const simulation = (advanced.patch.simulation as SimulationState | undefined) ?? state.simulation!;
       set({
+        ...advanced.patch,
         captain: { ...captain, credits: captain.credits - cost },
         researchProjects,
-        worldThreads: syncWorldThreads(get().worldThreads, get().contracts, get().news, researchProjects, gameYear),
-        logs: [makeLog(gameYear, 'Запущено исследование', `${artifact.name} помещён в лабораторию. Риск ${project.risk}/10.`, 'info'), ...get().logs]
+        worldThreads: projectWorldThreads({ simulation, warFronts: (advanced.patch.warFronts as WarFront[] | undefined) ?? state.warFronts, factions: state.factions, contracts: (advanced.patch.contracts as Contract[] | undefined) ?? state.contracts, research: researchProjects }),
+        logs: [makeLog(nextYear, 'Запущено исследование', `${artifact.name} помещён в лабораторию. Риск ${project.risk}/10.`, 'info'), ...((advanced.patch.logs as GameLogEntry[] | undefined) ?? state.logs)].slice(0, 750)
       });
       await persist(set, get, 'research-start');
       return { ok: true, message: 'Исследование запущено' };
@@ -1673,19 +1800,21 @@ export const useGameStore = create<GameStore>((set, get) => ({
   },
   async advanceResearch(projectId) {
     return runExclusive('research-cycle', set, get, async () => {
-      const { galaxy, captain, ship, crew, gameYear } = get();
-      const project = get().researchProjects.find((entry) => entry.id === projectId);
+      const state = get();
+      const { galaxy, captain, ship, crew } = state;
+      const project = state.researchProjects.find((entry) => entry.id === projectId);
       const artifact = galaxy?.artifacts.find((entry) => entry.id === project?.artifactId);
       if (!galaxy || !captain || !ship || !project || !artifact || project.status !== 'active') return { ok: false, message: 'Активное исследование не найдено' };
       const cost = 90 + project.risk * 18;
       if (captain.credits < cost) return { ok: false, message: `Нужно ${cost} кредитов на цикл` };
+      const advanced = buildWorldAdvance(state, ACTION_TIME.researchCycle, `research-cycle:${project.id}`);
+      const nextYear = advanced.patch.gameYear ?? state.gameYear;
       const specialists = crew.filter((member) => ['scientist','archaeologist','engineer','doctor','biologist'].includes(member.primaryRole));
-      const rng = createRng(`${galaxy.seed}:${project.id}:${project.progress}:${gameYear}`);
+      const rng = createRng(`${galaxy.seed}:${project.id}:${project.progress}:${advanced.patch.simulation?.clock.absoluteHour ?? nextYear}`);
       const gain = researchPower(specialists) + captain.skills.research * 6 + rng.int(0, 12);
       const progress = Math.min(project.requiredProgress, project.progress + gain);
       const complication = rng.chance(Math.min(.48, project.risk * .035));
       const completed = progress >= project.requiredProgress;
-      const nextYear = gameYear + 1;
       const nextProject: ResearchProject = {
         ...project,
         progress,
@@ -1695,29 +1824,40 @@ export const useGameStore = create<GameStore>((set, get) => ({
         complication: complication ? 'Контур дал нестабильный выброс; часть данных повреждена.' : project.complication,
         log: [`Цикл ${nextYear}: +${gain} прогресса${complication ? ', зафиксирован сбой' : ''}.`, ...project.log].slice(0, 12)
       };
-      const researchProjects = [nextProject, ...get().researchProjects.filter((entry) => entry.id !== project.id)];
-      let technologyBlueprints = get().technologyBlueprints;
-      let equipmentInventory = get().equipmentInventory;
-      let knowledge = get().artifactKnowledge;
+      const researchProjects = [nextProject, ...state.researchProjects.filter((entry) => entry.id !== project.id)];
+      let technologyBlueprints = state.technologyBlueprints;
+      let equipmentInventory = state.equipmentInventory;
+      let artifactKnowledge = state.artifactKnowledge;
       let nextShip = ship;
+      let playerKnowledge = state.knowledge;
       if (completed) {
         const blueprint = blueprintFromProject(nextProject, artifact, nextYear);
-        blueprint.factionInterest = get().factions.filter((entry) => entry.research >= 45).sort((a, b) => b.research - a.research).slice(0, 3).map((entry) => entry.id);
+        blueprint.factionInterest = state.factions.filter((entry) => entry.research >= 45).sort((a, b) => b.research - a.research).slice(0, 3).map((entry) => entry.id);
         technologyBlueprints = [blueprint, ...technologyBlueprints.filter((entry) => entry.sourceArtifactId !== artifact.id)];
         if (['medicine','biology','weapons'].includes(blueprint.domain)) {
           const category = blueprint.domain === 'weapons' ? 'weapon' as const : blueprint.domain === 'medicine' ? 'medical' as const : 'implant' as const;
           equipmentInventory = [{ id: `gear_${artifact.id}`, name: `Прототип: ${artifact.name}`, category, rarity: blueprint.rarity, description: blueprint.description, effect: blueprint.benefit, sourceArtifactId: artifact.id, condition: 100 }, ...equipmentInventory.filter((entry) => entry.sourceArtifactId !== artifact.id)];
         }
-        const existing = knowledge.find((entry) => entry.artifactId === artifact.id) ?? { artifactId: artifact.id, level: 1, knownFields: [], notes: [] };
-        knowledge = [{ ...existing, level: 6, knownFields: Array.from(new Set([...existing.knownFields, 'truth', 'properties', 'technology'])), notes: [`Функция восстановлена. Создан чертёж «${blueprint.name}».`, ...existing.notes], revealedTruth: artifact.truth }, ...knowledge.filter((entry) => entry.artifactId !== artifact.id)];
+        const existing = artifactKnowledge.find((entry) => entry.artifactId === artifact.id) ?? { artifactId: artifact.id, level: 1, knownFields: [], notes: [] };
+        artifactKnowledge = [{ ...existing, level: 6, knownFields: Array.from(new Set([...existing.knownFields, 'truth', 'properties', 'technology'])), notes: [`Функция восстановлена. Создан чертёж «${blueprint.name}».`, ...existing.notes], revealedTruth: artifact.truth }, ...artifactKnowledge.filter((entry) => entry.artifactId !== artifact.id)];
+        playerKnowledge = revealKnowledge(playerKnowledge, 'artifact', artifact.id, ['identity', 'kind', 'creator', 'history', 'danger', 'truth', 'technology'], advanced.patch.simulation?.clock.absoluteHour ?? state.simulation?.clock.absoluteHour ?? 0, 'direct', 100);
       } else if (complication) {
         nextShip = { ...ship, hull: Math.max(1, ship.hull - project.risk * 2), statuses: Array.from(new Set([...ship.statuses, 'лабораторный выброс'])) };
       }
-      const worldThreads = syncWorldThreads(get().worldThreads, get().contracts, get().news, researchProjects, nextYear).map((thread) => thread.id === `thread_research_${project.id}` ? { ...thread, progress: Math.round(progress / project.requiredProgress * 100), status: completed ? 'resolved' as const : nextProject.status === 'failed' ? 'lost' as const : thread.status, updates: [{ id: `research_update_${project.id}_${nextYear}`, year: nextYear, text: completed ? `Исследование завершено: ${artifact.name}.` : complication ? 'Лабораторный цикл завершился аварийным выбросом.' : `Получены новые данные: ${gain} ед.`, tone: completed ? 'good' as const : complication ? 'danger' as const : 'info' as const }, ...thread.updates].slice(0, 8) } : thread);
+      const simulation = (advanced.patch.simulation as SimulationState | undefined) ?? state.simulation!;
+      const contracts = (advanced.patch.contracts as Contract[] | undefined) ?? state.contracts;
+      const worldThreads = projectWorldThreads({ simulation, warFronts: (advanced.patch.warFronts as WarFront[] | undefined) ?? state.warFronts, factions: state.factions, contracts, research: researchProjects });
       set({
-        captain: { ...captain, credits: captain.credits - cost }, ship: nextShip, gameYear: nextYear,
-        researchProjects, technologyBlueprints, equipmentInventory, artifactKnowledge: knowledge, worldThreads,
-        logs: [makeLog(nextYear, completed ? 'Технология восстановлена' : complication ? 'Авария в лаборатории' : 'Исследовательский цикл', completed ? `Создан новый технологический чертёж из объекта «${artifact.name}».` : complication ? 'Сбой повредил корпус и остановил часть анализа.' : `${project.title}: ${progress}/${project.requiredProgress}.`, completed ? 'good' : complication ? 'danger' : 'info'), ...get().logs]
+        ...advanced.patch,
+        knowledge: playerKnowledge,
+        captain: { ...captain, credits: captain.credits - cost },
+        ship: nextShip,
+        researchProjects,
+        technologyBlueprints,
+        equipmentInventory,
+        artifactKnowledge,
+        worldThreads,
+        logs: [makeLog(nextYear, completed ? 'Технология восстановлена' : complication ? 'Авария в лаборатории' : 'Исследовательский цикл', completed ? `Создан новый технологический чертёж из объекта «${artifact.name}».` : complication ? 'Сбой повредил корпус и остановил часть анализа.' : `${project.title}: ${progress}/${project.requiredProgress}.`, completed ? 'good' : complication ? 'danger' : 'info'), ...((advanced.patch.logs as GameLogEntry[] | undefined) ?? state.logs)].slice(0, 750)
       });
       await persist(set, get, 'research-cycle');
       return { ok: true, message: completed ? 'Исследование завершено' : nextProject.status === 'failed' ? 'Проект потерян' : `Прогресс ${progress}/${project.requiredProgress}` };
@@ -1725,19 +1865,25 @@ export const useGameStore = create<GameStore>((set, get) => ({
   },
   async installBlueprint(blueprintId) {
     return runExclusive('blueprint-install', set, get, async () => {
-      const { captain, ship, gameYear } = get();
-      const blueprint = get().technologyBlueprints.find((entry) => entry.id === blueprintId);
+      const state = get();
+      const { captain, ship } = state;
+      const blueprint = state.technologyBlueprints.find((entry) => entry.id === blueprintId);
       if (!captain || !ship || !blueprint || blueprint.status === 'installed') return { ok: false, message: 'Чертёж недоступен' };
       if (captain.credits < blueprint.installCost) return { ok: false, message: `Нужно ${blueprint.installCost} кредитов` };
+      const advanced = buildWorldAdvance(state, 72, `blueprint-install:${blueprintId}`);
+      const nextYear = advanced.patch.gameYear ?? state.gameYear;
       const module = { id: `module_${blueprint.id}`, name: blueprint.name, slot: blueprint.moduleSlot, rarity: blueprint.rarity, effect: `${blueprint.benefit}; недостаток: ${blueprint.drawback}` };
       let nextShip = { ...ship, modules: [...ship.modules.filter((entry) => entry.id !== module.id), module] };
       if (blueprint.domain === 'propulsion') nextShip = { ...nextShip, jumpRange: nextShip.jumpRange + 45 };
       if (blueprint.domain === 'energy') nextShip = { ...nextShip, maxFuel: nextShip.maxFuel + 15, fuel: nextShip.fuel + 15 };
       if (blueprint.domain === 'materials') nextShip = { ...nextShip, maxHull: nextShip.maxHull + 20, hull: nextShip.hull + 20 };
-      const technologyBlueprints = get().technologyBlueprints.map((entry) => entry.id === blueprint.id ? { ...entry, status: 'installed' as const } : entry);
+      const technologyBlueprints = state.technologyBlueprints.map((entry) => entry.id === blueprint.id ? { ...entry, status: 'installed' as const } : entry);
       set({
-        captain: { ...captain, credits: captain.credits - blueprint.installCost }, ship: nextShip, technologyBlueprints,
-        logs: [makeLog(gameYear, 'Экспериментальный модуль установлен', `${blueprint.name}: ${blueprint.benefit}.`, blueprint.status === 'restricted' ? 'warning' : 'good'), ...get().logs]
+        ...advanced.patch,
+        captain: { ...captain, credits: captain.credits - blueprint.installCost },
+        ship: nextShip,
+        technologyBlueprints,
+        logs: [makeLog(nextYear, 'Экспериментальный модуль установлен', `${blueprint.name}: ${blueprint.benefit}.`, blueprint.status === 'restricted' ? 'warning' : 'good'), ...((advanced.patch.logs as GameLogEntry[] | undefined) ?? state.logs)].slice(0, 750)
       });
       await persist(set, get, 'blueprint-install');
       return { ok: true, message: 'Модуль установлен' };
@@ -1764,25 +1910,41 @@ export const useGameStore = create<GameStore>((set, get) => ({
   },
   async repairShip() {
     return runExclusive('repair', set, get, async () => {
-      const { ship, captain } = get();
+      const state = get();
+      const { ship, captain } = state;
       if (!ship || !captain) return;
       const missingHull = ship.maxHull - ship.hull;
       const normalizedSystems = normalizeShipSystems(ship.systems);
       const missingSystems = normalizedSystems.reduce((sum, entry) => sum + (entry.maxIntegrity - entry.integrity), 0);
       const cost = Math.ceil(missingHull * 4 + missingSystems * 1.5);
       if ((missingHull <= 0 && missingSystems <= 0) || captain.credits < cost) return;
-      set({ ship: { ...ship, hull: ship.maxHull, systems: createShipSystems(), statuses: [] }, captain: { ...captain, credits: captain.credits - cost }, logs: [makeLog(get().gameYear, 'Ремонт завершён', `Корпус и корабельные системы восстановлены. Потрачено ${cost} кредитов.`, 'good'), ...get().logs] });
+      const advanced = buildWorldAdvance(state, ACTION_TIME.repair, 'ship-repair');
+      const nextYear = advanced.patch.gameYear ?? state.gameYear;
+      set({
+        ...advanced.patch,
+        ship: { ...ship, hull: ship.maxHull, systems: createShipSystems(), statuses: [] },
+        captain: { ...captain, credits: captain.credits - cost },
+        logs: [makeLog(nextYear, 'Ремонт завершён', `Корпус и корабельные системы восстановлены. Потрачено ${cost} кредитов.`, 'good'), ...((advanced.patch.logs as GameLogEntry[] | undefined) ?? state.logs)].slice(0, 750)
+      });
       await persist(set, get, 'repair');
     }, undefined);
   },
   async refuelShip() {
     return runExclusive('refuel', set, get, async () => {
-      const { ship, captain } = get();
+      const state = get();
+      const { ship, captain } = state;
       if (!ship || !captain) return;
       const missing = ship.maxFuel - ship.fuel;
       const cost = Math.ceil(missing * 3);
       if (missing <= 0 || captain.credits < cost) return;
-      set({ ship: { ...ship, fuel: ship.maxFuel }, captain: { ...captain, credits: captain.credits - cost }, logs: [makeLog(get().gameYear, 'Заправка завершена', `Потрачено ${cost} кредитов.`, 'good'), ...get().logs] });
+      const advanced = buildWorldAdvance(state, ACTION_TIME.refuel, 'ship-refuel');
+      const nextYear = advanced.patch.gameYear ?? state.gameYear;
+      set({
+        ...advanced.patch,
+        ship: { ...ship, fuel: ship.maxFuel },
+        captain: { ...captain, credits: captain.credits - cost },
+        logs: [makeLog(nextYear, 'Заправка завершена', `Потрачено ${cost} кредитов.`, 'good'), ...((advanced.patch.logs as GameLogEntry[] | undefined) ?? state.logs)].slice(0, 750)
+      });
       await persist(set, get, 'refuel');
     }, undefined);
   },
@@ -1794,84 +1956,105 @@ export const useGameStore = create<GameStore>((set, get) => ({
   },
   async sellCargo(itemId) {
     return runExclusive('sell-cargo', set, get, async () => {
-      const { ship, captain, gameYear } = get();
+      const state = get();
+      const { ship, captain } = state;
       if (!ship || !captain) return;
       const item = ship.cargo.find((entry) => entry.id === itemId);
       if (!item) return;
+      const advanced = buildWorldAdvance(state, ACTION_TIME.marketTrade, `sell-cargo:${itemId}`);
+      const nextYear = advanced.patch.gameYear ?? state.gameYear;
       const price = Math.max(1, Math.round(item.value * 0.72));
       set({
+        ...advanced.patch,
         ship: { ...ship, cargo: ship.cargo.filter((entry) => entry.id !== itemId) },
         captain: { ...captain, credits: captain.credits + price },
-        logs: [makeLog(gameYear, 'Груз продан', `${item.name}: получено ${price} кредитов.`, 'good'), ...get().logs]
+        logs: [makeLog(nextYear, 'Груз продан', `${item.name}: получено ${price} кредитов.`, 'good'), ...((advanced.patch.logs as GameLogEntry[] | undefined) ?? state.logs)].slice(0, 750)
       });
       await persist(set, get, 'sell-cargo');
     }, undefined);
   },
   async refreshCrewCandidates() {
     return runExclusive('crew-search', set, get, async () => {
-      const { galaxy, currentSystemId, gameYear, captain } = get();
+      const state = get();
+      const { galaxy, currentSystemId, captain } = state;
       if (!galaxy || !currentSystemId || !captain) return;
       const system = galaxy.systems.find((entry) => entry.id === currentSystemId);
       if (!system) return;
       const cost = 40;
       if (captain.credits < cost) return;
-      const candidates = generateCrewCandidates(galaxy.seed, system, gameYear, 4);
+      const advanced = buildWorldAdvance(state, ACTION_TIME.recruit, `crew-search:${currentSystemId}`);
+      const nextYear = advanced.patch.gameYear ?? state.gameYear;
+      const candidates = generateCrewCandidates(galaxy.seed, system, nextYear + Math.floor((advanced.patch.simulation?.clock.absoluteHour ?? 0) / 24), 4);
       set({
+        ...advanced.patch,
         crewCandidates: candidates,
         captain: { ...captain, credits: captain.credits - cost },
-        logs: [makeLog(gameYear, 'Поиск экипажа', `Получено ${candidates.length} новых анкет. Потрачено ${cost} кредитов.`, 'info'), ...get().logs]
+        logs: [makeLog(nextYear, 'Поиск экипажа', `Получено ${candidates.length} новых анкет. Потрачено ${cost} кредитов.`, 'info'), ...((advanced.patch.logs as GameLogEntry[] | undefined) ?? state.logs)].slice(0, 750)
       });
       await persist(set, get, 'crew-search');
     }, undefined);
   },
   async hireCrew(candidateId) {
     return runExclusive('crew-hire', set, get, async () => {
-      const { crew, crewCandidates, captain, gameYear } = get();
+      const state = get();
+      const { crew, crewCandidates, captain } = state;
       if (!captain || crew.length >= 4) return;
       const candidate = crewCandidates.find((entry) => entry.id === candidateId);
       if (!candidate || captain.credits < candidate.signingCost) return;
+      const advanced = buildWorldAdvance(state, ACTION_TIME.recruit, `crew-hire:${candidateId}`);
+      const nextYear = advanced.patch.gameYear ?? state.gameYear;
       const { signingCost: _signingCost, originSystemId: _originSystemId, ...memberData } = candidate;
       const member: CrewMember = {
         ...memberData,
-        joinedYear: gameYear,
-        paidUntilYear: gameYear,
-        memories: [{ id: `memory_hired_${candidate.id}_${gameYear}`, year: gameYear, kind: 'hired', text: `Нанят капитаном в год ${gameYear}.`, impact: 8 }]
+        joinedYear: nextYear,
+        paidUntilYear: nextYear,
+        memories: [{ id: `memory_hired_${candidate.id}_${nextYear}`, year: nextYear, kind: 'hired', text: `Нанят капитаном в год ${nextYear}.`, impact: 8 }]
       };
       set({
+        ...advanced.patch,
         crew: [...crew, member],
         crewCandidates: crewCandidates.filter((entry) => entry.id !== candidateId),
         captain: { ...captain, credits: captain.credits - candidate.signingCost },
-        logs: [makeLog(gameYear, 'Новый член экипажа', `${member.name}, ${member.primaryRole}. Контракт подписан.`, 'good'), ...get().logs]
+        logs: [makeLog(nextYear, 'Новый член экипажа', `${member.name}, ${member.primaryRole}. Контракт подписан.`, 'good'), ...((advanced.patch.logs as GameLogEntry[] | undefined) ?? state.logs)].slice(0, 750)
       });
       await persist(set, get, 'crew-hire');
     }, undefined);
   },
   async dismissCrew(crewId) {
     return runExclusive('crew-dismiss', set, get, async () => {
-      const member = get().crew.find((entry) => entry.id === crewId);
+      const state = get();
+      const member = state.crew.find((entry) => entry.id === crewId);
       if (!member) return;
+      const advanced = buildWorldAdvance(state, 1, `crew-dismiss:${crewId}`);
+      const nextYear = advanced.patch.gameYear ?? state.gameYear;
       set({
-        crew: get().crew.filter((entry) => entry.id !== crewId),
-        logs: [makeLog(get().gameYear, 'Контракт расторгнут', `${member.name} покидает корабль.`, member.loyalty < 35 ? 'warning' : 'info'), ...get().logs]
+        ...advanced.patch,
+        crew: state.crew.filter((entry) => entry.id !== crewId),
+        logs: [makeLog(nextYear, 'Контракт расторгнут', `${member.name} покидает корабль.`, member.loyalty < 35 ? 'warning' : 'info'), ...((advanced.patch.logs as GameLogEntry[] | undefined) ?? state.logs)].slice(0, 750)
       });
       await persist(set, get, 'crew-dismiss');
     }, undefined);
   },
   async settlePayroll() {
     return runExclusive('crew-payroll', set, get, async () => {
-      const { crew, captain, gameYear } = get();
+      const state = get();
+      const { crew, captain } = state;
       if (!captain || crew.length === 0) return;
+      const advanced = buildWorldAdvance(state, 2, 'crew-payroll');
+      const nextYear = advanced.patch.gameYear ?? state.gameYear;
       const due = crew.reduce((sum, member) => sum + member.salary, 0);
       if (captain.credits < due) {
         set({
-          crew: crew.map((member) => ({ ...member, status: 'unpaid', morale: Math.max(0, member.morale - 12), loyalty: Math.max(0, member.loyalty - 8), memories: [...member.memories, { id: `memory_unpaid_${member.id}_${gameYear}`, year: gameYear, kind: 'betrayal' as const, text: 'Капитан не выплатил жалование.', impact: -12 }].slice(-20) })),
-          logs: [makeLog(gameYear, 'Жалование не выплачено', `Требуется ${due} кредитов. Экипаж недоволен.`, 'danger'), ...get().logs]
+          ...advanced.patch,
+          crew: crew.map((member) => ({ ...member, status: 'unpaid', morale: Math.max(0, member.morale - 12), loyalty: Math.max(0, member.loyalty - 8), memories: [...member.memories, { id: `memory_unpaid_${member.id}_${nextYear}`, year: nextYear, kind: 'betrayal' as const, text: 'Капитан не выплатил жалование.', impact: -12 }].slice(-20) })),
+          logs: [makeLog(nextYear, 'Жалование не выплачено', `Требуется ${due} кредитов. Экипаж недоволен.`, 'danger'), ...((advanced.patch.logs as GameLogEntry[] | undefined) ?? state.logs)].slice(0, 750)
         });
       } else {
         set({
+          ...advanced.patch,
           captain: { ...captain, credits: captain.credits - due },
-          crew: crew.map((member) => ({ ...member, status: member.health < member.maxHealth * 0.5 ? 'injured' : 'active', paidUntilYear: gameYear + 1, morale: Math.min(100, member.morale + 5), loyalty: Math.min(100, member.loyalty + 3), memories: [...member.memories, { id: `memory_paid_${member.id}_${gameYear}`, year: gameYear, kind: 'payment' as const, text: `Получено жалование: ${member.salary}.`, impact: 4 }].slice(-20) })),
-          logs: [makeLog(gameYear, 'Жалование выплачено', `Экипаж получил ${due} кредитов.`, 'good'), ...get().logs]
+          crew: crew.map((member) => ({ ...member, status: member.health < member.maxHealth * 0.5 ? 'injured' : 'active', paidUntilYear: nextYear + 1, morale: Math.min(100, member.morale + 5), loyalty: Math.min(100, member.loyalty + 3), memories: [...member.memories, { id: `memory_paid_${member.id}_${nextYear}`, year: nextYear, kind: 'payment' as const, text: `Получено жалование: ${member.salary}.`, impact: 4 }].slice(-20) })),
+          logs: [makeLog(nextYear, 'Жалование выплачено', `Экипаж получил ${due} кредитов.`, 'good'), ...((advanced.patch.logs as GameLogEntry[] | undefined) ?? state.logs)].slice(0, 750)
         });
       }
       await persist(set, get, 'crew-payroll');
@@ -1879,21 +2062,30 @@ export const useGameStore = create<GameStore>((set, get) => ({
   },
   async dockAtHub(hubId) {
     return runExclusive('dock', set, get, async () => {
-      const { hubs, currentSystemId, ship, captain, factions, contracts, gameYear, galaxy } = get();
-      if (!currentSystemId || !ship || !captain || !galaxy) return { ok: false, message: 'Нет активного корабля' };
+      const state = get();
+      const { hubs, currentSystemId, ship, captain, galaxy } = state;
+      if (!currentSystemId || !ship || !captain || !galaxy || !state.simulation) return { ok: false, message: 'Нет активного корабля' };
       const hub = hubs.find((entry) => entry.id === hubId);
       if (!hub || hub.systemId !== currentSystemId) return { ok: false, message: 'Хаб недоступен в этой системе' };
-      const faction = factions.find((entry) => entry.id === hub.factionId);
+      const faction = state.factions.find((entry) => entry.id === hub.factionId);
       if (faction?.disposition === 'hostile') return { ok: false, message: 'Стыковка запрещена: фракция враждебна' };
+      const arrivalHour = state.simulation.clock.absoluteHour + ACTION_TIME.dock;
+      let knowledge = revealKnowledge(state.knowledge, 'hub', hub.id, ['identity', 'services', 'population', 'authority', 'visited'], arrivalHour, 'direct', 96);
+      knowledge = revealKnowledge(knowledge, 'faction', hub.factionId, ['identity', 'disposition', 'laws', 'territory'], arrivalHour, 'contact', 82);
+      if (hub.civilizationId) knowledge = revealKnowledge(knowledge, 'civilization', hub.civilizationId, ['identity', 'language', 'culture', 'politics'], arrivalHour, 'contact', 76);
+      const advanced = buildWorldAdvance(state, ACTION_TIME.dock, `dock:${hubId}`, { knowledge });
+      const nextYear = advanced.patch.gameYear ?? state.gameYear;
+      const baseContracts = (advanced.patch.contracts as Contract[] | undefined) ?? state.contracts;
+      const baseLogs = (advanced.patch.logs as GameLogEntry[] | undefined) ?? state.logs;
 
-      const smugglerBonus = get().crew.some((member) => member.primaryRole === 'smuggler' || member.secondaryRole === 'smuggler') ? 24 : 0;
+      const smugglerBonus = state.crew.some((member) => member.primaryRole === 'smuggler' || member.secondaryRole === 'smuggler') ? 24 : 0;
       const illegalCargo = ship.cargo.filter((item) => item.illegal);
-      const rng = createRng(`${galaxy.seed}:inspection:${hub.id}:${gameYear}:${ship.cargo.length}`);
+      const rng = createRng(`${galaxy.seed}:inspection:${hub.id}:${advanced.patch.simulation?.clock.absoluteHour ?? nextYear}:${ship.cargo.length}`);
       const inspected = illegalCargo.length > 0 && rng.chance(Math.max(0, hub.inspectionLevel - smugglerBonus) / 100);
       let updatedShip = { ...ship, cargo: [...ship.cargo] };
       let updatedCaptain = { ...captain };
-      let updatedFactions = factions;
-      let logs = [...get().logs];
+      let updatedFactions = state.factions;
+      const logs = [...baseLogs];
       let message = `Стыковка разрешена: ${hub.name}.`;
 
       if (inspected) {
@@ -1901,33 +2093,34 @@ export const useGameStore = create<GameStore>((set, get) => ({
         const fine = Math.min(updatedCaptain.credits, Math.max(120, Math.round(confiscatedValue * 0.45)));
         updatedShip = { ...updatedShip, cargo: updatedShip.cargo.filter((item) => !item.illegal) };
         updatedCaptain = { ...updatedCaptain, credits: updatedCaptain.credits - fine, reputation: updatedCaptain.reputation - 3 };
-        updatedFactions = adjustFactionStanding(updatedFactions, hub.factionId, gameYear, 'contraband-caught', -12, 'На корабле обнаружена контрабанда.');
-        logs.unshift(makeLog(gameYear, 'Досмотр и конфискация', `Запрещённый груз изъят. Штраф: ${fine} кредитов.`, 'danger'));
+        updatedFactions = adjustFactionStanding(updatedFactions, hub.factionId, nextYear, 'contraband-caught', -12, 'На корабле обнаружена контрабанда.');
+        logs.unshift(makeLog(nextYear, 'Досмотр и конфискация', `Запрещённый груз изъят. Штраф: ${fine} кредитов.`, 'danger'));
         message = `Контрабанда конфискована. Штраф: ${fine}.`;
       }
 
       let reward = 0;
-      const updatedContracts = contracts.map((contract) => {
+      const updatedContracts = baseContracts.map((contract) => {
         if (contract.status !== 'active' || contract.targetSystemId !== currentSystemId || (contract.type !== 'delivery' && contract.type !== 'smuggling')) return contract;
         const cargoPresent = updatedShip.cargo.some((item) => item.contractId === contract.id || item.id === contract.cargoId);
         if (!cargoPresent) return contract;
         if (contract.type === 'smuggling' && inspected) return { ...contract, status: 'failed' as const };
         updatedShip = { ...updatedShip, cargo: updatedShip.cargo.filter((item) => item.contractId !== contract.id && item.id !== contract.cargoId) };
         reward += contract.reward;
-        updatedFactions = adjustFactionStanding(updatedFactions, contract.issuerFactionId, gameYear, 'contract-complete', 7, `Выполнен контракт «${contract.title}».`);
-        return completedContract(contract, gameYear);
+        updatedFactions = adjustFactionStanding(updatedFactions, contract.issuerFactionId, nextYear, 'contract-complete', 7, `Выполнен контракт «${contract.title}».`);
+        return completedContract(contract, nextYear);
       });
       if (reward > 0) {
         updatedCaptain = { ...updatedCaptain, credits: updatedCaptain.credits + reward, reputation: updatedCaptain.reputation + 2 };
-        logs.unshift(makeLog(gameYear, 'Доставка завершена', `Контракты закрыты. Получено ${reward} кредитов.`, 'good'));
+        logs.unshift(makeLog(nextYear, 'Доставка завершена', `Контракты закрыты. Получено ${reward} кредитов.`, 'good'));
       }
-      const hubNpc = get().localNpcs.find((npc) => npc.hubId === hub.id && npc.alive && npc.present);
-      const hubScene = generateHubScene(galaxy.seed, hub, faction, hubNpc?.id, gameYear);
-      const storyScenes = hubScene && !get().storyScenes.some((scene) => scene.id === hubScene.id)
-        ? [hubScene, ...get().storyScenes].slice(0, 160)
-        : get().storyScenes;
-
+      const hubNpc = state.localNpcs.find((npc) => npc.hubId === hub.id && npc.alive && npc.present);
+      const hubScene = generateHubScene(galaxy.seed, hub, faction, hubNpc?.id, nextYear);
+      const baseScenes = (advanced.patch.storyScenes as StoryScene[] | undefined) ?? state.storyScenes;
+      const storyScenes = hubScene && !baseScenes.some((scene) => scene.id === hubScene.id) ? [hubScene, ...baseScenes].slice(0, 160) : baseScenes;
+      const simulation = (advanced.patch.simulation as SimulationState | undefined) ?? state.simulation;
       set({
+        ...advanced.patch,
+        knowledge,
         hubs: hubs.map((entry) => ({ ...entry, docked: entry.id === hub.id, visited: entry.id === hub.id ? true : entry.visited })),
         currentHubId: hub.id,
         screen: 'hub',
@@ -1937,7 +2130,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
         contracts: updatedContracts,
         storyScenes,
         activeStorySceneId: hubScene?.id ?? null,
-        logs
+        worldThreads: projectWorldThreads({ simulation, warFronts: (advanced.patch.warFronts as WarFront[] | undefined) ?? state.warFronts, factions: updatedFactions, contracts: updatedContracts, research: state.researchProjects }),
+        logs: logs.slice(0, 750)
       });
       await persist(set, get, 'dock');
       return { ok: true, message };
@@ -1945,7 +2139,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
   },
   async leaveHub() {
     return runExclusive('leave-hub', set, get, async () => {
-      set({ hubs: get().hubs.map((hub) => ({ ...hub, docked: false })), currentHubId: null, screen: 'system' });
+      const state = get();
+      const advanced = buildWorldAdvance(state, ACTION_TIME.leaveHub, 'leave-hub');
+      set({ ...advanced.patch, hubs: state.hubs.map((hub) => ({ ...hub, docked: false })), currentHubId: null, screen: 'system' });
       await persist(set, get, 'leave-hub');
     }, undefined);
   },
@@ -1983,64 +2179,99 @@ export const useGameStore = create<GameStore>((set, get) => ({
   },
   async refreshContracts() {
     return runExclusive('refresh-contracts', set, get, async () => {
-      const { galaxy, hubs, gameYear, currentHubId } = get();
-      if (!galaxy || !currentHubId) return;
-      const generated = generateContracts(galaxy.seed, hubs.filter((hub) => hub.id === currentHubId), galaxy.systems, gameYear + get().contracts.length, 8);
-      set({ contracts: [...get().contracts.filter((contract) => contract.status !== 'available'), ...generated] });
+      const state = get();
+      if (!state.galaxy || !state.currentHubId || !state.simulation) return;
+      const advanced = buildWorldAdvance(state, 4, `contracts-refresh:${state.currentHubId}`);
+      const nextYear = advanced.patch.gameYear ?? state.gameYear;
+      const simulation = (advanced.patch.simulation as SimulationState | undefined) ?? state.simulation;
+      const existing = (advanced.patch.contracts as Contract[] | undefined) ?? state.contracts;
+      const contracts = projectContractsFromEvents({ events: simulation.events.slice(0, 40), existing: existing.filter((contract) => contract.status !== 'available' || contract.issuerHubId === state.currentHubId), hubs: state.hubs, year: nextYear });
+      set({
+        ...advanced.patch,
+        contracts,
+        worldThreads: projectWorldThreads({ simulation, warFronts: (advanced.patch.warFronts as WarFront[] | undefined) ?? state.warFronts, factions: state.factions, contracts, research: state.researchProjects }),
+        logs: [makeLog(nextYear, 'Доска контрактов обновлена', 'Показаны только заявки, возникшие из реальных дефицитов, миграций и конфликтов.', 'info'), ...((advanced.patch.logs as GameLogEntry[] | undefined) ?? state.logs)].slice(0, 750)
+      });
       await persist(set, get, 'contracts-refresh');
     }, undefined);
   },
   async buyMarketGood(hubId, good) {
     return runExclusive('market-buy', set, get, async () => {
-      const { currentHubId, captain, ship } = get();
+      const state = get();
+      const { currentHubId, captain, ship } = state;
       if (currentHubId !== hubId || !captain || !ship) return { ok: false, message: 'Сначала пристыкуйтесь к хабу' };
       if (captain.credits < good.price) return { ok: false, message: 'Недостаточно кредитов' };
+      const hub = state.hubs.find((entry) => entry.id === hubId);
+      if (!hub) return { ok: false, message: 'Хаб недоступен' };
+      const advanced = buildWorldAdvance(state, ACTION_TIME.marketTrade, `market-buy:${good.id}`);
+      let simulation = (advanced.patch.simulation as SimulationState | undefined) ?? state.simulation!;
+      simulation = adjustSystemEconomy(simulation, hub.systemId, { supply: -2, tradePressure: 1 });
+      const nextYear = worldYear(simulation.clock);
       let nextShip = { ...ship, cargo: [...ship.cargo] };
+      let nextCaptain = { ...captain, credits: captain.credits - good.price };
       if (good.category === 'fuel') nextShip.fuel = Math.min(nextShip.maxFuel, nextShip.fuel + 20);
       else if (good.category === 'parts') nextShip.hull = Math.min(nextShip.maxHull, nextShip.hull + 18);
-      else if (good.category === 'medicine') {
-        const currentCaptain = get().captain!;
-        set({ captain: { ...currentCaptain, health: Math.min(currentCaptain.maxHealth, currentCaptain.health + 20), credits: currentCaptain.credits - good.price } });
-        await persist(set, get, 'market-buy-medicine');
-        return { ok: true, message: 'Лечение проведено' };
-      } else {
+      else if (good.category === 'medicine') nextCaptain = { ...nextCaptain, health: Math.min(nextCaptain.maxHealth, nextCaptain.health + 20) };
+      else {
         if (nextShip.cargo.length >= nextShip.cargoCapacity) return { ok: false, message: 'Трюм заполнен' };
         nextShip.cargo.push({ id: `cargo_${good.id}_${Date.now()}`, name: good.name, kind: good.category, quantity: 1, value: good.price, commodityId: good.id, illegal: good.illegal });
       }
-      set({ ship: nextShip, captain: { ...captain, credits: captain.credits - good.price }, logs: [makeLog(get().gameYear, 'Покупка', `${good.name}: ${good.price} кредитов.`, good.illegal ? 'warning' : 'info'), ...get().logs] });
-      await persist(set, get, 'market-buy');
-      return { ok: true, message: 'Покупка завершена' };
+      set({
+        ...advanced.patch,
+        simulation,
+        gameYear: nextYear,
+        ship: nextShip,
+        captain: nextCaptain,
+        logs: [makeLog(nextYear, good.category === 'medicine' ? 'Лечение проведено' : 'Покупка', `${good.name}: ${good.price} кредитов.`, good.illegal ? 'warning' : 'info'), ...((advanced.patch.logs as GameLogEntry[] | undefined) ?? state.logs)].slice(0, 750)
+      });
+      await persist(set, get, good.category === 'medicine' ? 'market-buy-medicine' : 'market-buy');
+      return { ok: true, message: good.category === 'medicine' ? 'Лечение проведено' : 'Покупка завершена' };
     }, { ok: false, message: 'Другое действие ещё выполняется' });
   },
   async sellCommodity(itemId, hubId) {
     return runExclusive('market-sell', set, get, async () => {
-      const { ship, captain, currentHubId } = get();
+      const state = get();
+      const { ship, captain, currentHubId } = state;
       if (!ship || !captain || currentHubId !== hubId) return;
       const item = ship.cargo.find((entry) => entry.id === itemId && !entry.contractId);
       if (!item) return;
-      const hub = get().hubs.find((entry) => entry.id === hubId);
-      const market = hub ? generateMarket(hub, get().gameYear) : [];
+      const hub = state.hubs.find((entry) => entry.id === hubId);
+      if (!hub) return;
+      const advanced = buildWorldAdvance(state, ACTION_TIME.marketTrade, `market-sell:${itemId}`);
+      let simulation = (advanced.patch.simulation as SimulationState | undefined) ?? state.simulation!;
+      const market = generateMarket(hub, advanced.patch.gameYear ?? state.gameYear, simulation.systems[hub.systemId]);
       const matching = market.find((good) => good.id === item.commodityId || good.category === item.kind);
       const price = Math.max(1, Math.round((matching?.price ?? item.value) * 0.68));
-      set({ ship: { ...ship, cargo: ship.cargo.filter((entry) => entry.id !== itemId) }, captain: { ...captain, credits: captain.credits + price }, logs: [makeLog(get().gameYear, 'Продажа товара', `${item.name}: +${price} кредитов.`, 'good'), ...get().logs] });
+      simulation = adjustSystemEconomy(simulation, hub.systemId, { supply: 2, tradePressure: -1 });
+      const nextYear = worldYear(simulation.clock);
+      set({
+        ...advanced.patch,
+        simulation,
+        gameYear: nextYear,
+        ship: { ...ship, cargo: ship.cargo.filter((entry) => entry.id !== itemId) },
+        captain: { ...captain, credits: captain.credits + price },
+        logs: [makeLog(nextYear, 'Продажа товара', `${item.name}: +${price} кредитов.`, 'good'), ...((advanced.patch.logs as GameLogEntry[] | undefined) ?? state.logs)].slice(0, 750)
+      });
       await persist(set, get, 'market-sell');
     }, undefined);
   },
   async attemptFirstContact(civilizationId) {
     return runExclusive('first-contact', set, get, async () => {
-      const { galaxy, currentSystemId, gameYear } = get();
-      if (!galaxy || !currentSystemId) return { ok: false, message: 'Нет активной системы' };
+      const state = get();
+      const { galaxy, currentSystemId } = state;
+      if (!galaxy || !currentSystemId || !state.simulation) return { ok: false, message: 'Нет активной системы' };
       const civilization = galaxy.civilizations.find((entry) => entry.id === civilizationId);
       const system = galaxy.systems.find((entry) => entry.id === currentSystemId);
-      const contact = get().civilizationContacts.find((entry) => entry.civilizationId === civilizationId);
+      const contact = state.civilizationContacts.find((entry) => entry.civilizationId === civilizationId);
       if (!civilization || civilization.status === 'dead' || !contact) return { ok: false, message: 'Связь с этой цивилизацией невозможна' };
       const present = system?.civilizationIds.includes(civilizationId) || system?.planets.some((planet) => planet.civilizationId === civilizationId);
       if (!present) return { ok: false, message: 'В системе нет подтверждённого канала этой цивилизации' };
       if (contact.stage === 'trusted') return { ok: true, message: 'Уже установлен доверительный канал' };
-      const specialistBonus = get().crew.some((member) => member.primaryRole === 'diplomat') ? 0.18
-        : get().crew.some((member) => member.primaryRole === 'scientist' || member.primaryRole === 'archaeologist') ? 0.08 : 0;
+      const advanced = buildWorldAdvance(state, ACTION_TIME.firstContact, `first-contact:${civilizationId}`);
+      const nextYear = advanced.patch.gameYear ?? state.gameYear;
+      const specialistBonus = state.crew.some((member) => member.primaryRole === 'diplomat') ? 0.18 : state.crew.some((member) => member.primaryRole === 'scientist' || member.primaryRole === 'archaeologist') ? 0.08 : 0;
       const baseChance = contact.stage === 'failed' ? 0.48 : contact.stage === 'unknown' ? 0.58 : contact.stage === 'observed' ? 0.66 : contact.stage === 'signals' ? 0.72 : 0.82;
-      const rng = createRng(`${galaxy.seed}:contact:${civilizationId}:${contact.attempts}:${gameYear}`);
+      const rng = createRng(`${galaxy.seed}:contact:${civilizationId}:${contact.attempts}:${advanced.patch.simulation?.clock.absoluteHour ?? nextYear}`);
       const success = rng.chance(Math.min(0.94, baseChance + specialistBonus));
       const nextStage = success ? nextContactStage(contact.stage) : 'failed';
       const nextContact: CivilizationContact = {
@@ -2049,30 +2280,36 @@ export const useGameStore = create<GameStore>((set, get) => ({
         attempts: contact.attempts + 1,
         languageLevel: Math.max(0, Math.min(5, contact.languageLevel + (success && (nextStage === 'translated' || nextStage === 'contacted' || nextStage === 'trusted') ? 1 : 0))),
         trust: Math.max(-100, Math.min(100, contact.trust + (success ? 8 : -7))),
-        firstContactYear: success && (nextStage === 'contacted' || nextStage === 'trusted') ? contact.firstContactYear ?? gameYear : contact.firstContactYear,
-        lastContactYear: gameYear,
+        firstContactYear: success && (nextStage === 'contacted' || nextStage === 'trusted') ? contact.firstContactYear ?? nextYear : contact.firstContactYear,
+        lastContactYear: nextYear,
         notes: [...contact.notes, success ? `Связь продвинута до стадии «${nextStage}».` : 'Передача была понята неверно; канал временно сорван.'].slice(-12)
       };
-      let factions = get().factions;
+      let factions = state.factions;
       const related = factions.find((faction) => faction.civilizationId === civilizationId);
-      if (related) factions = adjustFactionStanding(factions, related.id, gameYear, 'first-contact', success ? 3 : -3, success ? 'Капитан установил корректный канал связи.' : 'Попытка контакта вызвала подозрение.');
+      if (related) factions = adjustFactionStanding(factions, related.id, nextYear, 'first-contact', success ? 3 : -3, success ? 'Капитан установил корректный канал связи.' : 'Попытка контакта вызвала подозрение.');
       const headline = success ? `Контакт с ${civilization.name} продвинут` : `Связь с ${civilization.name} сорвана`;
-      const nextNews = [{ id: `news_contact_${civilizationId}_${gameYear}_${contact.attempts}`, year: gameYear, headline, text: success ? 'Получен ответ и новые языковые данные.' : 'Стороны неверно истолковали сигналы друг друга.', category: 'politics' as const, reliability: 96, systemIds: [currentSystemId] }, ...get().news].slice(0, 500);
-      const existingThread = get().worldThreads.find((thread) => thread.id === `thread_contact_${civilizationId}`);
-      const contactThread = {
-        id: `thread_contact_${civilizationId}`, category: 'culture' as const, status: success ? 'active' as const : 'escalating' as const,
-        title: `Контакт: ${civilization.name}`, summary: success ? 'Стороны постепенно создают общий язык и правила взаимодействия.' : 'Ошибка интерпретации усилила подозрение и может закрыть систему для чужаков.',
-        urgency: success ? 35 : 72, progress: Math.min(100, nextContact.attempts * 18 + nextContact.languageLevel * 10), systemIds: [currentSystemId], civilizationIds: [civilizationId], factionIds: related ? [related.id] : [], relatedArtifactIds: [], playerInvolved: true,
-        nextAction: success ? 'Продолжить языковой и дипломатический обмен.' : 'Сменить подход или привлечь дипломата.',
-        updates: [{ id: `contact_thread_update_${civilizationId}_${gameYear}_${contact.attempts}`, year: gameYear, text: headline, tone: success ? 'good' as const : 'warning' as const }, ...(existingThread?.updates ?? [])].slice(0, 8)
-      };
-      const worldThreads = [contactThread, ...get().worldThreads.filter((thread) => thread.id !== contactThread.id)];
+      let simulation = (advanced.patch.simulation as SimulationState | undefined) ?? state.simulation;
+      const recorded = recordWorldEvent(simulation, {
+        kind: 'politics', title: headline,
+        summary: success ? `Получен ответ; стадия контакта: ${nextStage}.` : 'Стороны неверно истолковали сигналы друг друга.',
+        severity: success ? 4 : 6, visibility: 'public', systemIds: [currentSystemId], civilizationIds: [civilizationId], factionIds: related ? [related.id] : [], tags: ['first-contact', 'player-action']
+      });
+      simulation = recorded.simulation;
+      let knowledge = revealKnowledge(state.knowledge, 'civilization', civilizationId, success ? ['identity', 'language', 'culture', 'politics', 'contact'] : ['identity', 'signals'], simulation.clock.absoluteHour, 'contact', success ? 82 : 56);
+      if (related) knowledge = revealKnowledge(knowledge, 'faction', related.id, ['identity', 'disposition'], simulation.clock.absoluteHour, 'contact', success ? 72 : 46);
+      const baseNews = (advanced.patch.news as NewsItem[] | undefined) ?? state.news;
+      const news = projectNewsFromEvents([recorded.event], knowledge, baseNews, currentSystemId);
+      const contracts = (advanced.patch.contracts as Contract[] | undefined) ?? state.contracts;
+      const worldThreads = projectWorldThreads({ simulation, warFronts: (advanced.patch.warFronts as WarFront[] | undefined) ?? state.warFronts, factions, contracts, research: state.researchProjects });
       set({
-        civilizationContacts: [nextContact, ...get().civilizationContacts.filter((entry) => entry.civilizationId !== civilizationId)],
+        ...advanced.patch,
+        simulation,
+        knowledge,
+        civilizationContacts: [nextContact, ...state.civilizationContacts.filter((entry) => entry.civilizationId !== civilizationId)],
         factions,
-        news: nextNews,
+        news,
         worldThreads,
-        logs: [makeLog(gameYear, headline, success ? `Уровень понимания языка: ${nextContact.languageLevel}/5.` : 'Повторная попытка потребует другого подхода.', success ? 'good' : 'warning'), ...get().logs]
+        logs: [makeLog(nextYear, headline, success ? `Уровень понимания языка: ${nextContact.languageLevel}/5.` : 'Повторная попытка потребует другого подхода.', success ? 'good' : 'warning'), ...((advanced.patch.logs as GameLogEntry[] | undefined) ?? state.logs)].slice(0, 750)
       });
       await persist(set, get, 'first-contact');
       return { ok: success, message: success ? `Стадия контакта: ${nextStage}` : 'Контакт сорван; данные сохранены' };
@@ -2080,74 +2317,120 @@ export const useGameStore = create<GameStore>((set, get) => ({
   },
   async interactWithNpc(npcId, kind) {
     return runExclusive('npc-interaction', set, get, async () => {
-      const npc = get().localNpcs.find((entry) => entry.id === npcId);
-      const hub = get().hubs.find((entry) => entry.id === npc?.hubId);
-      const captain = get().captain;
-      if (!npc || !hub || !captain || get().currentHubId !== hub.id || !npc.alive || !npc.present) return;
+      const state = get();
+      const npc = state.localNpcs.find((entry) => entry.id === npcId);
+      const hub = state.hubs.find((entry) => entry.id === npc?.hubId);
+      const captain = state.captain;
+      if (!npc || !hub || !captain || state.currentHubId !== hub.id || !npc.alive || !npc.present) return;
       const impact = kind === 'help' ? 9 : kind === 'deal' ? 4 : -16;
       const cost = kind === 'help' ? 80 : 0;
       if (captain.credits < cost) return;
+      const advanced = buildWorldAdvance(state, 2, `npc:${kind}:${npcId}`);
+      const nextYear = advanced.patch.gameYear ?? state.gameYear;
       const nextTrust = Math.max(-100, Math.min(100, npc.trust + impact));
-      const memory = { id: `npc_memory_${npc.id}_${get().gameYear}_${npc.memories.length}`, year: get().gameYear, kind, text: kind === 'help' ? 'Капитан помог решить локальную проблему.' : kind === 'deal' ? 'Состоялась взаимовыгодная сделка.' : 'Капитан угрожал и требовал уступок.', impact } as const;
-      let factions = adjustFactionStanding(get().factions, hub.factionId, get().gameYear, `npc-${kind}`, Math.sign(impact) * (kind === 'threat' ? 4 : 1), `${npc.name}: ${memory.text}`);
-      const nextNpcs = get().localNpcs.map((entry) => entry.id === npcId ? {
+      const memory = { id: `npc_memory_${npc.id}_${nextYear}_${npc.memories.length}`, year: nextYear, kind, text: kind === 'help' ? 'Капитан помог решить локальную проблему.' : kind === 'deal' ? 'Состоялась взаимовыгодная сделка.' : 'Капитан угрожал и требовал уступок.', impact } as const;
+      const factions = adjustFactionStanding(state.factions, hub.factionId, nextYear, `npc-${kind}`, Math.sign(impact) * (kind === 'threat' ? 4 : 1), `${npc.name}: ${memory.text}`);
+      const nextNpcs = state.localNpcs.map((entry) => entry.id === npcId ? {
         ...entry,
         trust: nextTrust,
         disposition: nextTrust <= -35 ? 'hostile' as const : nextTrust < -5 ? 'wary' as const : nextTrust >= 25 ? 'friendly' as const : 'neutral' as const,
         memories: [memory, ...entry.memories].slice(0, 20)
       } : entry);
-      set({ localNpcs: nextNpcs, factions, captain: { ...captain, credits: captain.credits - cost }, logs: [makeLog(get().gameYear, `Контакт: ${npc.name}`, memory.text, impact > 0 ? 'good' : 'warning'), ...get().logs] });
+      const simulation = (advanced.patch.simulation as SimulationState | undefined) ?? state.simulation!;
+      const contracts = (advanced.patch.contracts as Contract[] | undefined) ?? state.contracts;
+      set({
+        ...advanced.patch,
+        localNpcs: nextNpcs,
+        factions,
+        captain: { ...captain, credits: captain.credits - cost },
+        worldThreads: projectWorldThreads({ simulation, warFronts: (advanced.patch.warFronts as WarFront[] | undefined) ?? state.warFronts, factions, contracts, research: state.researchProjects }),
+        logs: [makeLog(nextYear, `Контакт: ${npc.name}`, memory.text, impact > 0 ? 'good' : 'warning'), ...((advanced.patch.logs as GameLogEntry[] | undefined) ?? state.logs)].slice(0, 750)
+      });
       await persist(set, get, 'npc-interaction');
     }, undefined);
   },
   async resolveHypothesis(hypothesisId, disposition) {
     return runExclusive('hypothesis-resolution', set, get, async () => {
-      const hypothesis = get().hypotheses.find((entry) => entry.id === hypothesisId);
-      const captain = get().captain;
-      if (!hypothesis || !captain || hypothesis.disposition) return;
-      const point = get().pointsOfInterest.find((entry) => entry.id === hypothesis.pointOfInterestId);
+      const state = get();
+      const hypothesis = state.hypotheses.find((entry) => entry.id === hypothesisId);
+      const captain = state.captain;
+      if (!hypothesis || !captain || hypothesis.disposition || !state.simulation) return;
+      const advanced = buildWorldAdvance(state, 4, `hypothesis:${disposition}:${hypothesisId}`);
+      const nextYear = advanced.patch.gameYear ?? state.gameYear;
+      const point = state.pointsOfInterest.find((entry) => entry.id === hypothesis.pointOfInterestId);
       const civilizationId = point?.civilizationId;
       const beneficiary = disposition === 'sold'
-        ? get().factions.find((faction) => faction.kind === 'university' || faction.kind === 'corporation')
-        : get().factions.find((faction) => faction.civilizationId === civilizationId && faction.kind === 'government');
+        ? state.factions.find((faction) => faction.kind === 'university' || faction.kind === 'corporation')
+        : state.factions.find((faction) => faction.civilizationId === civilizationId && faction.kind === 'government');
       const payment = disposition === 'sold' ? Math.max(220, Math.round(hypothesis.confidence * 14)) : disposition === 'published' ? Math.round(hypothesis.confidence * 3) : 0;
-      let factions = get().factions;
-      if (beneficiary) factions = adjustFactionStanding(factions, beneficiary.id, get().gameYear, `hypothesis-${disposition}`, disposition === 'suppressed' ? 2 : 6, `Получена версия «${hypothesis.title}».`);
-      const updated = { ...hypothesis, disposition, beneficiaryFactionId: beneficiary?.id, resolvedYear: get().gameYear };
-      const nextNews = disposition === 'published' ? [{ id: `news_hypothesis_${hypothesisId}`, year: get().gameYear, headline: `Опубликована гипотеза: ${hypothesis.title}`, text: hypothesis.summary, category: 'discovery' as const, reliability: hypothesis.confidence, systemIds: point ? [point.systemId] : [] }, ...get().news].slice(0, 500) : get().news;
-      const threadId = `thread_hypothesis_${hypothesis.id}`;
-      const worldThreads = [{ id: threadId, category: 'discovery' as const, status: 'resolved' as const, title: hypothesis.title, summary: hypothesis.summary, urgency: hypothesis.confidence, progress: 100, systemIds: point ? [point.systemId] : [], civilizationIds: civilizationId ? [civilizationId] : [], factionIds: beneficiary ? [beneficiary.id] : [], relatedArtifactIds: [], playerInvolved: true, nextAction: disposition === 'published' ? 'Следить за политической и научной реакцией.' : disposition === 'sold' ? 'Наблюдать за действиями покупателя.' : 'Сохранить доказательства в безопасности.', updates: [{ id: `thread_hypothesis_update_${hypothesis.id}`, year: get().gameYear, text: disposition === 'published' ? 'Версия опубликована и стала частью публичной истории.' : disposition === 'sold' ? 'Контроль над материалами перешёл к покупателю.' : 'Материалы исключены из открытого архива.', tone: disposition === 'published' ? 'good' as const : 'info' as const }] }, ...get().worldThreads.filter((thread) => thread.id !== threadId)];
+      let factions = state.factions;
+      if (beneficiary) factions = adjustFactionStanding(factions, beneficiary.id, nextYear, `hypothesis-${disposition}`, disposition === 'suppressed' ? 2 : 6, `Получена версия «${hypothesis.title}».`);
+      const updated = { ...hypothesis, disposition, beneficiaryFactionId: beneficiary?.id, resolvedYear: nextYear };
+      let simulation = (advanced.patch.simulation as SimulationState | undefined) ?? state.simulation;
+      const recorded = recordWorldEvent(simulation, {
+        kind: 'discovery', title: disposition === 'published' ? `Опубликована гипотеза: ${hypothesis.title}` : disposition === 'sold' ? `Материалы «${hypothesis.title}» сменили владельца` : `Материалы «${hypothesis.title}» скрыты`,
+        summary: disposition === 'published' ? hypothesis.summary : disposition === 'sold' ? 'Контроль над доказательствами перешёл к частной организации.' : 'Данные исключены из открытого обмена.',
+        severity: Math.max(2, Math.round(hypothesis.confidence / 16)), visibility: disposition === 'published' ? 'public' : disposition === 'sold' ? 'local' : 'hidden',
+        systemIds: point ? [point.systemId] : [], civilizationIds: civilizationId ? [civilizationId] : [], factionIds: beneficiary ? [beneficiary.id] : [], tags: ['hypothesis', disposition, 'player-action']
+      });
+      simulation = recorded.simulation;
+      const knowledge = civilizationId ? revealKnowledge(state.knowledge, 'civilization', civilizationId, ['history'], simulation.clock.absoluteHour, 'archive', hypothesis.confidence) : state.knowledge;
+      const baseNews = (advanced.patch.news as NewsItem[] | undefined) ?? state.news;
+      const news = projectNewsFromEvents([recorded.event], knowledge, baseNews, state.currentSystemId ?? undefined);
+      const contracts = (advanced.patch.contracts as Contract[] | undefined) ?? state.contracts;
+      const worldThreads = projectWorldThreads({ simulation, warFronts: (advanced.patch.warFronts as WarFront[] | undefined) ?? state.warFronts, factions, contracts, research: state.researchProjects });
       set({
-        hypotheses: [updated, ...get().hypotheses.filter((entry) => entry.id !== hypothesisId)],
+        ...advanced.patch,
+        simulation,
+        knowledge,
+        hypotheses: [updated, ...state.hypotheses.filter((entry) => entry.id !== hypothesisId)],
         factions,
         captain: { ...captain, credits: captain.credits + payment, reputation: captain.reputation + (disposition === 'published' ? 3 : 0) },
-        news: nextNews,
+        news,
         worldThreads,
-        logs: [makeLog(get().gameYear, 'Решение по гипотезе', disposition === 'sold' ? `Материалы проданы за ${payment} кредитов.` : disposition === 'published' ? 'Материалы опубликованы в открытой сети.' : 'Материалы скрыты в личном архиве.', disposition === 'published' ? 'good' : 'info'), ...get().logs]
+        logs: [makeLog(nextYear, 'Решение по гипотезе', disposition === 'sold' ? `Материалы проданы за ${payment} кредитов.` : disposition === 'published' ? 'Материалы опубликованы в открытой сети.' : 'Материалы скрыты в личном архиве.', disposition === 'published' ? 'good' : 'info'), ...((advanced.patch.logs as GameLogEntry[] | undefined) ?? state.logs)].slice(0, 750)
       });
       await persist(set, get, 'hypothesis-resolution');
     }, undefined);
   },
   async sellArtifactToHub(itemId, hubId, channel) {
     return runExclusive('artifact-transfer', set, get, async () => {
-      const { ship, captain, currentHubId, gameYear } = get();
-      const hub = get().hubs.find((entry) => entry.id === hubId);
+      const state = get();
+      const { ship, captain, currentHubId } = state;
+      const hub = state.hubs.find((entry) => entry.id === hubId);
       const item = ship?.cargo.find((entry) => entry.id === itemId && entry.artifactId);
-      const artifact = get().galaxy?.artifacts.find((entry) => entry.id === item?.artifactId);
-      const faction = get().factions.find((entry) => entry.id === hub?.factionId);
-      if (!ship || !captain || !hub || !item || !artifact || currentHubId !== hubId) return;
+      const artifact = state.galaxy?.artifacts.find((entry) => entry.id === item?.artifactId);
+      const faction = state.factions.find((entry) => entry.id === hub?.factionId);
+      if (!ship || !captain || !hub || !item || !artifact || currentHubId !== hubId || !state.simulation) return;
       if (channel === 'heirs' && hub.civilizationId !== artifact.civilizationId) return;
       if (channel === 'museum' && !['university', 'religious', 'government'].includes(faction?.kind ?? '')) return;
       if (channel === 'blackMarket' && !hub.services.includes('blackMarket')) return;
+      const advanced = buildWorldAdvance(state, 2, `artifact-transfer:${channel}:${artifact.id}`);
+      const nextYear = advanced.patch.gameYear ?? state.gameYear;
       const sameCivilization = hub.civilizationId === artifact.civilizationId;
       const price = Math.max(1, Math.round(item.value * culturalArtifactMultiplier(channel, sameCivilization)));
-      let factions = get().factions;
-      if (faction) factions = adjustFactionStanding(factions, faction.id, gameYear, `artifact-${channel}`, channel === 'heirs' ? 12 : channel === 'museum' ? 6 : channel === 'blackMarket' ? -3 : 1, `${artifact.name} передан через канал «${channel}».`);
+      let factions = state.factions;
+      if (faction) factions = adjustFactionStanding(factions, faction.id, nextYear, `artifact-${channel}`, channel === 'heirs' ? 12 : channel === 'museum' ? 6 : channel === 'blackMarket' ? -3 : 1, `${artifact.name} передан через канал «${channel}».`);
+      let simulation = (advanced.patch.simulation as SimulationState | undefined) ?? state.simulation;
+      const recorded = recordWorldEvent(simulation, {
+        kind: channel === 'blackMarket' ? 'economy' : 'discovery', title: `${artifact.name} передан новым владельцам`,
+        summary: channel === 'heirs' ? 'Артефакт возвращён наследникам создавшей его культуры.' : channel === 'museum' ? 'Объект передан публичному научному собранию.' : channel === 'blackMarket' ? 'Объект исчез в закрытой торговой сети.' : 'Объект продан на открытом рынке.',
+        severity: Math.max(2, artifact.danger), visibility: channel === 'blackMarket' ? 'hidden' : 'public', systemIds: [hub.systemId], civilizationIds: [artifact.civilizationId], factionIds: faction ? [faction.id] : [], tags: ['artifact-transfer', channel, 'player-action']
+      });
+      simulation = recorded.simulation;
+      const knowledge = state.knowledge;
+      const news = projectNewsFromEvents([recorded.event], knowledge, (advanced.patch.news as NewsItem[] | undefined) ?? state.news, state.currentSystemId ?? undefined);
+      const contracts = (advanced.patch.contracts as Contract[] | undefined) ?? state.contracts;
+      const worldThreads = projectWorldThreads({ simulation, warFronts: (advanced.patch.warFronts as WarFront[] | undefined) ?? state.warFronts, factions, contracts, research: state.researchProjects });
       set({
+        ...advanced.patch,
+        simulation,
         ship: { ...ship, cargo: ship.cargo.filter((entry) => entry.id !== itemId) },
         captain: { ...captain, credits: captain.credits + price, reputation: captain.reputation + (channel === 'heirs' ? 3 : 0) },
         factions,
-        logs: [makeLog(gameYear, 'Артефакт передан', `${artifact.name}: ${price} кредитов. Канал: ${channel}.`, channel === 'blackMarket' ? 'warning' : 'good'), ...get().logs]
+        news,
+        worldThreads,
+        logs: [makeLog(nextYear, 'Артефакт передан', `${artifact.name}: ${price} кредитов. Канал: ${channel}.`, channel === 'blackMarket' ? 'warning' : 'good'), ...((advanced.patch.logs as GameLogEntry[] | undefined) ?? state.logs)].slice(0, 750)
       });
       await persist(set, get, 'artifact-transfer');
     }, undefined);
@@ -2163,6 +2446,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
         currentSystemId: safe.currentSystemId,
         selectedSystemId: safe.currentSystemId,
         gameYear: safe.gameYear,
+        simulation: safe.simulation,
+        knowledge: safe.knowledge,
         discoveries: safe.discoveries,
         logs: safe.logs,
         scanReports: safe.scanReports,
@@ -2209,7 +2494,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       galaxy, captain, ship, currentSystemId, gameYear, simulation, knowledge, discoveries, logs, saveMeta,
       scanReports, pointsOfInterest, evidence, hypotheses, artifactKnowledge, crew, crewCandidates, factions, hubs, contracts, news, locationStates, currentHubId, localNpcs, civilizationContacts, archaeologyChains, researchProjects, technologyBlueprints, equipmentInventory, worldThreads, storyScenes, pendingConsequences, objectives, tutorial, activeShipEncounter, pursuits, warFronts, legacy
     } = get();
-    if (!galaxy || !captain || !ship || !currentSystemId) return null;
+    if (!galaxy || !captain || !ship || !currentSystemId || !simulation) return null;
     return {
       schemaVersion: CURRENT_SCHEMA_VERSION,
       saveMeta: saveMeta ?? emptySaveMeta(),
@@ -2217,7 +2502,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       captain,
       ship,
       currentSystemId,
-      gameYear: simulation.time.year,
+      gameYear,
       simulation,
       knowledge,
       discoveries,

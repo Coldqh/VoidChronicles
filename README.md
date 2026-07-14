@@ -1,8 +1,31 @@
 # Void Chronicles
 
-**Current version: v0.9.8 — Expedition Flow & Roguelike Cleanup**
+**Current version: v0.11.0 — Ecosystems**
 
 Procedural single-player space exploration roguelike built with React, TypeScript and Canvas.
+
+
+
+## v0.11.0 Ecosystems
+
+- deterministic planetary biomes, species, food webs and pathogens;
+- climate stability, biomass, biodiversity, resilience, contamination and biological resources;
+- autonomous ecological cycles that continue without player involvement;
+- extinctions, outbreaks, collapses, blooms and recoveries become world events, news and contracts;
+- detailed planetary scans reveal compact ecosystem reports and dominant species;
+- biosphere expeditions can extract samples and leave measurable ecological impact;
+- save schema v12 migrates v11 simulation campaigns into ecological state.
+
+## v0.10.0 Simulation Kernel
+
+- independent world clock measured in hours instead of player-triggered year jumps;
+- deterministic scheduled simulation for civilizations, factions and important systems;
+- world events are now the source for news, contracts and Living World projections;
+- player knowledge is stored separately from the real state of systems, planets and artifacts;
+- markets react to simulated supply and trade pressure;
+- travel, scans, expeditions, repairs, research, docking, recruitment and trade consume world time;
+- Chronicle observation advances the same galaxy simulation after the captain dies;
+- save schema v11 migrates v10 campaigns into simulation and knowledge records.
 
 ## v0.9.8 Expedition Flow & Roguelike Cleanup
 

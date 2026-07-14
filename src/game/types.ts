@@ -1,3 +1,5 @@
+import type { PlayerKnowledgeState, SimulationState } from '../simulation/types';
+
 export type DangerLevel = 'safe' | 'caution' | 'danger' | 'extreme';
 export type StarClass = 'M' | 'K' | 'G' | 'F' | 'A' | 'B' | 'O' | 'WHITE_DWARF' | 'NEUTRON' | 'BLACK_HOLE';
 export type PlanetType = 'rocky' | 'ocean' | 'desert' | 'ice' | 'gas' | 'toxic' | 'jungle' | 'artificial' | 'anomalous';
@@ -21,7 +23,7 @@ export type HypothesisDisposition = 'private' | 'published' | 'sold' | 'suppress
 export type TechnologyDomain = 'energy' | 'propulsion' | 'medicine' | 'materials' | 'computing' | 'weapons' | 'biology' | 'anomaly';
 export type ResearchStatus = 'queued' | 'active' | 'completed' | 'failed';
 export type BlueprintStatus = 'discovered' | 'available' | 'installed' | 'restricted';
-export type WorldThreadCategory = 'politics' | 'discovery' | 'conflict' | 'culture' | 'research' | 'crew';
+export type WorldThreadCategory = 'politics' | 'discovery' | 'conflict' | 'culture' | 'research' | 'crew' | 'ecology';
 export type WorldThreadStatus = 'emerging' | 'active' | 'escalating' | 'resolved' | 'lost';
 export type EquipmentCategory = 'weapon' | 'armor' | 'tool' | 'medical' | 'implant' | 'relic';
 export type StorySceneCategory = 'distress' | 'negotiation' | 'crew' | 'mystery' | 'travel' | 'hub' | 'consequence';
@@ -901,61 +903,6 @@ export interface LegacyState {
   observerYear: number;
 }
 
-
-
-export interface WorldTime {
-  absoluteHour: number;
-  day: number;
-  year: number;
-}
-
-export type SimulationEventKind = 'trade' | 'shortage' | 'migration' | 'conflict' | 'discovery' | 'politics' | 'population' | 'research' | 'disaster';
-export type KnowledgeSource = 'direct' | 'scan' | 'archive' | 'news' | 'rumor' | 'trade';
-
-export interface SimulationEvent {
-  id: string;
-  kind: SimulationEventKind;
-  hour: number;
-  year: number;
-  title: string;
-  summary: string;
-  severity: number;
-  reliability: number;
-  systemId?: string;
-  factionIds: string[];
-  visibleToPublic: boolean;
-  causes: string[];
-  effects: string[];
-}
-
-export interface ScheduledSimulationEvent {
-  id: string;
-  dueHour: number;
-  kind: SimulationEventKind;
-  systemId?: string;
-  factionId?: string;
-  payload: Record<string, string | number | boolean>;
-}
-
-export interface SimulationState {
-  seed: string;
-  time: WorldTime;
-  queue: ScheduledSimulationEvent[];
-  events: SimulationEvent[];
-  revision: number;
-  lastProcessedHour: number;
-}
-
-export interface KnowledgeRecord {
-  entityId: string;
-  entityType: 'system' | 'planet' | 'civilization' | 'faction' | 'hub' | 'artifact' | 'event';
-  confidence: number;
-  discoveredAtHour: number;
-  lastConfirmedAtHour: number;
-  source: KnowledgeSource;
-  fieldsKnown: string[];
-}
-
 export interface SaveMetadata {
   savedAt: string;
   appVersion: string;
@@ -965,6 +912,8 @@ export interface SaveMetadata {
 }
 
 export interface GameStateSnapshot {
+  simulation: SimulationState;
+  knowledge: PlayerKnowledgeState;
   activeShipEncounter: ShipEncounterState | null;
   pursuits: PursuitRecord[];
   warFronts: WarFront[];
@@ -976,8 +925,6 @@ export interface GameStateSnapshot {
   ship: Ship;
   currentSystemId: string;
   gameYear: number;
-  simulation: SimulationState;
-  knowledge: KnowledgeRecord[];
   discoveries: Discovery[];
   logs: GameLogEntry[];
   scanReports: ScanReport[];

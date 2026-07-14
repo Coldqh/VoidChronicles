@@ -7,7 +7,10 @@ import { initializeWorldThreads } from '../world/storyThreads';
 import { initializeNarrative } from '../narrative/encounters';
 import { createShipSystems, initializeWarFronts, normalizeShipSystems } from '../world/warfare';
 import { createInitialLegacy } from '../world/legacy';
-import { initializeSimulation, migrateLegacyKnowledge } from '../simulation';
+import { initializeSimulation, upgradeSimulationEcosystems } from '../simulation/kernel';
+import { createKnowledgeFromLegacy, projectKnowledgeToGalaxy } from '../simulation/knowledge';
+import { projectWorldThreads } from '../simulation/projections';
+import { worldYear } from '../simulation/clock';
 
 export const CURRENT_SCHEMA_VERSION = SAVE_SCHEMA_VERSION;
 export { APP_VERSION };
@@ -409,7 +412,7 @@ const equipmentItemSchema = z.object({
 });
 const worldThreadUpdateSchema = z.object({ id: z.string(), year: finiteNumber, text: z.string(), tone: z.enum(['info','good','warning','danger']) });
 const worldThreadSchema = z.object({
-  id: z.string(), category: z.enum(['politics','discovery','conflict','culture','research','crew']),
+  id: z.string(), category: z.enum(['politics','discovery','conflict','culture','research','crew','ecology']),
   status: z.enum(['emerging','active','escalating','resolved','lost']), title: z.string(), summary: z.string(), urgency: finiteNumber,
   progress: finiteNumber, systemIds: z.array(z.string()), civilizationIds: z.array(z.string()), factionIds: z.array(z.string()),
   relatedArtifactIds: z.array(z.string()), playerInvolved: z.boolean(), nextAction: z.string().optional(), updates: z.array(worldThreadUpdateSchema)
@@ -495,6 +498,71 @@ const legacyStateSchema = z.object({
 });
 
 
+const simulationEventKindSchema = z.enum(['demography','migration','economy','shortage','conflict','politics','research','discovery','disaster','ecology']);
+const worldEventSchema = z.object({
+  id: z.string(), atHour: finiteNumber, kind: simulationEventKindSchema, title: z.string(), summary: z.string(), severity: finiteNumber,
+  visibility: z.enum(['public','local','hidden']), systemIds: z.array(z.string()), civilizationIds: z.array(z.string()), factionIds: z.array(z.string()),
+  tags: z.array(z.string()), data: z.record(z.string(), z.union([z.string(), finiteNumber, z.boolean()])).optional()
+});
+const scheduledEventV1Schema = z.object({
+  id: z.string(), kind: z.enum(['civilization-cycle','faction-cycle','system-cycle','war-cycle']), dueHour: finiteNumber,
+  repeatHours: finiteNumber.optional(), entityId: z.string().optional(), seedKey: z.string()
+});
+const scheduledEventV2Schema = z.object({
+  id: z.string(), kind: z.enum(['civilization-cycle','faction-cycle','system-cycle','war-cycle','ecology-cycle']), dueHour: finiteNumber,
+  repeatHours: finiteNumber.optional(), entityId: z.string().optional(), seedKey: z.string()
+});
+const simulationSystemSchema = z.object({
+  systemId: z.string(), population: finiteNumber, prosperity: finiteNumber, security: finiteNumber, supply: finiteNumber,
+  tradePressure: finiteNumber, migrationPressure: finiteNumber, lastUpdatedHour: finiteNumber
+});
+const simulationCivilizationSchema = z.object({
+  civilizationId: z.string(), population: finiteNumber, stability: finiteNumber, economy: finiteNumber, military: finiteNumber,
+  research: finiteNumber, cohesion: finiteNumber, expansionPressure: finiteNumber, alive: z.boolean(), lastUpdatedHour: finiteNumber
+});
+const simulationFactionSchema = z.object({
+  factionId: z.string(), wealth: finiteNumber, military: finiteNumber, research: finiteNumber, influence: finiteNumber, tension: finiteNumber, lastUpdatedHour: finiteNumber
+});
+const biomeTypeSchema = z.enum(['oceanic','coastal','forest','grassland','desert','tundra','wetland','cavern','volcanic','toxic','crystal','aerial','artificial']);
+const trophicLevelSchema = z.enum(['producer','grazer','predator','scavenger','decomposer','parasite']);
+const speciesStatusSchema = z.enum(['thriving','stable','declining','threatened','extinct']);
+const ecosystemBiomeSchema = z.object({
+  id: z.string(), name: z.string(), type: biomeTypeSchema, coverage: finiteNumber, temperature: finiteNumber, humidity: finiteNumber,
+  productivity: finiteNumber, hazard: finiteNumber, resourceTags: z.array(z.string())
+});
+const ecosystemSpeciesSchema = z.object({
+  id: z.string(), name: z.string(), biomeIds: z.array(z.string()), trophicLevel: trophicLevelSchema, abundance: finiteNumber,
+  resilience: finiteNumber, mobility: finiteNumber, aggression: finiteNumber, toxicity: finiteNumber, traits: z.array(z.string()),
+  preyIds: z.array(z.string()), predatorIds: z.array(z.string()), status: speciesStatusSchema
+});
+const ecosystemPathogenSchema = z.object({
+  id: z.string(), name: z.string(), hostSpeciesIds: z.array(z.string()), virulence: finiteNumber, spread: finiteNumber, lethality: finiteNumber, active: z.boolean()
+});
+const planetEcologySchema = z.object({
+  planetId: z.string(), climateStability: finiteNumber, biomass: finiteNumber, biodiversity: finiteNumber, resilience: finiteNumber,
+  contamination: finiteNumber, carryingCapacity: finiteNumber,
+  resources: z.object({ biomass: finiteNumber, medicinal: finiteNumber, organics: finiteNumber, rareCompounds: finiteNumber }),
+  biomes: z.array(ecosystemBiomeSchema), species: z.array(ecosystemSpeciesSchema), pathogens: z.array(ecosystemPathogenSchema),
+  extinctSpeciesIds: z.array(z.string()), invasiveSpeciesIds: z.array(z.string()), cycle: finiteNumber, lastUpdatedHour: finiteNumber
+});
+const simulationStateV1Schema = z.object({
+  version: z.literal(1), clock: z.object({ absoluteHour: finiteNumber, epochYear: finiteNumber }),
+  systems: z.record(z.string(), simulationSystemSchema), civilizations: z.record(z.string(), simulationCivilizationSchema), factions: z.record(z.string(), simulationFactionSchema),
+  scheduledEvents: z.array(scheduledEventV1Schema), events: z.array(worldEventSchema), nextSequence: finiteNumber, lastAdvanceReason: z.string()
+});
+const simulationStateV2Schema = z.object({
+  version: z.literal(2), clock: z.object({ absoluteHour: finiteNumber, epochYear: finiteNumber }),
+  systems: z.record(z.string(), simulationSystemSchema), civilizations: z.record(z.string(), simulationCivilizationSchema), factions: z.record(z.string(), simulationFactionSchema),
+  ecosystems: z.record(z.string(), planetEcologySchema), scheduledEvents: z.array(scheduledEventV2Schema), events: z.array(worldEventSchema),
+  nextSequence: finiteNumber, lastAdvanceReason: z.string()
+});
+const knowledgeRecordSchema = z.object({
+  entityId: z.string(), entityType: z.enum(['system','planet','civilization','faction','hub','artifact','ecosystem','species']), confidence: finiteNumber,
+  discoveredAtHour: finiteNumber, lastConfirmedAtHour: finiteNumber, source: z.enum(['direct','scan','contact','news','archive','rumor']), knownFields: z.array(z.string())
+});
+const playerKnowledgeSchema = z.object({ version: z.literal(1), records: z.record(z.string(), knowledgeRecordSchema) });
+
+
 const legacyPayloadSchema = z.object({
   galaxy: galaxySchema,
   captain: captainSchema,
@@ -547,32 +615,9 @@ const v9PayloadSchema = v8PayloadSchema.extend({
   pursuits: z.array(pursuitSchema),
   warFronts: z.array(warFrontSchema)
 });
-
-const worldTimeSchema = z.object({ absoluteHour: finiteNumber, day: finiteNumber, year: finiteNumber });
-const simulationEventKindSchema = z.enum(['trade','shortage','migration','conflict','discovery','politics','population','research','disaster']);
-const simulationEventSchema = z.object({
-  id: z.string(), kind: simulationEventKindSchema, hour: finiteNumber, year: finiteNumber,
-  title: z.string(), summary: z.string(), severity: finiteNumber, reliability: finiteNumber,
-  systemId: z.string().optional(), factionIds: z.array(z.string()), visibleToPublic: z.boolean(),
-  causes: z.array(z.string()), effects: z.array(z.string())
-});
-const scheduledSimulationEventSchema = z.object({
-  id: z.string(), dueHour: finiteNumber, kind: simulationEventKindSchema,
-  systemId: z.string().optional(), factionId: z.string().optional(),
-  payload: z.record(z.union([z.string(), finiteNumber, z.boolean()]))
-});
-const simulationStateSchema = z.object({
-  seed: z.string(), time: worldTimeSchema, queue: z.array(scheduledSimulationEventSchema),
-  events: z.array(simulationEventSchema), revision: finiteNumber, lastProcessedHour: finiteNumber
-});
-const knowledgeRecordSchema = z.object({
-  entityId: z.string(), entityType: z.enum(['system','planet','civilization','faction','hub','artifact','event']),
-  confidence: finiteNumber, discoveredAtHour: finiteNumber, lastConfirmedAtHour: finiteNumber,
-  source: z.enum(['direct','scan','archive','news','rumor','trade']), fieldsKnown: z.array(z.string())
-});
-
 const v10PayloadSchema = v9PayloadSchema.extend({ legacy: legacyStateSchema });
-const v11PayloadSchema = v10PayloadSchema.extend({ simulation: simulationStateSchema, knowledge: z.array(knowledgeRecordSchema) });
+const v11PayloadSchema = v10PayloadSchema.extend({ simulation: simulationStateV1Schema, knowledge: playerKnowledgeSchema });
+const v12PayloadSchema = v10PayloadSchema.extend({ simulation: simulationStateV2Schema, knowledge: playerKnowledgeSchema });
 
 const saveMetadataSchema = z.object({
   savedAt: z.string().datetime(),
@@ -593,8 +638,9 @@ const snapshotV8Schema = v8PayloadSchema.extend({ schemaVersion: z.literal(8), s
 const snapshotV9Schema = v9PayloadSchema.extend({ schemaVersion: z.literal(9), saveMeta: saveMetadataSchema });
 const snapshotV10Schema = v10PayloadSchema.extend({ schemaVersion: z.literal(10), saveMeta: saveMetadataSchema });
 const snapshotV11Schema = v11PayloadSchema.extend({ schemaVersion: z.literal(11), saveMeta: saveMetadataSchema });
+const snapshotV12Schema = v12PayloadSchema.extend({ schemaVersion: z.literal(12), saveMeta: saveMetadataSchema });
 
-type SnapshotCurrent = z.infer<typeof snapshotV11Schema>;
+type SnapshotCurrent = z.infer<typeof snapshotV12Schema>;
 
 function hashText(value: string): string {
   let hash = 0x811c9dc5;
@@ -671,9 +717,38 @@ function normalizeSnapshot(snapshot: SnapshotCurrent): SnapshotCurrent {
   }));
 
   const civilizationLayer = initializeCivilizationLayer(enrichGalaxyCivilizations(snapshot.galaxy as GameStateSnapshot['galaxy']), snapshot.hubs as GameStateSnapshot['hubs']);
+  const validEntityIds = new Set<string>([
+    ...systemIds,
+    ...planetIds,
+    ...civilizationLayer.galaxy.civilizations.map((entry) => entry.id),
+    ...snapshot.factions.map((entry) => entry.id),
+    ...civilizationLayer.hubs.map((entry) => entry.id),
+    ...civilizationLayer.galaxy.artifacts.map((entry) => entry.id),
+    ...Object.keys(snapshot.simulation.ecosystems),
+    ...Object.values(snapshot.simulation.ecosystems).flatMap((entry) => entry.species.map((species) => species.id))
+  ]);
+  const knowledge = {
+    ...snapshot.knowledge,
+    records: Object.fromEntries(Object.entries(snapshot.knowledge.records).filter(([, record]) => validEntityIds.has(record.entityId)))
+  };
+  const simulation = {
+    ...snapshot.simulation,
+    clock: { epochYear: snapshot.simulation.clock.epochYear, absoluteHour: Math.max(0, Math.floor(snapshot.simulation.clock.absoluteHour)) },
+    systems: Object.fromEntries(Object.entries(snapshot.simulation.systems).filter(([id]) => systemIds.has(id))),
+    civilizations: Object.fromEntries(Object.entries(snapshot.simulation.civilizations).filter(([id]) => civilizationLayer.galaxy.civilizations.some((entry) => entry.id === id))),
+    factions: Object.fromEntries(Object.entries(snapshot.simulation.factions).filter(([id]) => snapshot.factions.some((entry) => entry.id === id))),
+    ecosystems: Object.fromEntries(Object.entries(snapshot.simulation.ecosystems).filter(([id]) => planetIds.has(id))),
+    scheduledEvents: snapshot.simulation.scheduledEvents.slice(0, 10_000),
+    events: snapshot.simulation.events.slice(0, 1_000),
+    nextSequence: Math.max(1, Math.floor(snapshot.simulation.nextSequence))
+  };
+  const projectedGalaxy = projectKnowledgeToGalaxy({ ...civilizationLayer.galaxy, currentYear: worldYear(simulation.clock) }, knowledge);
   const normalized: SnapshotCurrent = {
     ...snapshot,
-    galaxy: civilizationLayer.galaxy,
+    simulation,
+    knowledge,
+    galaxy: projectedGalaxy,
+    gameYear: worldYear(simulation.clock),
     currentSystemId: systemIds.has(snapshot.currentSystemId) ? snapshot.currentSystemId : fallbackSystemId,
     discoveries: snapshot.discoveries.filter((entry) => systemIds.has(entry.systemId)).slice(0, 7_500),
     logs: snapshot.logs.slice(0, 750),
@@ -696,7 +771,7 @@ function normalizeSnapshot(snapshot: SnapshotCurrent): SnapshotCurrent {
     researchProjects: snapshot.researchProjects.filter((entry) => snapshot.galaxy.artifacts.some((artifact) => artifact.id === entry.artifactId)).slice(0, 100),
     technologyBlueprints: snapshot.technologyBlueprints.filter((entry) => snapshot.galaxy.artifacts.some((artifact) => artifact.id === entry.sourceArtifactId)).slice(0, 100),
     equipmentInventory: snapshot.equipmentInventory.slice(0, 250),
-    worldThreads: snapshot.worldThreads.slice(0, 100),
+    worldThreads: projectWorldThreads({ simulation, warFronts: snapshot.warFronts, factions: snapshot.factions, contracts: snapshot.contracts, research: snapshot.researchProjects }),
     storyScenes: snapshot.storyScenes.filter((scene) => systemIds.has(scene.systemId)).slice(0, 160),
     pendingConsequences: snapshot.pendingConsequences.slice(0, 300),
     objectives: snapshot.objectives.filter((objective) => !objective.systemId || systemIds.has(objective.systemId)).slice(0, 250),
@@ -704,8 +779,6 @@ function normalizeSnapshot(snapshot: SnapshotCurrent): SnapshotCurrent {
     activeShipEncounter: snapshot.activeShipEncounter && systemIds.has(snapshot.activeShipEncounter.contact.systemId) ? snapshot.activeShipEncounter : null,
     pursuits: snapshot.pursuits.filter((entry) => systemIds.has(entry.lastKnownSystemId)).slice(0, 100),
     warFronts: snapshot.warFronts.map((entry) => ({ ...entry, systemIds: entry.systemIds.filter((id) => systemIds.has(id)) })).filter((entry) => entry.systemIds.length > 0).slice(0, 50),
-    simulation: { ...snapshot.simulation, events: snapshot.simulation.events.slice(0, 1200), queue: snapshot.simulation.queue.slice(0, 2000) },
-    knowledge: snapshot.knowledge.slice(0, 12000),
     legacy: {
       ...snapshot.legacy,
       captains: snapshot.legacy.captains.slice(-100),
@@ -813,10 +886,23 @@ export function parseSnapshot(input: unknown, options: ParseSnapshotOptions = {}
     migrated.saveMeta.checksum = computeSnapshotChecksum(migrated);
   } else if (header.schemaVersion === 10) {
     const previous = snapshotV10Schema.parse(input);
-    migrated = { ...previous, simulation: initializeSimulation(previous.galaxy.seed), knowledge: migrateLegacyKnowledge(previous.galaxy), schemaVersion: CURRENT_SCHEMA_VERSION, saveMeta: { ...previous.saveMeta, appVersion: APP_VERSION, reason: 'migration-v10', checksum: '00000000' } };
-    migrated.saveMeta.checksum = computeSnapshotChecksum(migrated);
+    migrated = { ...previous, schemaVersion: CURRENT_SCHEMA_VERSION, saveMeta: { ...previous.saveMeta, appVersion: APP_VERSION, reason: 'migration-v10', checksum: '00000000' } };
+  } else if (header.schemaVersion === 11) {
+    const previous = snapshotV11Schema.parse(input);
+    const simulation = upgradeSimulationEcosystems(previous.simulation as any, {
+      seed: previous.galaxy.seed,
+      galaxy: previous.galaxy as GameStateSnapshot['galaxy'],
+      factions: previous.factions as GameStateSnapshot['factions'],
+      hubs: previous.hubs as GameStateSnapshot['hubs']
+    });
+    migrated = {
+      ...previous,
+      simulation,
+      schemaVersion: CURRENT_SCHEMA_VERSION,
+      saveMeta: { ...previous.saveMeta, appVersion: APP_VERSION, reason: 'migration-v11-ecology', checksum: '00000000' }
+    };
   } else if (header.schemaVersion === CURRENT_SCHEMA_VERSION) {
-    migrated = snapshotV11Schema.parse(input);
+    migrated = snapshotV12Schema.parse(input);
     if (options.verifyChecksum !== false) {
       const expected = computeSnapshotChecksum(migrated);
       if (migrated.saveMeta.checksum !== expected) {
@@ -831,10 +917,32 @@ export function parseSnapshot(input: unknown, options: ParseSnapshotOptions = {}
     throw new Error(`Неподдерживаемая версия сохранения: v${header.schemaVersion}`);
   }
 
-  migrated.simulation ??= initializeSimulation(migrated.galaxy.seed);
-  migrated.knowledge ??= migrateLegacyKnowledge(migrated.galaxy);
-  migrated.schemaVersion = CURRENT_SCHEMA_VERSION;
-  const normalized = normalizeSnapshot(snapshotV11Schema.parse(migrated));
+  if (!migrated.simulation || !migrated.knowledge) {
+    const simulation = initializeSimulation({ seed: migrated.galaxy.seed, galaxy: migrated.galaxy, factions: migrated.factions, hubs: migrated.hubs }, Math.max(0, Math.floor((migrated.gameYear ?? 0) * 365 * 24)));
+    const knowledge = createKnowledgeFromLegacy(migrated.galaxy, simulation.clock.absoluteHour);
+    const galaxy = projectKnowledgeToGalaxy({ ...migrated.galaxy, currentYear: worldYear(simulation.clock) }, knowledge);
+    migrated = {
+      ...migrated,
+      schemaVersion: CURRENT_SCHEMA_VERSION,
+      simulation,
+      knowledge,
+      galaxy,
+      gameYear: worldYear(simulation.clock),
+      worldThreads: projectWorldThreads({ simulation, warFronts: migrated.warFronts ?? [], factions: migrated.factions ?? [], contracts: migrated.contracts ?? [], research: migrated.researchProjects ?? [] }),
+      saveMeta: { ...migrated.saveMeta, appVersion: APP_VERSION, checksum: '00000000' }
+    };
+  }
+  if (migrated.simulation?.version !== 2 || !migrated.simulation?.ecosystems) {
+    migrated.simulation = upgradeSimulationEcosystems(migrated.simulation, {
+      seed: migrated.galaxy.seed,
+      galaxy: migrated.galaxy,
+      factions: migrated.factions,
+      hubs: migrated.hubs
+    });
+    migrated.schemaVersion = CURRENT_SCHEMA_VERSION;
+    migrated.saveMeta = { ...migrated.saveMeta, appVersion: APP_VERSION, checksum: '00000000' };
+  }
+  const normalized = normalizeSnapshot(snapshotV12Schema.parse(migrated));
   normalized.saveMeta.checksum = computeSnapshotChecksum(normalized);
   return normalized as GameStateSnapshot;
 }

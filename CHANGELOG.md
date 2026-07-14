@@ -1,5 +1,27 @@
 # Changelog
 
+## v0.11.0 — Ecosystems
+
+- generated deterministic planetary biomes, species, food webs and pathogens;
+- added climate stability, biomass, biodiversity, resilience, contamination and biological resources;
+- scheduled autonomous ecological cycles independent of player movement;
+- projected extinctions, outbreaks, collapses, blooms and recoveries into world events, news and contracts;
+- added ecosystem reports to detailed planetary scans;
+- connected biosphere expeditions to sample extraction and persistent ecological impact;
+- upgraded save schema to v12 with automatic v11 ecosystem migration.
+
+## v0.10.0 — Simulation Kernel
+
+- introduced an independent hour-based world clock and deterministic event scheduler;
+- added simulated population, stability, economy, military, research, supply, security, trade and migration state;
+- separated player knowledge from world entities and retained old scan flags only as a UI projection cache;
+- made world events the source for news, contracts and Living World processes;
+- attached time costs to travel, scanning, expeditions, research, repair, docking, recruitment, contact and trade;
+- connected market prices and stock to local simulated economy;
+- allowed the galaxy simulation to continue in Chronicle observation after roguelike death;
+- moved the simulation kernel outside the React store and added deterministic/migration coverage;
+- upgraded save schema to v11 with automatic v10 migration.
+
 ## v0.9.8 — Expedition Flow & Roguelike Cleanup
 
 - made every generated expedition map square and added a compact enemy inspection panel;

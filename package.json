@@ -1,7 +1,7 @@
 {
   "name": "void-chronicles",
   "private": true,
-  "version": "0.10.0",
+  "version": "0.11.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -13,8 +13,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "check": "npm run typecheck && npm test && npm run build",
-    "validate:brand": "node scripts/validate-brand-assets.mjs",
-    "apply:v010": "node scripts/apply-v010-simulation-kernel.mjs"
+    "validate:brand": "node scripts/validate-brand-assets.mjs"
   },
   "dependencies": {
     "dexie": "4.0.8",

@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { generateGalaxy } from '../generation/generateGalaxy';
 import type { GameStateSnapshot } from '../game/types';
 import { APP_VERSION } from '../version';
+import { initializeSimulation } from '../simulation/kernel';
+import { createKnowledgeFromLegacy } from '../simulation/knowledge';
 import {
   CURRENT_SCHEMA_VERSION,
   parseSnapshot,
@@ -18,8 +20,12 @@ async function makeLegacySnapshot(): Promise<GameStateSnapshot> {
     anomalyFrequency: 0.03,
     difficulty: 'standard'
   });
+  const simulation = initializeSimulation({ seed: galaxy.seed, galaxy, factions: [], hubs: [] });
+  const knowledge = createKnowledgeFromLegacy(galaxy);
   return {
     schemaVersion: 1,
+    simulation,
+    knowledge,
     galaxy,
     captain: {
       id: 'captain', name: 'Test', level: 1, xp: 0, health: 100, maxHealth: 100,
@@ -33,15 +39,6 @@ async function makeLegacySnapshot(): Promise<GameStateSnapshot> {
     },
     currentSystemId: galaxy.startSystemId,
     gameYear: 0,
-    simulation: {
-      seed: galaxy.seed,
-      time: { absoluteHour: 0, day: 0, year: 0 },
-      queue: [],
-      events: [],
-      revision: 0,
-      lastProcessedHour: 0
-    },
-    knowledge: [],
     discoveries: [],
     logs: [],
     scanReports: [],
@@ -163,6 +160,43 @@ describe('snapshot validation and migration', () => {
     expect(migrated.legacy.mode).toBe('active');
     expect(migrated.legacy.captains).toHaveLength(1);
     expect(migrated.legacy.currentCaptainRecordId).toBe(migrated.legacy.captains[0]?.id);
+  });
+
+  it('migrates v10 saves into simulation state and player knowledge', async () => {
+    const current = prepareSnapshotForSave(parseSnapshot(await makeLegacySnapshot()), 'v10-fixture');
+    const { simulation: _simulation, knowledge: _knowledge, ...withoutKernel } = current;
+    const v10 = {
+      ...withoutKernel,
+      schemaVersion: 10,
+      saveMeta: { ...current.saveMeta!, appVersion: '0.9.8', reason: 'legacy-v10', checksum: '00000000' }
+    };
+    const migrated = parseSnapshot(v10, { verifyChecksum: false });
+    expect(migrated.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
+    expect(migrated.simulation.version).toBe(2);
+    expect(migrated.simulation.clock.absoluteHour).toBeGreaterThanOrEqual(0);
+    expect(migrated.knowledge.version).toBe(1);
+    expect(Object.keys(migrated.simulation.systems)).toHaveLength(migrated.galaxy.systems.length);
+  });
+
+  it('migrates v11 simulation saves into planetary ecosystems', async () => {
+    const current = prepareSnapshotForSave(parseSnapshot(await makeLegacySnapshot()), 'v11-fixture');
+    const legacySimulation = {
+      ...current.simulation,
+      version: 1 as const,
+      scheduledEvents: current.simulation.scheduledEvents.filter((entry) => entry.kind !== 'ecology-cycle')
+    } as any;
+    delete legacySimulation.ecosystems;
+    const v11 = {
+      ...current,
+      simulation: legacySimulation,
+      schemaVersion: 11,
+      saveMeta: { ...current.saveMeta!, appVersion: '0.10.0', reason: 'legacy-v11', checksum: '00000000' }
+    };
+    const migrated = parseSnapshot(v11, { verifyChecksum: false });
+    expect(migrated.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
+    expect(migrated.simulation.version).toBe(2);
+    expect(Object.keys(migrated.simulation.ecosystems).length).toBeGreaterThan(0);
+    expect(migrated.simulation.scheduledEvents.some((entry) => entry.kind === 'ecology-cycle')).toBe(true);
   });
 
   it('restores an ironman save in the middle of ship combat', async () => {

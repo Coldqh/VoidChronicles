@@ -4,7 +4,7 @@ import { useCompactLayout } from '../hooks/useCompactLayout';
 
 const categoryLabel: Record<string, string> = {
   politics: 'Политика', discovery: 'Открытие', conflict: 'Конфликт',
-  culture: 'Культура', research: 'Исследование', crew: 'Экипаж'
+  culture: 'Культура', research: 'Исследование', crew: 'Экипаж', ecology: 'Экология'
 };
 
 export function WorldScreen({ chrome }: { chrome: React.ReactNode }) {
@@ -15,9 +15,10 @@ export function WorldScreen({ chrome }: { chrome: React.ReactNode }) {
   const knownCivilizationIds = useMemo(() => new Set(store.civilizationContacts.filter((contact) => contact.stage !== 'unknown').map((contact) => contact.civilizationId)), [store.civilizationContacts]);
   const visibleThreads = useMemo(() => store.worldThreads.filter((thread) =>
     thread.playerInvolved ||
+    thread.systemIds.some((id) => knownSystemIds.has(id)) ||
     thread.factionIds.some((id) => knownFactionIds.has(id)) ||
     thread.civilizationIds.some((id) => knownCivilizationIds.has(id))
-  ), [store.worldThreads, knownFactionIds, knownCivilizationIds]);
+  ), [store.worldThreads, knownSystemIds, knownFactionIds, knownCivilizationIds]);
   const visibleNews = useMemo(() => store.news.filter((entry) => entry.systemIds.some((id) => knownSystemIds.has(id))), [store.news, knownSystemIds]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [mobileTab, setMobileTab] = useState<'threads' | 'news'>('threads');
@@ -29,7 +30,7 @@ export function WorldScreen({ chrome }: { chrome: React.ReactNode }) {
 
   const openRelated = () => {
     if (!selected) return;
-    const screen: MainScreen = selected.category === 'research' ? 'laboratory' : selected.category === 'discovery' ? 'archive' : selected.category === 'conflict' || selected.category === 'politics' ? 'factions' : 'civilizations';
+    const screen: MainScreen = selected.category === 'research' ? 'laboratory' : selected.category === 'ecology' ? 'system' : selected.category === 'discovery' ? 'archive' : selected.category === 'conflict' || selected.category === 'politics' ? 'factions' : 'civilizations';
     store.setScreen(screen);
   };
 

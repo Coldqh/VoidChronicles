@@ -592,3 +592,56 @@
   .game-over-metrics { grid-template-columns:repeat(2,minmax(0,1fr)); margin:9px 0; }
   .game-over-actions button { min-height:36px; padding:6px; font-size:.62rem; }
 }
+
+.ecology-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+  margin: 6px 0;
+}
+
+.ecology-metrics span {
+  padding: 5px 6px;
+  border: 1px solid rgba(127, 232, 192, .15);
+  border-radius: 7px;
+  background: rgba(69, 164, 126, .06);
+  font-size: 10px;
+}
+
+.ecology-metrics b {
+  display: block;
+  font-size: 13px;
+  margin-top: 2px;
+}
+
+.ecology-summary p,
+.ecology-report p {
+  margin: 5px 0;
+}
+
+.ecology-species-list {
+  display: grid;
+  gap: 3px;
+  margin-top: 6px;
+}
+
+.ecology-species-list span {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 0;
+  border-top: 1px solid rgba(255, 255, 255, .06);
+  font-size: 10px;
+}
+
+.ecology-species-list b {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 520px) {
+  .ecology-metrics { gap: 3px; }
+  .ecology-metrics span { padding: 4px; font-size: 9px; }
+  .ecology-metrics b { font-size: 12px; }
+}
