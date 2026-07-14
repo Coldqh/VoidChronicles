@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { generateGalaxy } from '../generation/generateGalaxy';
 import type { GameStateSnapshot } from '../game/types';
+import { APP_VERSION } from '../version';
 import {
   CURRENT_SCHEMA_VERSION,
   parseSnapshot,
@@ -32,6 +33,15 @@ async function makeLegacySnapshot(): Promise<GameStateSnapshot> {
     },
     currentSystemId: galaxy.startSystemId,
     gameYear: 0,
+    simulation: {
+      seed: galaxy.seed,
+      time: { absoluteHour: 0, day: 0, year: 0 },
+      queue: [],
+      events: [],
+      revision: 0,
+      lastProcessedHour: 0
+    },
+    knowledge: [],
     discoveries: [],
     logs: [],
     scanReports: [],
@@ -51,7 +61,7 @@ describe('snapshot validation and migration', () => {
     const legacy = await makeLegacySnapshot();
     const migrated = parseSnapshot(legacy);
     expect(migrated.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
-    expect(migrated.saveMeta?.appVersion).toBe('0.9.8');
+    expect(migrated.saveMeta?.appVersion).toBe(APP_VERSION);
     expect(migrated.saveMeta?.checksum).toMatch(/^[0-9a-f]{8}$/);
   });
 
@@ -138,7 +148,7 @@ describe('snapshot validation and migration', () => {
     const { activeShipEncounter: _encounter, pursuits: _pursuits, warFronts: _fronts, ...withoutWarfare } = current;
     const v8 = { ...withoutWarfare, schemaVersion: 8, saveMeta: { ...current.saveMeta!, appVersion: '0.7.1', reason: 'legacy-v8', checksum: '00000000' } };
     const migrated = parseSnapshot(v8, { verifyChecksum: false });
-    expect(migrated.schemaVersion).toBe(10);
+    expect(migrated.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
     expect(migrated.ship.systems).toHaveLength(7);
     expect(migrated.activeShipEncounter).toBeNull();
     expect(migrated.warFronts.length).toBeGreaterThan(0);
@@ -149,7 +159,7 @@ describe('snapshot validation and migration', () => {
     const { legacy: _legacy, ...withoutLegacy } = current;
     const v9 = { ...withoutLegacy, schemaVersion: 9, saveMeta: { ...current.saveMeta!, appVersion: '0.8.0', reason: 'legacy-v9', checksum: '00000000' } };
     const migrated = parseSnapshot(v9, { verifyChecksum: false });
-    expect(migrated.schemaVersion).toBe(10);
+    expect(migrated.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
     expect(migrated.legacy.mode).toBe('active');
     expect(migrated.legacy.captains).toHaveLength(1);
     expect(migrated.legacy.currentCaptainRecordId).toBe(migrated.legacy.captains[0]?.id);

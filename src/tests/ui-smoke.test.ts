@@ -10,11 +10,12 @@ import { SystemMap } from '../components/SystemMap';
 import { ExpeditionModal } from '../components/ExpeditionModal';
 import { generateGalaxy } from '../generation/generateGalaxy';
 import { generatePointsOfInterest } from '../exploration/pointsOfInterest';
+import { APP_VERSION } from '../version';
 
 describe('application rendering smoke tests', () => {
   it('renders the boot shell with the current version', () => {
     const html = renderToString(React.createElement(App));
-    expect(html).toContain('0.9.8');
+    expect(html).toContain(APP_VERSION);
     expect(html).toContain('Проверка локального архива');
   });
 
