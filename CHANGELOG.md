@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.9.5.1 — Start Screen Scroll Hotfix
+
+- restored vertical scrolling on the mobile new-campaign screen;
+- made the start menu its own PWA scroll container instead of clipping it behind the fixed root shell;
+- compacted start-screen typography, form spacing and actions;
+- guaranteed that Create Galaxy, Continue, Import and Settings remain reachable on short phones;
+- save schema remains v10.
+
 ## v0.9.5 — Mobile Density & Scroll Core
 
 - replaced unreliable body scrolling with a fixed PWA shell and dedicated inner scroll containers;

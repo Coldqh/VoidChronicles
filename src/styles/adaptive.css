@@ -504,3 +504,129 @@ img, svg, canvas { max-width: 100%; }
   .mobile-bottom-sheet { max-height: 58%; }
   .mobile-system-canvas { inset: 38px 0 0; padding-bottom: 64px; }
 }
+
+/* v0.9.5.1 — Critical start-screen scroll hotfix.
+   The start menu is rendered without .game-shell, so it must own scrolling itself. */
+@media (max-width: 700px) {
+  #root > .menu-screen {
+    display: block !important;
+    width: 100%;
+    height: 100dvh !important;
+    min-height: 0 !important;
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+    overscroll-behavior-y: contain;
+    -webkit-overflow-scrolling: touch;
+    touch-action: pan-y;
+    place-items: initial !important;
+    align-items: initial !important;
+    padding: max(7px, env(safe-area-inset-top)) 7px max(14px, env(safe-area-inset-bottom)) !important;
+    scroll-padding-bottom: calc(18px + env(safe-area-inset-bottom));
+  }
+
+  #root > .menu-screen .menu-stars {
+    position: fixed;
+  }
+
+  #root > .menu-screen .menu-panel {
+    width: min(100%, 520px);
+    height: auto !important;
+    min-height: 0 !important;
+    margin: 0 auto;
+    padding: 10px 9px calc(14px + env(safe-area-inset-bottom)) !important;
+    border-radius: 11px;
+  }
+
+  #root > .menu-screen .menu-version {
+    margin-bottom: 3px;
+  }
+
+  #root > .menu-screen .menu-panel h1 {
+    margin: 5px 0 7px;
+    font-size: clamp(2.35rem, 14vw, 3.4rem);
+    line-height: .8;
+  }
+
+  #root > .menu-screen .menu-subtitle {
+    margin-bottom: 7px;
+    font-size: .68rem;
+    line-height: 1.3;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  #root > .menu-screen .seed-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 4px;
+    margin: 7px 0 4px;
+  }
+
+  #root > .menu-screen .settings-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 4px;
+  }
+
+  #root > .menu-screen label {
+    gap: 2px;
+    font-size: .52rem;
+    letter-spacing: .05em;
+  }
+
+  #root > .menu-screen input,
+  #root > .menu-screen select,
+  #root > .menu-screen .seed-row button {
+    min-height: 36px;
+    padding: 5px 6px;
+  }
+
+  #root > .menu-screen .tutorial-choice {
+    grid-column: 1 / -1;
+    min-height: 42px;
+    padding: 6px 7px;
+    border-radius: 8px;
+  }
+
+  #root > .menu-screen .tutorial-choice small {
+    display: none;
+  }
+
+  #root > .menu-screen .tutorial-choice > i {
+    flex: 0 0 auto;
+    transform: scale(.82);
+    transform-origin: right center;
+  }
+
+  #root > .menu-screen .menu-actions {
+    gap: 4px;
+    margin-top: 6px;
+  }
+
+  #root > .menu-screen .menu-actions button {
+    min-height: 38px;
+    padding: 6px 8px;
+    font-size: .68rem;
+  }
+
+  #root > .menu-screen .primary-button.large {
+    min-height: 42px;
+    padding: 7px 8px;
+  }
+
+  #root > .menu-screen .menu-panel footer {
+    margin-top: 7px;
+    font-size: .54rem;
+  }
+
+  #root > .menu-screen .generation-panel {
+    margin-top: 10px;
+  }
+}
+
+@media (max-width: 350px) {
+  #root > .menu-screen .settings-grid {
+    grid-template-columns: 1fr;
+  }
+}
+

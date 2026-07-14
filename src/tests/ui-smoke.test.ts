@@ -14,7 +14,7 @@ import { generatePointsOfInterest } from '../exploration/pointsOfInterest';
 describe('application rendering smoke tests', () => {
   it('renders the boot shell with the current version', () => {
     const html = renderToString(React.createElement(App));
-    expect(html).toContain('0.9.5');
+    expect(html).toContain('0.9.5.1');
     expect(html).toContain('Проверка локального архива');
   });
 
@@ -26,6 +26,8 @@ describe('application rendering smoke tests', () => {
     expect(adaptiveCss).toMatch(/\.mobile-map-screen \{[\s\S]*?overflow: hidden !important/);
     expect(adaptiveCss).toContain('--ui-hud: 44px');
     expect(adaptiveCss).toContain('--ui-dock: 48px');
+    expect(adaptiveCss).toMatch(/#root > \.menu-screen \{[\s\S]*?height: 100dvh !important;[\s\S]*?overflow-y: auto !important/);
+    expect(adaptiveCss).toContain('scroll-padding-bottom: calc(18px + env(safe-area-inset-bottom))');
   });
 
   it('renders the orbital map and expedition loadout without runtime exceptions', async () => {

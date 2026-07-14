@@ -1,8 +1,14 @@
 # Void Chronicles
 
-**Current version: v0.9.5 — Mobile Density & Scroll Core**
+**Current version: v0.9.5.1 — Start Screen Scroll Hotfix**
 
 Procedural single-player space exploration roguelike built with React, TypeScript and Canvas.
+
+## v0.9.5.1 Start Screen Scroll Hotfix
+
+- mobile new-campaign screen owns vertical scrolling in browser and installed PWA mode;
+- campaign creation controls remain reachable on short displays;
+- start-screen form, title, spacing and buttons are compacted without touching save data.
 
 ## v0.9.5 Mobile Density & Scroll Core
 
