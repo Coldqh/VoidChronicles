@@ -1,5 +1,9 @@
 import React from 'react';
 import { renderToString } from 'react-dom/server';
+// @ts-expect-error Node built-ins are used only by Vitest.
+import { readFileSync } from 'node:fs';
+// @ts-expect-error Node built-ins are used only by Vitest.
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import App from '../App';
 import { SystemMap } from '../components/SystemMap';
@@ -10,10 +14,19 @@ import { generatePointsOfInterest } from '../exploration/pointsOfInterest';
 describe('application rendering smoke tests', () => {
   it('renders the boot shell with the current version', () => {
     const html = renderToString(React.createElement(App));
-    expect(html).toContain('0.9.4');
+    expect(html).toContain('0.9.5');
     expect(html).toContain('Проверка локального архива');
   });
 
+
+  it('keeps mobile PWA data screens scrollable while map screens stay fixed', () => {
+    const adaptiveCss = readFileSync(fileURLToPath(new URL('../styles/adaptive.css', import.meta.url)), 'utf8');
+    expect(adaptiveCss).toContain('grid-template-rows: var(--ui-hud) minmax(0, 1fr)');
+    expect(adaptiveCss).toMatch(/\.mobile-data-screen,[\s\S]*?overflow-y: auto !important/);
+    expect(adaptiveCss).toMatch(/\.mobile-map-screen \{[\s\S]*?overflow: hidden !important/);
+    expect(adaptiveCss).toContain('--ui-hud: 44px');
+    expect(adaptiveCss).toContain('--ui-dock: 48px');
+  });
 
   it('renders the orbital map and expedition loadout without runtime exceptions', async () => {
     const galaxy = await generateGalaxy({

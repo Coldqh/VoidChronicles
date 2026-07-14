@@ -269,10 +269,10 @@ function CommandDeckScreen() {
         <button data-tutorial={primary.tutorial ? 'open-system' : undefined} className="primary-button" onClick={primary.action}>{primary.label}</button>
       </section>
       <nav className="mobile-action-grid" aria-label="Быстрые действия">
-        <button onClick={() => store.setScreen('system')}><i>◎</i><b>Система</b><small>{current.scanned ? `${current.planets.length} объектов` : 'нужен скан'}</small></button>
-        <button onClick={() => store.setScreen('galaxy')}><i>✦</i><b>Галактика</b><small>{galaxy.systems.filter((entry) => entry.known).length} известно</small></button>
-        <button onClick={() => store.setScreen('ship')}><i>▲</i><b>Корабль</b><small>{store.ship.statuses.length ? 'есть статусы' : 'в норме'}</small></button>
-        <button onClick={() => store.setScreen(activeScenes.length ? 'encounters' : 'operations')}><i>⚠</i><b>{activeScenes.length ? 'Сцены' : 'Угрозы'}</b><small>{activeScenes.length || store.pursuits.filter((entry) => entry.status === 'active').length} активно</small></button>
+        <button onClick={() => store.setScreen('system')}><i>◎</i><b>Система</b></button>
+        <button onClick={() => store.setScreen('galaxy')}><i>✦</i><b>Галактика</b></button>
+        <button onClick={() => store.setScreen('ship')}><i>▲</i><b>Корабль</b></button>
+        <button onClick={() => store.setScreen(activeScenes.length ? 'encounters' : 'operations')}><i>⚠</i><b>{activeScenes.length ? 'Сцены' : 'Угрозы'}</b></button>
       </nav>
       {activeObjectives[0] && <button className="mobile-objective-strip" onClick={() => activeObjectives[0].systemId && store.selectSystem(activeObjectives[0].systemId)}><span>АКТИВНАЯ ЦЕЛЬ</span><b>{activeObjectives[0].title}</b></button>}
     </main></div>;
@@ -308,12 +308,12 @@ function GalaxyScreen() {
   if (compact) {
     return <div className="game-shell"><AppChrome/><main className="mobile-map-screen galaxy-mobile-map">
       <section className="mobile-map-canvas"><GalaxyCanvas ref={mapRef} systems={store.galaxy.systems} currentSystemId={current.id} selectedSystemId={selected.id} jumpRange={store.ship.jumpRange} onSelect={selectSystem}/></section>
-      <div className="mobile-map-controls"><button aria-label="Центрировать карту" onClick={() => mapRef.current?.center()}>◎</button><button aria-label="Уменьшить масштаб" onClick={() => mapRef.current?.zoomOut()}>−</button><button aria-label="Увеличить масштаб" onClick={() => mapRef.current?.zoomIn()}>+</button></div>
+      <div className="mobile-map-controls"><button aria-label="Локальный сектор" onClick={() => mapRef.current?.center()}>◎</button><button aria-label="Обзор известных систем" onClick={() => mapRef.current?.overview()}>▦</button><button aria-label="Уменьшить масштаб" onClick={() => mapRef.current?.zoomOut()}>−</button><button aria-label="Увеличить масштаб" onClick={() => mapRef.current?.zoomIn()}>+</button></div>
       {notice && <button className="mobile-toast" onClick={() => setNotice('')}>{notice}</button>}
       <aside className={`mobile-bottom-sheet ${sheetOpen ? 'expanded' : ''}`}>
         <button className="mobile-sheet-grip" aria-label={sheetOpen ? 'Свернуть сведения' : 'Раскрыть сведения'} onClick={() => setSheetOpen((value) => !value)}><i/></button>
         <div className="mobile-sheet-title"><div><span>{selected.id === current.id ? 'ТЕКУЩАЯ СИСТЕМА' : 'ВЫБРАННЫЙ МАРШРУТ'}</span><h2>{selected.name}</h2></div><b>{Math.round(jumpDistance)}</b></div>
-        {sheetOpen && <div className="mobile-sheet-details"><p>{selected.visited || selected.scanned ? `${selected.region} · угроза ${selected.danger}` : 'Неизученный узел'}</p>{faction && <small>{faction.name} · {faction.disposition}</small>}<div className="mobile-inline-stats"><span>Хабы <b>{selected.visited || selected.scanned ? store.hubs.filter((hub) => hub.systemId === selected.id && hub.visited).length : '?'}</b></span><span>Сигналы <b>{selected.scanned ? selected.civilizationIds.length : '?'}</b></span></div></div>}
+        {sheetOpen && <div className="mobile-sheet-details"><p>{selected.visited || selected.scanned ? `${selected.region} · угроза ${selected.danger}` : 'Неизученный узел'}</p>{faction && <small>{faction.name} · {faction.disposition}</small>}</div>}
         {selected.id === current.id ? <button className="primary-button mobile-sheet-cta" onClick={() => store.setScreen('system')}>Открыть систему</button> : <button className="primary-button mobile-sheet-cta" disabled={!canTravel || Boolean(store.busyAction)} onClick={() => void travel()}>Прыжок · {Math.max(7, Math.ceil(jumpDistance / 14))} топлива</button>}
       </aside>
     </main></div>;

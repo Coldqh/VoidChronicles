@@ -13,9 +13,9 @@ export function OperationsScreen({ chrome }: { chrome: ReactNode }) {
   const localWars = activeWars.filter((entry) => currentSystem && entry.systemIds.includes(currentSystem.id));
 
   const pursuitContent = activePursuits.length ? activePursuits.map((entry) => <article className="mobile-threat-row" key={entry.id}>
-    <div><span>ИНТЕНСИВНОСТЬ {entry.intensity}</span><b>{entry.sourceName}</b><p>{entry.reason}</p></div>
-    <ul><li>{entry.knownIdentity ? 'знают капитана' : 'личность скрыта'}</li><li>{entry.knownTransponder ? 'знают сигнал' : 'сигнал скрыт'}</li><li>{entry.knownShipProfile ? 'знают корпус' : 'профиль скрыт'}</li></ul>
-  </article>) : <div className="mobile-empty"><b>Розыска нет</b><p>Активных ориентировок не обнаружено.</p></div>;
+    <div><span>УРОВЕНЬ {entry.intensity}</span><b>{entry.sourceName}</b></div>
+    <details className="mobile-inline-details"><summary>Что им известно</summary><p>{entry.reason}</p><ul><li>{entry.knownIdentity ? 'капитан' : 'личность скрыта'}</li><li>{entry.knownTransponder ? 'транспондер' : 'сигнал скрыт'}</li><li>{entry.knownShipProfile ? 'корпус' : 'профиль скрыт'}</li></ul></details>
+  </article>) : <div className="mobile-empty"><b>Розыска нет</b></div>;
 
   const warContent = activeWars.length ? activeWars.map((front) => {
     const attacker = store.factions.find((entry) => entry.id === front.attackerFactionId);
@@ -30,7 +30,7 @@ export function OperationsScreen({ chrome }: { chrome: ReactNode }) {
 
   const shipContent = <section className="mobile-ship-ops">
     <article><span className="eyebrow">ИДЕНТИЧНОСТЬ</span><h2>{store.ship?.name}</h2><div className="compact-stat"><span>Регистрация</span><b>{store.ship?.registration}</b></div><div className="compact-stat"><span>Транспондер</span><b>{store.ship?.transponder}</b></div><button onClick={async () => setMessage((await store.changeTransponder()).message)}>Сменить транспондер · ₡420</button><details><summary>Что изменит замена</summary><p>Старые ориентировки по сигналу потеряют точность. Имя капитана и внешний профиль корпуса могут остаться известны.</p></details></article>
-    <article><span className="eyebrow">БОЕГОТОВНОСТЬ</span>{store.ship?.systems.map((system) => <div className={`mobile-system-row ${system.disabled ? 'disabled' : ''}`} key={system.id}><div><b>{system.label}</b><small>{system.effect}</small></div><strong>{Math.round(system.integrity)}%</strong><i><em style={{ width: `${system.integrity}%` }}/></i></div>)}</article>
+    <article><span className="eyebrow">БОЕГОТОВНОСТЬ</span>{store.ship?.systems.map((system) => <div className={`mobile-system-row ${system.disabled ? 'disabled' : ''}`} key={system.id}><div><b>{system.label}</b></div><strong>{Math.round(system.integrity)}%</strong><i><em style={{ width: `${system.integrity}%` }}/></i></div>)}</article>
   </section>;
 
   if (compact) {

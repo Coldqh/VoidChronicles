@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.9.5 — Mobile Density & Scroll Core
+
+- replaced unreliable body scrolling with a fixed PWA shell and dedicated inner scroll containers;
+- made every mobile data screen vertically scrollable while keeping galaxy and system maps fixed;
+- opened the galaxy map on the current local sector and added a separate known-galaxy overview command;
+- raised mobile map zoom limits and preserved full one-finger pan and two-finger pinch gestures;
+- reduced phone HUD, dock, page padding, cards, buttons, typography and gaps;
+- removed repeated bridge subtitles, galaxy sheet statistics and list summaries;
+- collapsed pursuit intelligence and world-history updates behind explicit details;
+- save schema remains v10.
+
 ## v0.9.4 — Mobile Interface Rebuild
 
 - replaced squeezed desktop pages with dedicated phone compositions;

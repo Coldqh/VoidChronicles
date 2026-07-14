@@ -1,8 +1,18 @@
 # Void Chronicles
 
-**Current version: v0.9.4 — Mobile Interface Rebuild**
+**Current version: v0.9.5 — Mobile Density & Scroll Core**
 
 Procedural single-player space exploration roguelike built with React, TypeScript and Canvas.
+
+## v0.9.5 Mobile Density & Scroll Core
+
+- fixed vertical scrolling in installed mobile PWA mode with one internal scroll owner per data screen;
+- changed the galaxy camera to open on the local sector instead of fitting the whole known galaxy;
+- added explicit local-sector and overview camera controls;
+- reduced mobile HUD, dock, cards, spacing and headings by roughly 35–50%;
+- removed secondary text and repeated statistics from compact lists and bridge shortcuts;
+- shortened Living World and Operations rows and moved details behind deliberate disclosure;
+- kept map screens fixed while data screens scroll independently.
 
 ## v0.9.4 Mobile Interface Rebuild
 

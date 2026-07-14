@@ -52,16 +52,15 @@ export function WorldScreen({ chrome }: { chrome: React.ReactNode }) {
         <p className="mobile-lead">{selected.summary}</p>
         <div className="mobile-progress"><i style={{ width: `${selected.progress}%` }}/><span>{selected.progress}% · {selected.status}</span></div>
         <article className="mobile-action-card"><b>Что можно сделать</b><p>{selected.nextAction ?? 'Наблюдать за изменениями.'}</p><button className="primary-button" onClick={openRelated}>Открыть связанный раздел</button></article>
-        <details open className="mobile-collapsible"><summary>Последние изменения · {selected.updates.length}</summary>{selected.updates.slice(-6).reverse().map((update) => <div className={`mobile-timeline-row tone-${update.tone}`} key={update.id}><span>{update.year < 0 ? `${Math.abs(update.year)} до старта` : `Год ${update.year}`}</span><p>{update.text}</p></div>)}</details>
+        <details className="mobile-collapsible"><summary>Изменения · {selected.updates.length}</summary>{selected.updates.slice(-3).reverse().map((update) => <div className={`mobile-timeline-row tone-${update.tone}`} key={update.id}><span>{update.year < 0 ? `${Math.abs(update.year)} до старта` : `Год ${update.year}`}</span><p>{update.text}</p></div>)}</details>
       </section> : mobileTab === 'threads' ? <section className="mobile-list">
         {visibleThreads.length ? visibleThreads.map((thread) => <button className="mobile-list-row" key={thread.id} onClick={() => setSelectedId(thread.id)}>
           <span>{categoryLabel[thread.category]} · {thread.status}</span>
           <b>{thread.title}</b>
-          <small>{thread.summary}</small>
           <i style={{ width: `${thread.progress}%` }}/>
         </button>) : <div className="mobile-empty"><b>Связь молчит</b><p>Посети поселение или установи контакт.</p></div>}
       </section> : <section className="mobile-list">
-        {timeline.length ? timeline.map((entry) => <article className={`mobile-feed-row tone-${entry.tone}`} key={entry.id}><span>Год {entry.year}</span><b>{entry.title}</b><p>{entry.text}</p></article>) : <div className="mobile-empty"><b>Новостей нет</b><p>Нужна связь с хабом или посещённым регионом.</p></div>}
+        {timeline.length ? timeline.map((entry) => <article className={`mobile-feed-row tone-${entry.tone}`} key={entry.id}><span>Год {entry.year}</span><b>{entry.title}</b></article>) : <div className="mobile-empty"><b>Новостей нет</b><p>Нужна связь с хабом или посещённым регионом.</p></div>}
       </section>}
     </main></div>;
   }

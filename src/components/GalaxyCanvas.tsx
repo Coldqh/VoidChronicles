@@ -14,39 +14,90 @@ interface PointerState { x: number; y: number; }
 
 export interface GalaxyCanvasHandle {
   center(): void;
+  overview(): void;
   zoomIn(): void;
   zoomOut(): void;
 }
 
-const clampZoom = (value: number) => Math.max(0.25, Math.min(3.2, value));
+const clampZoom = (value: number) => Math.max(0.32, Math.min(4.8, value));
 
 export const GalaxyCanvas = forwardRef<GalaxyCanvasHandle, Props>(function GalaxyCanvas(
   { systems, currentSystemId, selectedSystemId, jumpRange, onSelect },
   ref
 ) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const [view, setView] = useState<ViewState>({ x: 0, y: 0, zoom: 0.72 });
+  const [view, setView] = useState<ViewState>({ x: 0, y: 0, zoom: 1.6 });
   const [canvasVersion, setCanvasVersion] = useState(0);
   const pointers = useRef(new Map<number, PointerState>());
   const gesture = useRef<{ centerX: number; centerY: number; distance: number; view: ViewState } | null>(null);
   const dragStart = useRef<{ pointerId: number; x: number; y: number; view: ViewState; moved: boolean } | null>(null);
+  const initializedFor = useRef<string | null>(null);
   const systemIndex = useMemo(() => new Map(systems.map((system) => [system.id, system])), [systems]);
   const current = systemIndex.get(currentSystemId);
+  const knownSystems = useMemo(() => systems.filter((system) => system.known), [systems]);
 
-  const centerCurrent = useCallback(() => {
+  const fitSystems = useCallback((targets: StarSystem[], padding = 72, minimumZoom = 0.32, maximumZoom = 4.8) => {
+    const canvas = canvasRef.current;
+    if (!canvas || targets.length === 0) return;
+    const rect = canvas.getBoundingClientRect();
+    if (rect.width < 2 || rect.height < 2) return;
+
+    const xs = targets.map((system) => system.coordinates.x);
+    const ys = targets.map((system) => system.coordinates.y);
+    const minX = Math.min(...xs);
+    const maxX = Math.max(...xs);
+    const minY = Math.min(...ys);
+    const maxY = Math.max(...ys);
+    const centerX = (minX + maxX) / 2;
+    const centerY = (minY + maxY) / 2;
+    const spanX = Math.max(42, maxX - minX);
+    const spanY = Math.max(42, maxY - minY);
+    const availableWidth = Math.max(80, rect.width - padding * 2);
+    const availableHeight = Math.max(80, rect.height - padding * 2);
+    const fitted = Math.min(availableWidth / spanX, availableHeight / spanY);
+
+    setView({
+      x: -centerX,
+      y: -centerY,
+      zoom: Math.max(minimumZoom, Math.min(maximumZoom, fitted))
+    });
+  }, []);
+
+  const focusLocal = useCallback(() => {
     if (!current) return;
-    setView((old) => ({ ...old, x: -current.coordinates.x, y: -current.coordinates.y }));
-  }, [current]);
+    const direct = current.neighbors
+      .map((id) => systemIndex.get(id))
+      .filter((system): system is StarSystem => Boolean(system?.known));
+    const nearest = knownSystems
+      .filter((system) => system.id !== current.id && !direct.some((entry) => entry.id === system.id))
+      .sort((a, b) => {
+        const da = Math.hypot(a.coordinates.x - current.coordinates.x, a.coordinates.y - current.coordinates.y);
+        const db = Math.hypot(b.coordinates.x - current.coordinates.x, b.coordinates.y - current.coordinates.y);
+        return da - db;
+      });
+    const local = [current, ...direct, ...nearest].slice(0, 7);
+    fitSystems(local, 88, 1.05, 4.2);
+  }, [current, fitSystems, knownSystems, systemIndex]);
+
+  const showOverview = useCallback(() => {
+    fitSystems(knownSystems.length ? knownSystems : current ? [current] : [], 48, 0.32, 1.35);
+  }, [current, fitSystems, knownSystems]);
 
   useImperativeHandle(ref, () => ({
-    center: centerCurrent,
-    zoomIn: () => setView((old) => ({ ...old, zoom: clampZoom(old.zoom * 1.22) })),
-    zoomOut: () => setView((old) => ({ ...old, zoom: clampZoom(old.zoom / 1.22) }))
-  }), [centerCurrent]);
+    center: focusLocal,
+    overview: showOverview,
+    zoomIn: () => setView((old) => ({ ...old, zoom: clampZoom(old.zoom * 1.24) })),
+    zoomOut: () => setView((old) => ({ ...old, zoom: clampZoom(old.zoom / 1.24) }))
+  }), [focusLocal, showOverview]);
 
   useEffect(() => {
-    centerCurrent();
-  }, [currentSystemId, centerCurrent]);
+    initializedFor.current = null;
+    const frame = window.requestAnimationFrame(() => {
+      focusLocal();
+      initializedFor.current = currentSystemId;
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [currentSystemId, focusLocal]);
 
   const toScreen = useCallback((system: StarSystem, width: number, height: number) => ({
     x: width / 2 + (system.coordinates.x + view.x) * view.zoom,
@@ -138,7 +189,15 @@ export const GalaxyCanvas = forwardRef<GalaxyCanvasHandle, Props>(function Galax
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const observer = new ResizeObserver(() => setCanvasVersion((value) => value + 1));
+    const observer = new ResizeObserver(() => {
+      setCanvasVersion((value) => value + 1);
+      if (initializedFor.current !== currentSystemId) {
+        window.requestAnimationFrame(() => {
+          focusLocal();
+          initializedFor.current = currentSystemId;
+        });
+      }
+    });
     observer.observe(canvas);
     const onWheel = (event: WheelEvent) => {
       event.preventDefault();
@@ -149,7 +208,7 @@ export const GalaxyCanvas = forwardRef<GalaxyCanvasHandle, Props>(function Galax
       observer.disconnect();
       canvas.removeEventListener('wheel', onWheel);
     };
-  }, []);
+  }, [currentSystemId, focusLocal]);
 
   const findSystem = (clientX: number, clientY: number): StarSystem | undefined => {
     const canvas = canvasRef.current;
@@ -161,7 +220,7 @@ export const GalaxyCanvas = forwardRef<GalaxyCanvasHandle, Props>(function Galax
       if (!system.known) return false;
       const sx = rect.width / 2 + (system.coordinates.x + view.x) * view.zoom;
       const sy = rect.height / 2 + (system.coordinates.y + view.y) * view.zoom;
-      return Math.hypot(sx - x, sy - y) < 16;
+      return Math.hypot(sx - x, sy - y) < 18;
     });
   };
 
@@ -202,10 +261,11 @@ export const GalaxyCanvas = forwardRef<GalaxyCanvasHandle, Props>(function Galax
         const distance = Math.max(1, Math.hypot(a.x - b.x, a.y - b.y));
         const start = gesture.current;
         if (!start) { updateGesture(); return; }
+        const nextZoom = clampZoom(start.view.zoom * (distance / start.distance));
         setView({
-          zoom: clampZoom(start.view.zoom * (distance / start.distance)),
-          x: start.view.x + (centerX - start.centerX) / start.view.zoom,
-          y: start.view.y + (centerY - start.centerY) / start.view.zoom
+          zoom: nextZoom,
+          x: start.view.x + (centerX - start.centerX) / nextZoom,
+          y: start.view.y + (centerY - start.centerY) / nextZoom
         });
         return;
       }
@@ -214,7 +274,7 @@ export const GalaxyCanvas = forwardRef<GalaxyCanvasHandle, Props>(function Galax
       const dx = event.clientX - start.x;
       const dy = event.clientY - start.y;
       if (Math.hypot(dx, dy) > 5) start.moved = true;
-      setView((old) => ({ ...old, x: start.view.x + dx / start.view.zoom, y: start.view.y + dy / start.view.zoom }));
+      setView({ ...start.view, x: start.view.x + dx / start.view.zoom, y: start.view.y + dy / start.view.zoom });
     }}
     onPointerUp={(event) => {
       const start = dragStart.current;
