@@ -502,7 +502,7 @@ button:hover:not(:disabled){box-shadow:0 10px 30px rgba(0,0,0,.22),0 0 0 1px rgb
   .system-screen-clean .system-object-panel { min-height: 360px; overflow: visible; border-left: 0; border-top: 1px solid var(--clarity-line); }
   .world-screen-known { display: block; height: calc(100dvh - 56px); overflow-y: auto; }
   .world-screen-known > * { overflow: visible; min-height: auto; }
-  .tutorial-task-card { left: 16px !important; right: 16px; width: auto; bottom: 16px !important; top: auto !important; }
+  .tutorial-task-card { width: min(360px, calc(100vw - 20px)); }
   .surface-grid { min-height: 440px; }
 }
 

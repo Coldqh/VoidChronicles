@@ -1,5 +1,20 @@
 # Changelog
 
+## v0.9.6 — Navigation & Generation Recovery
+
+- replaced the oversized phone drawer with a compact bottom-center section menu;
+- removed duplicate Bridge, System and Galaxy entries from the secondary menu;
+- reduced the desktop drawer width and navigation spacing;
+- replaced route and planet bottom sheets with centered, scrollable windows;
+- centered all mobile gameplay modals instead of attaching them to the bottom edge;
+- removed the grey hover/tap surface around orbital planet touch targets;
+- removed tutorial blur and full-screen darkness while keeping target highlighting;
+- normalized generation form values and verified that generated system count matches the requested count;
+- added a main-thread fallback if the generation worker crashes, times out or returns incomplete data;
+- made uncatalogued systems visible only as faint anonymous sensor returns and added a known/total catalog counter;
+- added exact 300-system generation coverage;
+- save schema remains v10.
+
 ## v0.9.5.1 — Start Screen Scroll Hotfix
 
 - restored vertical scrolling on the mobile new-campaign screen;

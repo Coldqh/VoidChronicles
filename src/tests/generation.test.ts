@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { generateGalaxy } from '../generation/generateGalaxy';
+import { generateGalaxy, normalizeGalaxySettings } from '../generation/generateGalaxy';
 import type { GalaxySettings } from '../game/types';
 
 const settings: GalaxySettings = {
@@ -39,4 +39,17 @@ describe('galaxy generation', () => {
     expect(galaxy.artifacts.every((artifact) => galaxy.civilizations.some((civilization) => civilization.id === artifact.civilizationId))).toBe(true);
     expect(galaxy.history.every((event) => event.civilizationIds.every((id) => galaxy.civilizations.some((civilization) => civilization.id === id)))).toBe(true);
   });
+
+  it('preserves large requested galaxy sizes exactly', async () => {
+    const galaxy = await generateGalaxy({ ...settings, seed: 'LARGE-GALAXY', systemCount: 300, civilizationCount: 24 });
+    expect(galaxy.systems).toHaveLength(300);
+    expect(galaxy.settings.systemCount).toBe(300);
+  });
+
+  it('normalizes invalid numeric form values before generation', () => {
+    const normalized = normalizeGalaxySettings({ ...settings, systemCount: Number.NaN, civilizationCount: 999 });
+    expect(normalized.systemCount).toBe(300);
+    expect(normalized.civilizationCount).toBe(80);
+  });
+
 });

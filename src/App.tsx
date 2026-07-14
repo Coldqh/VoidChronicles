@@ -5,7 +5,7 @@ import { ShipCombatModal } from './components/ShipCombatModal';
 import { TutorialOverlay } from './components/TutorialOverlay';
 import { SystemMap } from './components/SystemMap';
 import { roleLabel } from './crew/generateCrew';
-import type { GenerationProgress } from './generation/generateGalaxy';
+import { normalizeGalaxySettings, type GenerationProgress } from './generation/generateGalaxy';
 import { generateGalaxyInWorker } from './generation/generateInWorker';
 import type {
   Artifact,
@@ -70,7 +70,11 @@ function MainMenu() {
     store.setGenerationActive(true);
     setProgress({ stage: 'start', progress: 0.01, message: 'Инициализация генератора' });
     try {
-      await store.startGame(await generateGalaxyInWorker(settings, setProgress));
+      const normalized = normalizeGalaxySettings(settings);
+      setSettings(normalized);
+      const galaxy = await generateGalaxyInWorker(normalized, setProgress);
+      if (galaxy.systems.length !== normalized.systemCount) throw new Error(`Генератор вернул ${galaxy.systems.length} систем вместо ${normalized.systemCount}`);
+      await store.startGame(galaxy);
     } catch (error) {
       setProgress({ stage: 'error', progress: 0, message: error instanceof Error ? error.message : 'Ошибка генерации' });
     } finally {
@@ -149,6 +153,7 @@ const navigationGroups: { title: string; items: { id: MainScreen; label: string;
 
 function AppChrome() {
   const store = useGameStore();
+  const compact = useCompactLayout();
   const [open, setOpen] = useState(false);
   const current = store.galaxy?.systems.find((system) => system.id === store.currentSystemId);
 
@@ -178,31 +183,44 @@ function AppChrome() {
   if (store.researchProjects.length || store.ship.cargo.some((entry) => entry.artifactId)) unlocked.add('laboratory');
   if (store.crew.length || store.crewCandidates.length || visitedHubIds.size) unlocked.add('crew');
   const visibleNavigationGroups = navigationGroups.map((group) => ({ ...group, items: group.items.filter((item) => unlocked.has(item.id)) })).filter((group) => group.items.length);
+  const dockScreens = new Set<MainScreen>(['command', 'system', 'galaxy']);
+  const extraItems = visibleNavigationGroups.flatMap((group) => group.items).filter((item) => !dockScreens.has(item.id));
+
+  const hud = <header className="app-hud">
+    <button className="drawer-toggle" aria-label="Открыть навигацию" onClick={() => setOpen((value) => !value)}><span/><span/><span/></button>
+    <button className="hud-brand" onClick={() => navigate('command')}><img className="hud-brand-mark" src={BRAND_MARK} alt=""/><span className="hud-brand-copy"><b>VOID CHRONICLES</b><VersionBadge/></span></button>
+    <div className="hud-location"><span>{current?.name ?? 'НЕИЗВЕСТНАЯ СИСТЕМА'}</span><small>{store.currentHubId ? store.hubs.find((hub) => hub.id === store.currentHubId)?.name : 'КОРАБЛЬ В КОСМОСЕ'}</small></div>
+    <div className="hud-stats"><span className={`save-state save-${store.saveStatus}`}>{store.saveStatus === 'saving' || store.saveStatus === 'pending' ? 'СОХРАНЕНИЕ…' : store.saveStatus === 'error' ? 'ОШИБКА СЕЙВА' : 'СЕЙВ ЗАЩИЩЁН'}</span><span>₡{store.captain.credits}</span><span>⛽{store.ship.fuel}</span></div>
+  </header>;
+
+  if (compact) {
+    return <>
+      {hud}
+      <nav className="mobile-dock" aria-label="Быстрая навигация">
+        <button className={store.screen === 'command' ? 'active' : ''} onClick={() => navigate('command')} aria-label="Мостик"><i>⌂</i><span>Мостик</span></button>
+        <button className={store.screen === 'system' ? 'active' : ''} onClick={() => navigate('system')} aria-label="Система"><i>◎</i><span>Система</span></button>
+        <button className={store.screen === 'galaxy' ? 'active' : ''} onClick={() => navigate('galaxy')} aria-label="Галактика"><i>✦</i><span>Галактика</span></button>
+        <button className={open ? 'active' : ''} onClick={() => setOpen((value) => !value)} aria-label="Открыть остальные разделы"><i>•••</i><span>Ещё</span></button>
+      </nav>
+      {open && <div className="mobile-more-layer">
+        <button className="mobile-more-scrim" aria-label="Закрыть разделы" onClick={() => setOpen(false)}/>
+        <section className="mobile-more-menu" role="dialog" aria-label="Разделы корабельной системы">
+          <header><div><span>ДОСТУПНЫЕ РАЗДЕЛЫ</span><b>{extraItems.length}</b></div><button aria-label="Закрыть" onClick={() => setOpen(false)}>×</button></header>
+          <nav>{extraItems.map((item) => <button key={item.id} className={store.screen === item.id ? 'active' : ''} onClick={() => navigate(item.id)}><i>{item.icon}</i><span>{item.label}</span></button>)}</nav>
+        </section>
+      </div>}
+    </>;
+  }
 
   return <>
-    <header className="app-hud">
-      <button className="drawer-toggle" aria-label="Открыть навигацию" onClick={() => setOpen(true)}><span/><span/><span/></button>
-      <button className="hud-brand" onClick={() => navigate('command')}><img className="hud-brand-mark" src={BRAND_MARK} alt=""/><span className="hud-brand-copy"><b>VOID CHRONICLES</b><VersionBadge/></span></button>
-      <div className="hud-location"><span>{current?.name ?? 'НЕИЗВЕСТНАЯ СИСТЕМА'}</span><small>{store.currentHubId ? store.hubs.find((hub) => hub.id === store.currentHubId)?.name : 'КОРАБЛЬ В КОСМОСЕ'}</small></div>
-      <div className="hud-stats"><span className={`save-state save-${store.saveStatus}`}>{store.saveStatus === 'saving' || store.saveStatus === 'pending' ? 'СОХРАНЕНИЕ…' : store.saveStatus === 'error' ? 'ОШИБКА СЕЙВА' : 'СЕЙВ ЗАЩИЩЁН'}</span><span>₡{store.captain.credits}</span><span>⛽{store.ship.fuel}</span></div>
-    </header>
+    {hud}
     <button className={`drawer-overlay ${open ? 'open' : ''}`} aria-label="Закрыть меню" onClick={() => setOpen(false)}/>
     <aside className={`nav-drawer ${open ? 'open' : ''}`} aria-hidden={!open}>
       <header><div className="drawer-brand"><img src={BRAND_MARK} alt="Void Chronicles"/><div><span className="eyebrow">КОРАБЕЛЬНАЯ СИСТЕМА</span><h2>VOID CHRONICLES</h2><div className="drawer-version"><VersionBadge/><span>{APP_CODENAME}</span></div></div></div><button className="icon-button" onClick={() => setOpen(false)}>×</button></header>
-      <nav className="drawer-nav">
-        {visibleNavigationGroups.map((group) => <section key={group.title}><span>{group.title}</span>{group.items.map((item) => <button key={item.id} className={store.screen === item.id ? 'active' : ''} onClick={() => navigate(item.id)}><i>{item.icon}</i><b>{item.label}</b></button>)}</section>)}
-      </nav>
-      <footer><div><span>КОРПУС</span><b>{store.ship.hull}/{store.ship.maxHull}</b></div><div><span>ЭКИПАЖ</span><b>{store.crew.length + 1}</b></div><div><span>СХЕМА СЕЙВА</span><b>v{SAVE_SCHEMA_VERSION}</b></div></footer>
+      <nav className="drawer-nav">{visibleNavigationGroups.map((group) => <section key={group.title}><span>{group.title}</span>{group.items.map((item) => <button key={item.id} className={store.screen === item.id ? 'active' : ''} onClick={() => navigate(item.id)}><i>{item.icon}</i><b>{item.label}</b></button>)}</section>)}</nav>
     </aside>
-    <nav className="mobile-dock" aria-label="Быстрая навигация">
-      <button className={store.screen === 'command' ? 'active' : ''} onClick={() => navigate('command')} aria-label="Мостик"><i>⌂</i><span>Мостик</span></button>
-      <button className={store.screen === 'system' ? 'active' : ''} onClick={() => navigate('system')} aria-label="Система"><i>◎</i><span>Система</span></button>
-      <button className={store.screen === 'galaxy' ? 'active' : ''} onClick={() => navigate('galaxy')} aria-label="Галактика"><i>✦</i><span>Галактика</span></button>
-      <button onClick={() => setOpen(true)} aria-label="Открыть все разделы"><i>☰</i><span>Разделы</span></button>
-    </nav>
   </>;
 }
-
 function SceneCard({ scene, featured = false }: { scene: StoryScene; featured?: boolean }) {
   const store = useGameStore();
   const [message, setMessage] = useState('');
@@ -306,16 +324,17 @@ function GalaxyScreen() {
   const travel = async () => { const result = await store.travelTo(selected.id); setNotice(result.message); };
 
   if (compact) {
+    const knownCount = store.galaxy.systems.filter((entry) => entry.known).length;
     return <div className="game-shell"><AppChrome/><main className="mobile-map-screen galaxy-mobile-map">
       <section className="mobile-map-canvas"><GalaxyCanvas ref={mapRef} systems={store.galaxy.systems} currentSystemId={current.id} selectedSystemId={selected.id} jumpRange={store.ship.jumpRange} onSelect={selectSystem}/></section>
-      <div className="mobile-map-controls"><button aria-label="Локальный сектор" onClick={() => mapRef.current?.center()}>◎</button><button aria-label="Обзор известных систем" onClick={() => mapRef.current?.overview()}>▦</button><button aria-label="Уменьшить масштаб" onClick={() => mapRef.current?.zoomOut()}>−</button><button aria-label="Увеличить масштаб" onClick={() => mapRef.current?.zoomIn()}>+</button></div>
+      <div className="mobile-map-status">КАТАЛОГ <b>{knownCount}</b> / {store.galaxy.systems.length}</div>
+      <div className="mobile-map-controls"><button aria-label="Локальный сектор" onClick={() => mapRef.current?.center()}>◎</button><button aria-label="Обзор галактики" onClick={() => mapRef.current?.overview()}>▦</button><button aria-label="Уменьшить масштаб" onClick={() => mapRef.current?.zoomOut()}>−</button><button aria-label="Увеличить масштаб" onClick={() => mapRef.current?.zoomIn()}>+</button></div>
       {notice && <button className="mobile-toast" onClick={() => setNotice('')}>{notice}</button>}
-      <aside className={`mobile-bottom-sheet ${sheetOpen ? 'expanded' : ''}`}>
-        <button className="mobile-sheet-grip" aria-label={sheetOpen ? 'Свернуть сведения' : 'Раскрыть сведения'} onClick={() => setSheetOpen((value) => !value)}><i/></button>
-        <div className="mobile-sheet-title"><div><span>{selected.id === current.id ? 'ТЕКУЩАЯ СИСТЕМА' : 'ВЫБРАННЫЙ МАРШРУТ'}</span><h2>{selected.name}</h2></div><b>{Math.round(jumpDistance)}</b></div>
-        {sheetOpen && <div className="mobile-sheet-details"><p>{selected.visited || selected.scanned ? `${selected.region} · угроза ${selected.danger}` : 'Неизученный узел'}</p>{faction && <small>{faction.name} · {faction.disposition}</small>}</div>}
-        {selected.id === current.id ? <button className="primary-button mobile-sheet-cta" onClick={() => store.setScreen('system')}>Открыть систему</button> : <button className="primary-button mobile-sheet-cta" disabled={!canTravel || Boolean(store.busyAction)} onClick={() => void travel()}>Прыжок · {Math.max(7, Math.ceil(jumpDistance / 14))} топлива</button>}
-      </aside>
+      {sheetOpen && <><button className="mobile-window-scrim" aria-label="Закрыть окно маршрута" onClick={() => setSheetOpen(false)}/><aside className="mobile-map-window" role="dialog" aria-label={`Маршрут: ${selected.name}`}>
+        <header className="mobile-window-header"><div><span>{selected.id === current.id ? 'ТЕКУЩАЯ СИСТЕМА' : 'ВЫБРАННЫЙ МАРШРУТ'}</span><h2>{selected.name}</h2></div><button aria-label="Закрыть" onClick={() => setSheetOpen(false)}>×</button></header>
+        <div className="mobile-window-body"><div className="compact-stat"><span>Дистанция</span><b>{Math.round(jumpDistance)}</b></div><p>{selected.visited || selected.scanned ? `${selected.region} · угроза ${selected.danger}` : 'Неизученный навигационный узел'}</p>{faction && <small>{faction.name} · {faction.disposition}</small>}</div>
+        {selected.id === current.id ? <button className="primary-button mobile-window-cta" onClick={() => store.setScreen('system')}>Открыть систему</button> : <button className="primary-button mobile-window-cta" disabled={!canTravel || Boolean(store.busyAction)} onClick={() => void travel()}>Прыжок · {Math.max(7, Math.ceil(jumpDistance / 14))} топлива</button>}
+      </aside></>}
     </main></div>;
   }
 
@@ -359,14 +378,11 @@ function SystemScreen() {
       <header className="mobile-system-bar"><div><span>ЛОКАЛЬНАЯ СИСТЕМА</span><b>{system.name}</b></div><button data-tutorial="system-scan" className="primary-button" disabled={Boolean(store.busyAction)} onClick={() => void store.scanSystem(system.id)}>{system.scanned ? 'Скан' : 'Сканировать'}</button></header>
       <section className="mobile-system-canvas"><SystemMap system={system} selectedPlanetId={planetId} pointsOfInterest={system.scanned ? store.pointsOfInterest.filter((entry) => entry.systemId === system.id) : []} tutorialPlanetId={store.tutorial.targetPlanetId} onSelectPlanet={selectPlanet}/></section>
       {notice && <button className="mobile-toast" onClick={() => setNotice('')}>{notice}</button>}
-      <aside className={`mobile-bottom-sheet system-sheet ${sheetOpen ? 'expanded' : ''}`}>
-        <button className="mobile-sheet-grip" aria-label={sheetOpen ? 'Свернуть объект' : 'Раскрыть объект'} onClick={() => setSheetOpen((value) => !value)}><i/></button>
-        {planet ? <>
-          <div className="mobile-sheet-title"><div><span>{planet.scanLevel ? planet.type.toUpperCase() : 'НЕИЗВЕСТНЫЙ ОБЪЕКТ'}</span><h2>{planet.scanLevel ? planet.name : 'Орбитальная цель'}</h2></div><span className={`mini-planet planet-${planet.type}`}/></div>
-          {sheetOpen && <div className="mobile-sheet-details"><p>{planet.scanLevel ? `Угроза: ${planet.danger}` : 'Характеристики не подтверждены.'}</p>{report && <small>{report.summary}</small>}{planetPoints.length > 0 && <div className="mobile-poi-list">{planetPoints.slice(0,3).map((entry) => { const state = store.locationStates.find((location) => location.pointOfInterestId === entry.id); return <button key={entry.id} onClick={() => { setPoint(entry); if (entry.id === store.tutorial.targetPointOfInterestId) void store.advanceTutorial(4); }} disabled={planet.type === 'gas' || store.captain?.commandIdentity === 'shipAI'}><b>{entry.name}</b><span>{entry.type} · угроз осталось {state?.enemyStates.filter((enemy) => enemy.health > 0).length ?? '?'}</span></button>; })}</div>}{system.scanned && (localHubs.length > 0 || systemCivilizations.length > 0) && <details><summary>Связь и поселения · {localHubs.length + systemCivilizations.length}</summary>{localHubs.slice(0,4).map((hub) => <button key={hub.id} onClick={() => void store.dockAtHub(hub.id)}>{hub.name}</button>)}</details>}</div>}
-          <button data-tutorial={planet.id === store.tutorial.targetPlanetId ? 'detail-scan' : undefined} className="primary-button mobile-sheet-cta" disabled={!system.scanned || Boolean(store.busyAction)} onClick={() => void scanPlanet()}>{planet.scanLevel && planet.scanLevel >= 2 ? 'Обновить данные' : 'Детальный скан'}</button>
-        </> : <div className="mobile-sheet-prompt"><b>{system.scanned ? 'Выбери планету' : 'Система не изучена'}</b><span>{system.scanned ? 'Нажми на орбитальный объект.' : 'Сначала выполни системный скан.'}</span></div>}
-      </aside>
+      {sheetOpen && planet && <><button className="mobile-window-scrim" aria-label="Закрыть окно планеты" onClick={() => setSheetOpen(false)}/><aside className="mobile-map-window system-object-window" role="dialog" aria-label={`Объект: ${planet.name}`}>
+        <header className="mobile-window-header"><div><span>{planet.scanLevel ? planet.type.toUpperCase() : 'НЕИЗВЕСТНЫЙ ОБЪЕКТ'}</span><h2>{planet.scanLevel ? planet.name : 'Орбитальная цель'}</h2></div><div className="mobile-window-tools"><span className={`mini-planet planet-${planet.type}`}/><button aria-label="Закрыть" onClick={() => setSheetOpen(false)}>×</button></div></header>
+        <div className="mobile-window-body"><p>{planet.scanLevel ? `Угроза: ${planet.danger}` : 'Характеристики не подтверждены.'}</p>{report && <small>{report.summary}</small>}{planetPoints.length > 0 && <div className="mobile-poi-list">{planetPoints.map((entry) => { const state = store.locationStates.find((location) => location.pointOfInterestId === entry.id); return <button data-tutorial={entry.id === store.tutorial.targetPointOfInterestId ? 'open-expedition' : undefined} key={entry.id} onClick={() => { setPoint(entry); if (entry.id === store.tutorial.targetPointOfInterestId) void store.advanceTutorial(4); }} disabled={planet.type === 'gas' || store.captain?.commandIdentity === 'shipAI'}><b>{entry.name}</b><span>{entry.type} · угроз осталось {state?.enemyStates.filter((enemy) => enemy.health > 0).length ?? '?'}</span></button>; })}</div>}{system.scanned && (localHubs.length > 0 || systemCivilizations.length > 0) && <details className="mobile-window-details"><summary>Связь и поселения · {localHubs.length + systemCivilizations.length}</summary>{localHubs.map((hub) => <button key={hub.id} onClick={() => void store.dockAtHub(hub.id)}>{hub.name}</button>)}</details>}</div>
+        <button data-tutorial={planet.id === store.tutorial.targetPlanetId ? 'detail-scan' : undefined} className="primary-button mobile-window-cta" disabled={!system.scanned || Boolean(store.busyAction)} onClick={() => void scanPlanet()}>{planet.scanLevel && planet.scanLevel >= 2 ? 'Обновить данные' : 'Детальный скан'}</button>
+      </aside></>}
       {expedition}
     </main></div>;
   }

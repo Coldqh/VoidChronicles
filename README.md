@@ -1,8 +1,18 @@
 # Void Chronicles
 
-**Current version: v0.9.5.1 — Start Screen Scroll Hotfix**
+**Current version: v0.9.6 — Navigation & Generation Recovery**
 
 Procedural single-player space exploration roguelike built with React, TypeScript and Canvas.
+
+## v0.9.6 Navigation & Generation Recovery
+
+- compact bottom-center phone section menu without duplicated primary tabs;
+- smaller desktop drawer;
+- centered route, planet and gameplay windows;
+- clean orbital touch targets without grey overlays;
+- tutorial target highlighting without blurring the game;
+- exact system-count validation, worker recovery and a 300-system generation test;
+- anonymous sensor returns show that unexplored systems exist without revealing their data.
 
 ## v0.9.5.1 Start Screen Scroll Hotfix
 

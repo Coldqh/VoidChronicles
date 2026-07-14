@@ -21,8 +21,27 @@ const settingsSchema = z.object({
   civilizationCount: z.number().int().min(2).max(80),
   lifeFrequency: z.number().min(0).max(1),
   anomalyFrequency: z.number().min(0).max(1),
-  difficulty: z.enum(['explorer', 'standard', 'brutal'])
+  difficulty: z.enum(['explorer', 'standard', 'brutal']),
+  tutorialEnabled: z.boolean().optional()
 });
+
+
+export function normalizeGalaxySettings(raw: GalaxySettings): GalaxySettings {
+  const number = (value: number, fallback: number) => Number.isFinite(value) ? value : fallback;
+  const systemCount = Math.max(20, Math.min(1500, Math.round(number(raw.systemCount, 300))));
+  const civilizationCount = Math.max(2, Math.min(80, Math.round(number(raw.civilizationCount, 12))));
+  return {
+    ...raw,
+    seed: raw.seed?.trim() || 'VOID',
+    systemCount,
+    historyYears: Math.max(10_000, Math.min(20_000_000, Math.round(number(raw.historyYears, 2_000_000)))),
+    civilizationCount,
+    lifeFrequency: Math.max(0, Math.min(1, number(raw.lifeFrequency, .34))),
+    anomalyFrequency: Math.max(0, Math.min(1, number(raw.anomalyFrequency, .035))),
+    difficulty: ['explorer', 'standard', 'brutal'].includes(raw.difficulty) ? raw.difficulty : 'standard',
+    tutorialEnabled: raw.tutorialEnabled !== false
+  };
+}
 
 export interface GenerationProgress {
   stage: string;
@@ -266,13 +285,14 @@ export async function generateGalaxy(
   rawSettings: GalaxySettings,
   onProgress?: (progress: GenerationProgress) => void
 ): Promise<Galaxy> {
-  const settings = settingsSchema.parse(rawSettings);
+  const settings = settingsSchema.parse(normalizeGalaxySettings(rawSettings)) as GalaxySettings;
   const emit = async (stage: string, progress: number, message: string): Promise<void> => {
     onProgress?.({ stage, progress, message });
     await new Promise<void>((resolve) => setTimeout(resolve, 0));
   };
   await emit('structure', 0.05, 'Формируется галактический диск');
   const systems = createSystems(settings);
+  if (systems.length !== settings.systemCount) throw new Error(`Generation integrity error: ${systems.length}/${settings.systemCount} systems`);
   await emit('planets', 0.25, `Создано ${systems.length} звёздных систем`);
   const civilizations = createCivilizations(settings, systems);
   await emit('civilizations', 0.46, `Возникло ${civilizations.length} цивилизаций`);
@@ -291,7 +311,7 @@ export async function generateGalaxy(
     const neighbor = systems.find((system) => system.id === neighborId);
     if (neighbor) neighbor.known = true;
   });
-  await emit('finalize', 1, `Галактика готова. Найдено ${artifacts.length} значимых артефактов`);
+  await emit('finalize', 1, `Галактика готова: ${systems.length} систем, ${artifacts.length} значимых артефактов`);
   return {
     id: `gal_${stableHash(settings.seed)}`,
     seed: settings.seed,

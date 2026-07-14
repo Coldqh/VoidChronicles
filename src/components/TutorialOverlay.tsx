@@ -45,9 +45,15 @@ export function TutorialOverlay({ tutorial, onSkip }: TutorialOverlayProps) {
   }, [step.target, tutorial.active, tutorial.completed, tutorial.enabled]);
 
   if (!tutorial.enabled || !tutorial.active || tutorial.completed) return null;
-  const cardStyle = rect && rect.top > window.innerHeight * 0.58
-    ? { left: Math.max(16, Math.min(window.innerWidth - 376, rect.left)), bottom: Math.max(18, window.innerHeight - rect.top + 18) }
-    : { left: Math.max(16, Math.min(window.innerWidth - 376, rect?.left ?? 24)), top: Math.min(window.innerHeight - 220, (rect?.top ?? 110) + (rect?.height ?? 0) + 18) };
+  const viewportWidth = window.innerWidth;
+  const viewportHeight = window.innerHeight;
+  const cardWidth = Math.min(286, viewportWidth - 16);
+  const cardHeight = 154;
+  const left = Math.max(8, Math.min(viewportWidth - cardWidth - 8, rect?.left ?? 8));
+  const below = (rect?.top ?? 54) + (rect?.height ?? 0) + 10;
+  const above = (rect?.top ?? viewportHeight) - cardHeight - 10;
+  const top = below + cardHeight <= viewportHeight - 8 ? below : Math.max(8, above);
+  const cardStyle = { left, top, width: cardWidth };
 
   return <div className="tutorial-guide" aria-live="polite">
     {rect && <div className="tutorial-spotlight" style={{ left: rect.left - 8, top: rect.top - 8, width: rect.width + 16, height: rect.height + 16 }}/>} 

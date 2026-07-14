@@ -80,8 +80,8 @@ export const GalaxyCanvas = forwardRef<GalaxyCanvasHandle, Props>(function Galax
   }, [current, fitSystems, knownSystems, systemIndex]);
 
   const showOverview = useCallback(() => {
-    fitSystems(knownSystems.length ? knownSystems : current ? [current] : [], 48, 0.32, 1.35);
-  }, [current, fitSystems, knownSystems]);
+    fitSystems(systems.length ? systems : current ? [current] : [], 42, 0.32, 1.35);
+  }, [current, fitSystems, systems]);
 
   useImperativeHandle(ref, () => ({
     center: focusLocal,
@@ -146,6 +146,17 @@ export const GalaxyCanvas = forwardRef<GalaxyCanvasHandle, Props>(function Galax
       ctx.strokeStyle = 'rgba(89, 210, 255, .35)';
       ctx.beginPath(); ctx.arc(point.x, point.y, jumpRange * view.zoom, 0, Math.PI * 2); ctx.stroke();
       ctx.setLineDash([]);
+    }
+
+    // Uncatalogued systems remain anonymous, but their faint sensor returns prove the galaxy exists.
+    ctx.fillStyle = 'rgba(104, 151, 171, .18)';
+    for (const system of systems) {
+      if (system.known) continue;
+      const point = toScreen(system, width, height);
+      if (point.x < -8 || point.y < -8 || point.x > width + 8 || point.y > height + 8) continue;
+      ctx.beginPath();
+      ctx.arc(point.x, point.y, view.zoom > 1.2 ? 1.2 : .8, 0, Math.PI * 2);
+      ctx.fill();
     }
 
     ctx.strokeStyle = 'rgba(89, 142, 166, .18)';
