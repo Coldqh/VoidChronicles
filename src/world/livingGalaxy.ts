@@ -8,6 +8,7 @@ import type {
   NewsItem,
   StarSystem
 } from '../game/types';
+import type { SimulationSystemState } from '../simulation/types';
 import { createRng } from '../generation/rng';
 
 const factionKinds: Faction['kind'][] = ['government', 'corporation', 'university', 'cartel', 'tradeHouse', 'religious', 'pirates'];
@@ -159,13 +160,18 @@ const marketTemplates: Omit<MarketGood, 'id' | 'price' | 'stock'>[] = [
   { name: 'Запрещённые нейрочипы', category: 'contraband', basePrice: 980, illegal: true }
 ];
 
-export function generateMarket(hub: Hub, gameYear: number): MarketGood[] {
+export function generateMarket(hub: Hub, gameYear: number, systemState?: SimulationSystemState): MarketGood[] {
   const rng = createRng(`${hub.marketSeed}:market:${Math.floor(gameYear / 3)}`);
+  const supply = systemState?.supply ?? 50;
+  const prosperity = systemState?.prosperity ?? 50;
+  const tradePressure = systemState?.tradePressure ?? 25;
+  const scarcityMultiplier = Math.max(0.65, Math.min(2.4, 1.45 - supply / 100 + tradePressure / 180));
+  const prosperityMultiplier = Math.max(0.8, Math.min(1.35, 0.9 + prosperity / 250));
   return marketTemplates.map((template, index) => ({
     ...template,
     id: `market_${hub.id}_${index}`,
-    price: Math.max(20, Math.round(template.basePrice * 0.72 + rng.next() * 0.73)),
-    stock: rng.int(template.illegal ? 1 : 3, template.illegal ? 5 : 16)
+    price: Math.max(20, Math.round(template.basePrice * (0.72 + rng.next() * 0.73) * scarcityMultiplier * prosperityMultiplier)),
+    stock: Math.max(0, Math.round(rng.int(template.illegal ? 1 : 3, template.illegal ? 5 : 16) * Math.max(0.25, supply / 70)))
   }));
 }
 
