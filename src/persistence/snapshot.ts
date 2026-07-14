@@ -7,6 +7,7 @@ import { initializeWorldThreads } from '../world/storyThreads';
 import { initializeNarrative } from '../narrative/encounters';
 import { createShipSystems, initializeWarFronts, normalizeShipSystems } from '../world/warfare';
 import { createInitialLegacy } from '../world/legacy';
+import { initializeSimulation, migrateLegacyKnowledge } from '../simulation';
 
 export const CURRENT_SCHEMA_VERSION = SAVE_SCHEMA_VERSION;
 export { APP_VERSION };
@@ -546,7 +547,32 @@ const v9PayloadSchema = v8PayloadSchema.extend({
   pursuits: z.array(pursuitSchema),
   warFronts: z.array(warFrontSchema)
 });
+
+const worldTimeSchema = z.object({ absoluteHour: finiteNumber, day: finiteNumber, year: finiteNumber });
+const simulationEventKindSchema = z.enum(['trade','shortage','migration','conflict','discovery','politics','population','research','disaster']);
+const simulationEventSchema = z.object({
+  id: z.string(), kind: simulationEventKindSchema, hour: finiteNumber, year: finiteNumber,
+  title: z.string(), summary: z.string(), severity: finiteNumber, reliability: finiteNumber,
+  systemId: z.string().optional(), factionIds: z.array(z.string()), visibleToPublic: z.boolean(),
+  causes: z.array(z.string()), effects: z.array(z.string())
+});
+const scheduledSimulationEventSchema = z.object({
+  id: z.string(), dueHour: finiteNumber, kind: simulationEventKindSchema,
+  systemId: z.string().optional(), factionId: z.string().optional(),
+  payload: z.record(z.union([z.string(), finiteNumber, z.boolean()]))
+});
+const simulationStateSchema = z.object({
+  seed: z.string(), time: worldTimeSchema, queue: z.array(scheduledSimulationEventSchema),
+  events: z.array(simulationEventSchema), revision: finiteNumber, lastProcessedHour: finiteNumber
+});
+const knowledgeRecordSchema = z.object({
+  entityId: z.string(), entityType: z.enum(['system','planet','civilization','faction','hub','artifact','event']),
+  confidence: finiteNumber, discoveredAtHour: finiteNumber, lastConfirmedAtHour: finiteNumber,
+  source: z.enum(['direct','scan','archive','news','rumor','trade']), fieldsKnown: z.array(z.string())
+});
+
 const v10PayloadSchema = v9PayloadSchema.extend({ legacy: legacyStateSchema });
+const v11PayloadSchema = v10PayloadSchema.extend({ simulation: simulationStateSchema, knowledge: z.array(knowledgeRecordSchema) });
 
 const saveMetadataSchema = z.object({
   savedAt: z.string().datetime(),
@@ -566,8 +592,9 @@ const snapshotV7Schema = v7PayloadSchema.extend({ schemaVersion: z.literal(7), s
 const snapshotV8Schema = v8PayloadSchema.extend({ schemaVersion: z.literal(8), saveMeta: saveMetadataSchema });
 const snapshotV9Schema = v9PayloadSchema.extend({ schemaVersion: z.literal(9), saveMeta: saveMetadataSchema });
 const snapshotV10Schema = v10PayloadSchema.extend({ schemaVersion: z.literal(10), saveMeta: saveMetadataSchema });
+const snapshotV11Schema = v11PayloadSchema.extend({ schemaVersion: z.literal(11), saveMeta: saveMetadataSchema });
 
-type SnapshotCurrent = z.infer<typeof snapshotV10Schema>;
+type SnapshotCurrent = z.infer<typeof snapshotV11Schema>;
 
 function hashText(value: string): string {
   let hash = 0x811c9dc5;
@@ -677,6 +704,8 @@ function normalizeSnapshot(snapshot: SnapshotCurrent): SnapshotCurrent {
     activeShipEncounter: snapshot.activeShipEncounter && systemIds.has(snapshot.activeShipEncounter.contact.systemId) ? snapshot.activeShipEncounter : null,
     pursuits: snapshot.pursuits.filter((entry) => systemIds.has(entry.lastKnownSystemId)).slice(0, 100),
     warFronts: snapshot.warFronts.map((entry) => ({ ...entry, systemIds: entry.systemIds.filter((id) => systemIds.has(id)) })).filter((entry) => entry.systemIds.length > 0).slice(0, 50),
+    simulation: { ...snapshot.simulation, events: snapshot.simulation.events.slice(0, 1200), queue: snapshot.simulation.queue.slice(0, 2000) },
+    knowledge: snapshot.knowledge.slice(0, 12000),
     legacy: {
       ...snapshot.legacy,
       captains: snapshot.legacy.captains.slice(-100),
@@ -782,8 +811,12 @@ export function parseSnapshot(input: unknown, options: ParseSnapshotOptions = {}
     const previous = snapshotV9Schema.parse(input);
     migrated = { ...previous, ...emptyLegacy(previous.captain, previous.ship, previous.gameYear, previous.currentSystemId), schemaVersion: CURRENT_SCHEMA_VERSION, saveMeta: { ...previous.saveMeta, appVersion: APP_VERSION, reason: 'migration-v9', checksum: '00000000' } };
     migrated.saveMeta.checksum = computeSnapshotChecksum(migrated);
+  } else if (header.schemaVersion === 10) {
+    const previous = snapshotV10Schema.parse(input);
+    migrated = { ...previous, simulation: initializeSimulation(previous.galaxy.seed), knowledge: migrateLegacyKnowledge(previous.galaxy), schemaVersion: CURRENT_SCHEMA_VERSION, saveMeta: { ...previous.saveMeta, appVersion: APP_VERSION, reason: 'migration-v10', checksum: '00000000' } };
+    migrated.saveMeta.checksum = computeSnapshotChecksum(migrated);
   } else if (header.schemaVersion === CURRENT_SCHEMA_VERSION) {
-    migrated = snapshotV10Schema.parse(input);
+    migrated = snapshotV11Schema.parse(input);
     if (options.verifyChecksum !== false) {
       const expected = computeSnapshotChecksum(migrated);
       if (migrated.saveMeta.checksum !== expected) {
@@ -798,7 +831,10 @@ export function parseSnapshot(input: unknown, options: ParseSnapshotOptions = {}
     throw new Error(`Неподдерживаемая версия сохранения: v${header.schemaVersion}`);
   }
 
-  const normalized = normalizeSnapshot(snapshotV10Schema.parse(migrated));
+  migrated.simulation ??= initializeSimulation(migrated.galaxy.seed);
+  migrated.knowledge ??= migrateLegacyKnowledge(migrated.galaxy);
+  migrated.schemaVersion = CURRENT_SCHEMA_VERSION;
+  const normalized = normalizeSnapshot(snapshotV11Schema.parse(migrated));
   normalized.saveMeta.checksum = computeSnapshotChecksum(normalized);
   return normalized as GameStateSnapshot;
 }

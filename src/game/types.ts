@@ -901,6 +901,61 @@ export interface LegacyState {
   observerYear: number;
 }
 
+
+
+export interface WorldTime {
+  absoluteHour: number;
+  day: number;
+  year: number;
+}
+
+export type SimulationEventKind = 'trade' | 'shortage' | 'migration' | 'conflict' | 'discovery' | 'politics' | 'population' | 'research' | 'disaster';
+export type KnowledgeSource = 'direct' | 'scan' | 'archive' | 'news' | 'rumor' | 'trade';
+
+export interface SimulationEvent {
+  id: string;
+  kind: SimulationEventKind;
+  hour: number;
+  year: number;
+  title: string;
+  summary: string;
+  severity: number;
+  reliability: number;
+  systemId?: string;
+  factionIds: string[];
+  visibleToPublic: boolean;
+  causes: string[];
+  effects: string[];
+}
+
+export interface ScheduledSimulationEvent {
+  id: string;
+  dueHour: number;
+  kind: SimulationEventKind;
+  systemId?: string;
+  factionId?: string;
+  payload: Record<string, string | number | boolean>;
+}
+
+export interface SimulationState {
+  seed: string;
+  time: WorldTime;
+  queue: ScheduledSimulationEvent[];
+  events: SimulationEvent[];
+  revision: number;
+  lastProcessedHour: number;
+}
+
+export interface KnowledgeRecord {
+  entityId: string;
+  entityType: 'system' | 'planet' | 'civilization' | 'faction' | 'hub' | 'artifact' | 'event';
+  confidence: number;
+  discoveredAtHour: number;
+  lastConfirmedAtHour: number;
+  source: KnowledgeSource;
+  fieldsKnown: string[];
+}
+
 export interface SaveMetadata {
   savedAt: string;
   appVersion: string;
@@ -921,6 +976,8 @@ export interface GameStateSnapshot {
   ship: Ship;
   currentSystemId: string;
   gameYear: number;
+  simulation: SimulationState;
+  knowledge: KnowledgeRecord[];
   discoveries: Discovery[];
   logs: GameLogEntry[];
   scanReports: ScanReport[];

@@ -39,7 +39,9 @@ import type {
   TechnologyBlueprint,
   WarFront,
   CaptainCondition,
-  WorldThread
+  WorldThread,
+  SimulationState,
+  KnowledgeRecord
 } from './types';
 import {
   createManualBackup,
@@ -67,6 +69,7 @@ import { initializeWorldThreads, syncWorldThreads } from '../world/storyThreads'
 import { advanceWarFronts, createShipSystems, createTravelEncounter, damageSystem, initializeWarFronts, normalizeShipSystems, systemIntegrity } from '../world/warfare';
 import { chronicleEntry, closeCurrentCaptain, createInitialLegacy } from '../world/legacy';
 import { generateHubScene, generateScanScene, generateTravelScene, initializeNarrative, processDueConsequences } from '../narrative/encounters';
+import { advanceSimulation, initializeSimulation, migrateLegacyKnowledge, revealKnowledge } from '../simulation';
 
 export type MainScreen = 'menu' | 'command' | 'continuity' | 'chronicle' | 'galaxy' | 'system' | 'hub' | 'contracts' | 'factions' | 'civilizations' | 'crew' | 'archive' | 'laboratory' | 'world' | 'operations' | 'ship' | 'settings';
 export type HydrationStatus = 'idle' | 'loading' | 'ready' | 'error';
@@ -80,6 +83,8 @@ interface GameStore {
   currentSystemId: string | null;
   selectedSystemId: string | null;
   gameYear: number;
+  simulation: SimulationState;
+  knowledge: KnowledgeRecord[];
   discoveries: Discovery[];
   logs: GameLogEntry[];
   scanReports: ScanReport[];
@@ -122,6 +127,7 @@ interface GameStore {
   busyAction: string | null;
   setScreen(screen: MainScreen): void;
   setGenerationActive(active: boolean): void;
+  advanceWorld(hours: number, reason: string): Promise<void>;
   advanceTutorial(expectedStep?: number): Promise<void>;
   skipTutorial(): Promise<void>;
   restartTutorial(): Promise<void>;
@@ -423,6 +429,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
   currentSystemId: null,
   selectedSystemId: null,
   gameYear: 0,
+  simulation: initializeSimulation('VOID'),
+  knowledge: [],
   discoveries: [],
   logs: [],
   scanReports: [],
@@ -474,6 +482,14 @@ export const useGameStore = create<GameStore>((set, get) => ({
     if (advance) void persist(set, get, 'tutorial-open-system');
   },
   setGenerationActive: (generationActive) => set({ generationActive }),
+  async advanceWorld(hours, reason) {
+    const galaxy = get().galaxy;
+    if (!galaxy || hours <= 0) return;
+    const result = advanceSimulation({ galaxy, factions: get().factions, hubs: get().hubs, warFronts: get().warFronts, contracts: get().contracts, news: get().news, simulation: get().simulation }, hours);
+    const eventLogs = result.generatedEvents.map((event) => makeLog(event.year, event.title, event.summary, event.severity >= 70 ? 'danger' as const : event.severity >= 40 ? 'warning' as const : 'info' as const));
+    set({ simulation: result.simulation, gameYear: result.simulation.time.year, factions: result.factions, hubs: result.hubs, warFronts: result.warFronts, contracts: result.contracts, news: result.news, logs: [...eventLogs, ...get().logs].slice(0, 750) });
+    await persist(set, get, `world-time-${reason}`);
+  },
   async advanceTutorial(expectedStep) {
     const tutorial = get().tutorial;
     if (!tutorial.active || tutorial.completed) return;
@@ -578,7 +594,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
           ship: safe.ship,
           currentSystemId: safe.currentSystemId,
           selectedSystemId: safe.currentSystemId,
-          gameYear: safe.gameYear,
+          gameYear: safe.simulation.time.year,
+          simulation: safe.simulation,
+          knowledge: safe.knowledge,
           discoveries: safe.discoveries,
           logs: safe.logs,
           scanReports: safe.scanReports,
@@ -650,6 +668,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
       if (!start) throw new Error('Стартовая система не найдена');
       const captain = initialCaptain();
       const ship = initialShip();
+      const simulation = initializeSimulation(enrichedGalaxy.seed);
+      const knowledge = migrateLegacyKnowledge(enrichedGalaxy);
       set({
         screen: 'command',
         galaxy: enrichedGalaxy,
@@ -657,7 +677,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
         ship,
         currentSystemId: start.id,
         selectedSystemId: start.id,
-        gameYear: 0,
+        gameYear: simulation.time.year,
+        simulation,
+        knowledge,
         discoveries: [],
         scanReports: [],
         pointsOfInterest: [],
@@ -716,7 +738,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       } finally {
         set({
           screen: 'menu', galaxy: null, captain: null, ship: null, currentSystemId: null,
-          selectedSystemId: null, gameYear: 0, discoveries: [], logs: [], scanReports: [],
+          selectedSystemId: null, gameYear: 0, simulation: initializeSimulation('VOID'), knowledge: [], discoveries: [], logs: [], scanReports: [],
           pointsOfInterest: [], evidence: [], hypotheses: [], artifactKnowledge: [], crew: [], crewCandidates: [], factions: [], hubs: [], contracts: [], news: [], locationStates: [], currentHubId: null, localNpcs: [], civilizationContacts: [], archaeologyChains: [], researchProjects: [], technologyBlueprints: [], equipmentInventory: [], worldThreads: [], storyScenes: [], activeStorySceneId: null, pendingConsequences: [], objectives: [], tutorial: { enabled: false, active: false, currentStep: 0, completed: true }, activeShipEncounter: null, pursuits: [], warFronts: [], legacy: emptyLegacyState(),
           hydrationStatus: 'ready', saveAvailable: false, saveError: null,
           saveStatus: 'idle', saveMeta: null, backupCount: 0, recoveryNotice: null
@@ -862,9 +884,11 @@ export const useGameStore = create<GameStore>((set, get) => ({
         });
       }
       const updatedShip = { ...ship, systems: normalizeShipSystems(ship.systems), fuel: ship.fuel - fuelCost };
-      const nextYear = gameYear + Math.max(1, Math.round(jumpDistance / 50));
-      const logs = [makeLog(nextYear, 'Прыжок завершён', `${current.name} → ${target.name}. Потрачено ${fuelCost} топлива.`, 'info'), ...get().logs];
-      const warFronts = advanceWarFronts(updatedGalaxy.seed, get().warFronts, nextYear);
+      const travelHours = Math.max(8, Math.round(jumpDistance * 1.8));
+      const simulationResult = advanceSimulation({ galaxy: updatedGalaxy, factions: get().factions, hubs: get().hubs, warFronts: get().warFronts, contracts: get().contracts, news: get().news, simulation: get().simulation }, travelHours);
+      const nextYear = simulationResult.simulation.time.year;
+      const logs = [makeLog(nextYear, 'Прыжок завершён', `${current.name} → ${target.name}. Потрачено ${fuelCost} топлива. Мир прожил ещё ${travelHours} ч.`, 'info'), ...get().logs];
+      const warFronts = simulationResult.warFronts;
       let activeShipEncounter = createTravelEncounter({
         seed: updatedGalaxy.seed,
         system: target,
@@ -880,9 +904,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
       const hasCivilianHub = get().hubs.some((hub) => hub.systemId === target.id && hub.safety !== 'danger');
       if (activeShipEncounter) logs.unshift(makeLog(nextYear, 'Корабельный контакт', `${activeShipEncounter.contact.name}: ${activeShipEncounter.contact.demand}`, activeShipEncounter.contact.hostile ? 'danger' : 'warning'));
       else if (targetFaction?.disposition === 'friendly' || hasCivilianHub) logs.unshift(makeLog(nextYear, 'Гражданский контроль', 'Диспетчер передал коридор движения и список открытых портов.', 'good'));
-      const contracts = get().contracts.map((contract) => contract.status === 'active' && nextYear > contract.deadlineYear ? { ...contract, status: 'expired' as const } : contract);
-      const newsItem = generateNews(updatedGalaxy.seed, updatedGalaxy.systems, get().hubs, nextYear, get().news.length);
-      const nextNews = [newsItem, ...get().news].slice(0, 500);
+      const contracts = simulationResult.contracts.map((contract) => contract.status === 'active' && nextYear > contract.deadlineYear ? { ...contract, status: 'expired' as const } : contract);
+      const newsItem = generateNews(updatedGalaxy.seed, updatedGalaxy.systems, simulationResult.hubs, nextYear, simulationResult.news.length);
+      const nextNews = [newsItem, ...simulationResult.news].slice(0, 500);
       const worldThreads = syncWorldThreads(get().worldThreads, contracts, nextNews, get().researchProjects, nextYear);
       const generatedScene = activeShipEncounter ? null : generateTravelScene(updatedGalaxy.seed, current.id, target.id, target.name, nextYear, get().hubs, get().factions);
       const processedConsequences = processDueConsequences(get().pendingConsequences, nextYear);
@@ -893,7 +917,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
       ].slice(0, 160);
       const objectives = get().objectives.map((objective) => objective.status === 'active' && objective.deadlineYear !== undefined && objective.deadlineYear < nextYear ? { ...objective, status: 'failed' as const } : objective);
       const pursuits = get().pursuits.map((entry) => entry.status === 'active' && (entry.knownIdentity || entry.knownTransponder) ? { ...entry, lastKnownSystemId: target.id, lastUpdateYear: nextYear } : entry);
-      set({ galaxy: updatedGalaxy, ship: updatedShip, currentSystemId: target.id, selectedSystemId: target.id, currentHubId: null, gameYear: nextYear, logs, contracts, news: nextNews, worldThreads, storyScenes, activeStorySceneId: generatedScene?.id ?? null, pendingConsequences: processedConsequences.consequences, objectives, activeShipEncounter, pursuits, warFronts });
+      const knowledge = revealKnowledge(get().knowledge, { entityId: target.id, entityType: 'system', fields: ['position', 'star', 'routes'], confidence: 82, atHour: simulationResult.simulation.time.absoluteHour, source: 'direct' });
+      set({ galaxy: updatedGalaxy, ship: updatedShip, currentSystemId: target.id, selectedSystemId: target.id, currentHubId: null, gameYear: nextYear, simulation: simulationResult.simulation, knowledge, factions: simulationResult.factions, hubs: simulationResult.hubs, logs, contracts, news: nextNews, worldThreads, storyScenes, activeStorySceneId: generatedScene?.id ?? null, pendingConsequences: processedConsequences.consequences, objectives, activeShipEncounter, pursuits, warFronts });
       await persist(set, get, activeShipEncounter ? 'travel-contact' : 'travel');
       return { ok: true, message: activeShipEncounter ? 'Перелёт завершён. Обнаружен корабельный контакт.' : 'Перелёт завершён', encounter };
     }, { ok: false, message: 'Другое действие ещё выполняется' });
@@ -2181,7 +2206,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   },
   getSnapshot() {
     const {
-      galaxy, captain, ship, currentSystemId, gameYear, discoveries, logs, saveMeta,
+      galaxy, captain, ship, currentSystemId, gameYear, simulation, knowledge, discoveries, logs, saveMeta,
       scanReports, pointsOfInterest, evidence, hypotheses, artifactKnowledge, crew, crewCandidates, factions, hubs, contracts, news, locationStates, currentHubId, localNpcs, civilizationContacts, archaeologyChains, researchProjects, technologyBlueprints, equipmentInventory, worldThreads, storyScenes, pendingConsequences, objectives, tutorial, activeShipEncounter, pursuits, warFronts, legacy
     } = get();
     if (!galaxy || !captain || !ship || !currentSystemId) return null;
@@ -2192,7 +2217,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
       captain,
       ship,
       currentSystemId,
-      gameYear,
+      gameYear: simulation.time.year,
+      simulation,
+      knowledge,
       discoveries,
       logs,
       scanReports,
