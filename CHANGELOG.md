@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.9.4 — Mobile Interface Rebuild
+
+- replaced squeezed desktop pages with dedicated phone compositions;
+- rebuilt galaxy navigation as a full-screen draggable and pinch-zoomable map with map controls and a compact bottom sheet;
+- rebuilt the system screen as a fixed workspace with circular planets, separate 44px touch targets and a selected-object bottom sheet;
+- condensed the bridge to one primary action, four compact shortcuts and one optional objective;
+- changed Living World to list/news tabs with a separate detail view;
+- changed Operations and Ship screens to one-section-at-a-time segmented navigation;
+- changed Civilizations to list → detail navigation and collapsed deep lore sections;
+- replaced archive tab rails with a readable selector on phones;
+- removed the v0.9.3 adaptive stylesheet and replaced it with a clean device architecture;
+- save schema remains v10.
+
 ## v0.9.3 — Adaptive Interface
 
 - replaced the failed horizontal mobile layout with one vertical document flow;

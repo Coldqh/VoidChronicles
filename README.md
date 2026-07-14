@@ -1,8 +1,16 @@
 # Void Chronicles
 
-**Current version: v0.9.3 — Adaptive Interface**
+**Current version: v0.9.4 — Mobile Interface Rebuild**
 
 Procedural single-player space exploration roguelike built with React, TypeScript and Canvas.
+
+## v0.9.4 Mobile Interface Rebuild
+
+- full-screen touch-native galaxy and system maps;
+- compact bridge and bottom-sheet object inspection;
+- list/detail navigation for Living World and Civilizations;
+- segmented mobile Operations and Ship screens;
+- no document-level horizontal movement and no squeezed desktop panels.
 
 ## v0.9.3 Adaptive Interface
 

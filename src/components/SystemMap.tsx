@@ -10,8 +10,8 @@ interface Props {
 }
 
 function orbitPercent(index: number, count: number): number {
-  const min = 25;
-  const max = 88;
+  const min = 24;
+  const max = 82;
   return min + (count <= 1 ? 0 : index / (count - 1)) * (max - min);
 }
 
@@ -31,13 +31,15 @@ export function SystemMap({ system, selectedPlanetId, pointsOfInterest, onSelect
         <div className="orbit" style={{ width: `${orbit}%`, height: `${orbit}%` }} aria-hidden="true" />
         <button
           data-tutorial={planet.id === tutorialPlanetId ? 'tutorial-planet' : undefined}
-          className={`system-planet planet-${planet.type} ${selectedPlanetId === planet.id ? 'selected' : ''}`}
+          className={`system-planet-hitbox ${selectedPlanetId === planet.id ? 'selected' : ''}`}
           style={{ left: `${x}%`, top: `${y}%` }}
           onClick={() => onSelectPlanet(planet)}
           title={label}
           aria-label={label}
         >
-          <span>{planet.scanLevel && planet.scanLevel > 0 ? planet.name.slice(0, 2).toUpperCase() : '?'}</span>
+          <span className={`system-planet-disc planet-${planet.type}`}>
+            <span>{planet.scanLevel && planet.scanLevel > 0 ? planet.name.slice(0, 2).toUpperCase() : '?'}</span>
+          </span>
           {signals > 0 && <em>{signals}</em>}
         </button>
       </Fragment>;

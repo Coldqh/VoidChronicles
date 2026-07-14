@@ -10,7 +10,7 @@ import { generatePointsOfInterest } from '../exploration/pointsOfInterest';
 describe('application rendering smoke tests', () => {
   it('renders the boot shell with the current version', () => {
     const html = renderToString(React.createElement(App));
-    expect(html).toContain('0.9.3');
+    expect(html).toContain('0.9.4');
     expect(html).toContain('Проверка локального архива');
   });
 
@@ -31,6 +31,8 @@ describe('application rendering smoke tests', () => {
     }));
     expect(mapHtml).toContain('system-map');
     expect(mapHtml).toContain('%');
+    expect(mapHtml).toContain('system-planet-hitbox');
+    expect(mapHtml).toContain('system-planet-disc');
     expect(mapHtml).not.toContain('calc(-50% +');
     expect(expeditionHtml).toContain('ПОДГОТОВКА ЭКСПЕДИЦИИ');
   });
