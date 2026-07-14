@@ -31,6 +31,7 @@ const OperationsScreen = lazy(() => import('./screens/OperationsScreen').then((m
 import { ChronicleScreen, ContinuityScreen } from './screens/LegacyScreen';
 import './styles/app.css';
 import './styles/adaptive.css';
+import './styles/mobileGameplay.css';
 
 const defaultSettings: GalaxySettings = {
   seed: 'VOID-CHRONICLES-005',

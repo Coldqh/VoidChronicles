@@ -1,0 +1,470 @@
+/* v0.9.7 — compact mobile gameplay windows.
+   Targets the regular phone web build and the installed PWA equally. */
+
+@media (max-width: 700px) {
+  /* Gameplay windows must sit above the application HUD and dock. */
+  .modal-backdrop,
+  .ship-operation-backdrop {
+    z-index: 1200 !important;
+    inset: 0 !important;
+    padding: 4px !important;
+    place-items: center !important;
+    align-items: center !important;
+    background: rgba(0, 4, 8, .86) !important;
+    backdrop-filter: blur(4px) !important;
+    -webkit-backdrop-filter: blur(4px) !important;
+  }
+
+  .modal,
+  .ship-operation-modal {
+    width: calc(100vw - 8px) !important;
+    max-width: calc(100vw - 8px) !important;
+    height: calc(100dvh - 8px) !important;
+    max-height: calc(100dvh - 8px) !important;
+    min-height: 0 !important;
+    margin: 0 !important;
+    padding: 6px !important;
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+    border: 1px solid rgba(126, 226, 248, .18) !important;
+    border-radius: 10px !important;
+    background: #061119 !important;
+    box-shadow: 0 20px 70px rgba(0, 0, 0, .72) !important;
+    font-size: 12px;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .modal > header,
+  .ship-operation-header {
+    position: sticky !important;
+    top: -6px !important;
+    z-index: 8;
+    min-height: 42px;
+    margin: -6px -6px 5px !important;
+    padding: 5px 6px !important;
+    gap: 6px !important;
+    align-items: center !important;
+    border-bottom: 1px solid rgba(255,255,255,.07) !important;
+    background: rgba(4, 14, 21, .985) !important;
+    backdrop-filter: blur(12px);
+  }
+
+  .modal > header > div,
+  .ship-operation-header > div:first-child { min-width: 0; }
+  .modal > header .eyebrow,
+  .ship-operation-header .eyebrow { font-size: .42rem !important; letter-spacing: .09em !important; }
+  .modal > header h2,
+  .ship-operation-header h2 {
+    margin: 1px 0 0 !important;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: .92rem !important;
+    line-height: 1.05 !important;
+  }
+  .modal > header p,
+  .ship-operation-header p {
+    margin: 2px 0 0 !important;
+    color: #78909a !important;
+    font-size: .56rem !important;
+    line-height: 1.2 !important;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .modal .icon-button {
+    flex: 0 0 30px;
+    width: 30px !important;
+    height: 30px !important;
+    min-height: 30px !important;
+    padding: 0 !important;
+    font-size: 1.15rem !important;
+    border-radius: 8px !important;
+  }
+
+  /* Expedition loadout: compact choices instead of large information cards. */
+  .loadout-modal { padding-bottom: 0 !important; }
+  .loadout-modal > header p { display: none; }
+  .loadout-modal .mission-brief {
+    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+    gap: 3px !important;
+    margin: 0 0 4px !important;
+  }
+  .loadout-modal .mission-brief > div {
+    min-height: 36px;
+    gap: 1px !important;
+    padding: 4px !important;
+    overflow: hidden;
+  }
+  .loadout-modal .mission-brief > div:nth-child(5) { display: none; }
+  .loadout-modal .mission-brief b { font-size: .43rem !important; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .loadout-modal .mission-brief span { font-size: .52rem !important; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  .loadout-modal .crew-selection,
+  .loadout-modal .issued-equipment { margin: 4px 0 !important; }
+  .loadout-modal .crew-selection h3,
+  .loadout-modal .issued-equipment h3 {
+    margin: 0 0 3px !important;
+    font-size: .62rem !important;
+  }
+  .loadout-modal .crew-selection-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 3px !important;
+  }
+  .loadout-modal .crew-selection-grid button {
+    min-height: 34px !important;
+    padding: 4px 5px !important;
+    border-radius: 7px !important;
+  }
+  .loadout-modal .crew-selection-grid b { font-size: .58rem !important; }
+  .loadout-modal .crew-selection-grid span { display: block; font-size: .48rem !important; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  .loadout-modal .issued-equipment > p {
+    margin: 0 !important;
+    font-size: .54rem !important;
+    line-height: 1.2 !important;
+  }
+  .loadout-modal .issued-equipment > small {
+    display: block;
+    margin-top: 2px;
+    font-size: .47rem !important;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .loadout-modal .issued-equipment-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 3px !important;
+  }
+  .loadout-modal .issued-equipment-grid article { padding: 4px !important; border-radius: 6px !important; }
+  .loadout-modal .issued-equipment-grid article .eyebrow { display: none; }
+  .loadout-modal .issued-equipment-grid article b { margin: 0 !important; font-size: .55rem !important; }
+  .loadout-modal .issued-equipment-grid article p { display: none !important; }
+
+  .loadout-modal .loadout-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 3px !important;
+    padding-bottom: 48px;
+  }
+  .loadout-modal .loadout-grid button {
+    min-height: 38px !important;
+    padding: 4px 5px !important;
+    gap: 1px 4px !important;
+    border-radius: 7px !important;
+  }
+  .loadout-modal .loadout-grid button b { font-size: .59rem !important; }
+  .loadout-modal .loadout-grid button span { display: none !important; }
+  .loadout-modal .loadout-grid button em {
+    grid-row: 1 !important;
+    font-size: .48rem !important;
+  }
+  .loadout-modal .loadout-footer {
+    position: sticky !important;
+    z-index: 9;
+    bottom: -6px !important;
+    min-height: 44px;
+    margin: 4px -6px -6px !important;
+    padding: 4px 6px !important;
+    gap: 5px !important;
+    background: rgba(4,14,21,.99) !important;
+  }
+  .loadout-modal .loadout-footer > span { font-size: .52rem !important; white-space: nowrap; }
+  .loadout-modal .loadout-footer button { min-height: 34px !important; padding: 5px 8px !important; font-size: .58rem !important; }
+
+  /* Tactical expedition: map owns the available space; status becomes a compact console. */
+  .expedition-modal.field-modal {
+    display: grid !important;
+    grid-template-rows: auto minmax(0, 1fr) !important;
+    overflow: hidden !important;
+  }
+  .field-modal .expedition-layout {
+    min-width: 0;
+    min-height: 0;
+    height: 100%;
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    grid-template-rows: minmax(0, 1fr) auto !important;
+    gap: 4px !important;
+    overflow: hidden;
+  }
+  .field-modal .surface-grid {
+    align-self: center;
+    justify-self: center;
+    width: auto !important;
+    height: min(100%, calc(100dvh - 205px)) !important;
+    min-width: 0 !important;
+    min-height: 0 !important;
+    max-width: 100% !important;
+    max-height: 100% !important;
+    margin: 0 !important;
+    padding: 2px !important;
+    gap: 1px !important;
+    overflow: hidden !important;
+    background: #02070b !important;
+  }
+  .field-modal .tile {
+    min-width: 0 !important;
+    min-height: 0 !important;
+    width: auto !important;
+    height: auto !important;
+    aspect-ratio: auto !important;
+    padding: 0 !important;
+    border-radius: 50% !important;
+    font-size: clamp(.42rem, 2.2vw, .62rem) !important;
+    transform: none !important;
+  }
+  .field-modal .tile:hover { transform: none !important; }
+
+  .field-modal .expedition-sidebar {
+    display: grid !important;
+    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+    gap: 3px !important;
+    align-content: end !important;
+  }
+  .field-modal .meter {
+    grid-column: span 2;
+    min-height: 28px !important;
+    padding: 4px 5px !important;
+    font-size: .55rem !important;
+    border-radius: 6px;
+  }
+  .field-modal .meter i { height: 2px !important; }
+  .field-modal .stat-row {
+    min-width: 0;
+    min-height: 26px;
+    padding: 4px !important;
+    display: grid !important;
+    place-items: center;
+    gap: 1px;
+    border: 1px solid rgba(255,255,255,.055) !important;
+    border-radius: 6px;
+    text-align: center;
+    font-size: .48rem !important;
+  }
+  .field-modal .stat-row span { white-space: nowrap; }
+  .field-modal .stat-row b { font-size: .58rem; }
+  .field-modal .warning-text { grid-column: 1 / -1; margin: 0; padding: 3px 5px; font-size: .5rem !important; }
+  .field-modal .field-log {
+    grid-column: 1 / -1;
+    height: 26px !important;
+    min-height: 26px !important;
+    padding: 4px 6px !important;
+    overflow: hidden !important;
+    border-radius: 6px;
+  }
+  .field-modal .field-log p {
+    display: none;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
+    color: #8098a2 !important;
+    font-size: .5rem !important;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .field-modal .field-log p:first-child { display: block; }
+  .field-modal .field-actions {
+    grid-column: 1 / -1;
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 3px !important;
+  }
+  .field-modal .field-actions button {
+    min-height: 34px !important;
+    padding: 5px 6px !important;
+    font-size: .58rem !important;
+  }
+  .field-modal .field-actions button:only-child { grid-column: 1 / -1; }
+
+  .debrief-modal .debrief-summary {
+    grid-template-columns: repeat(3, minmax(0,1fr)) !important;
+    gap: 3px !important;
+    margin-bottom: 4px !important;
+  }
+  .debrief-modal .debrief-summary > div { padding: 4px !important; gap: 1px !important; }
+  .debrief-modal .debrief-summary b { font-size: .46rem !important; }
+  .debrief-modal .debrief-summary strong { font-size: .68rem !important; }
+  .debrief-modal .evidence-list { gap: 3px !important; margin-bottom: 4px !important; }
+  .debrief-modal .evidence-list article { padding: 5px !important; }
+  .debrief-modal .evidence-list p { font-size: .55rem !important; line-height: 1.25 !important; }
+
+  /* Settings: useful controls first, no oversized presentation cards. */
+  .settings-screen {
+    padding: 6px 6px calc(var(--ui-dock) + 8px) !important;
+  }
+  .settings-screen > header {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    margin: 0 0 4px !important;
+  }
+  .settings-screen > header h1 { margin: 1px 0 0 !important; font-size: 1.05rem !important; }
+  .settings-screen > header button { min-height: 30px !important; padding: 4px 7px !important; font-size: .56rem !important; }
+  .settings-cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 4px !important;
+  }
+  .settings-cards article {
+    min-width: 0;
+    padding: 6px !important;
+    border-radius: 8px;
+  }
+  .settings-cards article h2 { margin: 0 0 3px !important; font-size: .7rem !important; }
+  .settings-cards article p,
+  .settings-cards article small {
+    margin: 2px 0 4px !important;
+    font-size: .52rem !important;
+    line-height: 1.25 !important;
+  }
+  .settings-cards article p {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .settings-cards .version-hero { font-size: 1.2rem !important; line-height: 1; }
+  .settings-cards .stat-row { padding: 3px 0 !important; font-size: .48rem !important; }
+  .settings-cards button {
+    width: 100%;
+    min-height: 32px !important;
+    margin-top: 3px;
+    padding: 4px 5px !important;
+    font-size: .54rem !important;
+  }
+  .settings-cards .danger-settings { grid-column: 1 / -1; }
+  .settings-cards .danger-settings p { display: none; }
+  .settings-cards .danger-settings { display: grid; grid-template-columns: 1fr 1fr; gap: 3px; }
+  .settings-cards .danger-settings h2 { grid-column: 1 / -1; }
+
+  /* Ship contact, combat and boarding: one compact operation window. */
+  .ship-operation-modal {
+    display: block !important;
+    padding: 6px !important;
+  }
+  .ship-operation-header { min-height: 46px; }
+  .ship-operation-header p {
+    display: -webkit-box !important;
+    -webkit-line-clamp: 1;
+    -webkit-box-orient: vertical;
+  }
+  .threat-seal {
+    flex: 0 0 42px;
+    width: 42px !important;
+    height: 42px !important;
+    border-radius: 9px !important;
+  }
+  .threat-seal b { font-size: .9rem !important; line-height: 1 !important; }
+  .threat-seal span { font-size: .34rem !important; }
+
+  .contact-brief {
+    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+    gap: 1px !important;
+    margin: 4px 0 !important;
+  }
+  .contact-brief article { min-width: 0; padding: 4px !important; }
+  .contact-brief span { font-size: .35rem !important; letter-spacing: .05em !important; }
+  .contact-brief b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .5rem !important; }
+  .contact-demand { padding: 5px 6px !important; border-left-width: 2px !important; }
+  .contact-demand span { font-size: .38rem !important; }
+  .contact-demand p { margin: 2px 0 0 !important; font-size: .62rem !important; line-height: 1.25 !important; }
+
+  .operation-actions {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 3px !important;
+    margin-top: 5px !important;
+  }
+  .operation-actions button {
+    min-height: 38px !important;
+    padding: 5px 6px !important;
+    align-items: center !important;
+    justify-content: center !important;
+    text-align: center !important;
+    border-radius: 7px !important;
+    font-size: .58rem !important;
+    line-height: 1.15 !important;
+  }
+  .operation-actions button small { display: none !important; }
+
+  .combat-stations { margin: 4px 0 !important; }
+  .combat-stations summary { padding: 5px 6px !important; font-size: .48rem !important; letter-spacing: .06em !important; }
+  .combat-stations > div {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 3px !important;
+    padding: 0 5px 5px !important;
+  }
+  .combat-stations label { gap: 1px !important; }
+  .combat-stations label span { font-size: .42rem !important; }
+  .combat-stations select { min-height: 29px !important; padding: 3px !important; font-size: .5rem !important; }
+
+  .battle-space {
+    grid-template-columns: minmax(0,1fr) 58px minmax(0,1fr) !important;
+    gap: 3px !important;
+    padding: 4px 0 !important;
+  }
+  .combatant { min-width: 0; padding: 4px !important; }
+  .combatant span { font-size: .34rem !important; }
+  .combatant b { margin: 1px 0 !important; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .53rem !important; }
+  .combatant strong { font-size: .78rem !important; }
+  .range-lane { min-height: 42px !important; }
+  .range-lane span,
+  .range-lane small { padding: 1px 2px !important; font-size: .38rem !important; }
+  .range-pulse { width: 14px !important; height: 14px !important; box-shadow: 0 0 0 7px rgba(255,255,255,.025),0 0 0 14px rgba(255,255,255,.012) !important; }
+
+  .dual-system-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 3px !important;
+  }
+  .dual-system-grid > section { min-width: 0; padding: 4px !important; }
+  .dual-system-grid h3 { margin: 0 0 3px !important; font-size: .5rem !important; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ship-system-strip { grid-template-columns: 1fr !important; gap: 2px !important; }
+  .ship-system { min-height: 22px; padding: 3px !important; gap: 1px 3px !important; }
+  .ship-system span { font-size: .42rem !important; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ship-system b { font-size: .45rem !important; }
+  .ship-system i { height: 2px !important; }
+
+  .boarding-map {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+    gap: 3px !important;
+    padding: 6px 0 !important;
+  }
+  .boarding-node { padding: 7px 3px !important; font-size: .5rem !important; }
+  .boarding-map > strong { grid-column: 1 / -1 !important; font-size: .56rem !important; }
+  .operation-resolution { padding: 12px 6px !important; }
+  .operation-resolution h3 { margin: 3px 0 !important; font-size: 1.2rem !important; }
+  .operation-resolution p { font-size: .6rem !important; }
+  .operation-message { margin: 4px 0 !important; padding: 5px 6px !important; font-size: .56rem !important; }
+  .combat-log { margin-top: 4px !important; padding: 4px 0 !important; }
+  .combat-log summary { font-size: .5rem !important; }
+  .combat-log p { margin: 3px 0 !important; font-size: .5rem !important; }
+
+  /* Story announcements use the same density as the rest of the phone UI. */
+  .scene-card,
+  .scene-card.featured { min-height: 0 !important; border-radius: 9px !important; }
+  .scene-card.featured { display: block !important; }
+  .scene-card > header { padding: 5px 6px !important; font-size: .42rem !important; }
+  .scene-body { padding: 7px !important; }
+  .scene-body h3 { margin: 0 0 3px !important; font-size: .9rem !important; }
+  .scene-body p,
+  .scene-body .scene-summary {
+    margin: 0 !important;
+    font-size: .58rem !important;
+    line-height: 1.3 !important;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .scene-choices { gap: 3px !important; padding: 4px 6px 6px !important; }
+  .scene-choices button { min-height: 36px !important; padding: 4px 6px !important; font-size: .56rem !important; }
+  .scene-choices button small { display: none !important; }
+}
+
+@media (max-width: 360px) {
+  .loadout-modal .mission-brief { grid-template-columns: repeat(2, minmax(0,1fr)) !important; }
+  .settings-cards { grid-template-columns: 1fr !important; }
+  .settings-cards .danger-settings { grid-column: auto; }
+  .contact-brief { grid-template-columns: repeat(2, minmax(0,1fr)) !important; }
+}

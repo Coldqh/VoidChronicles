@@ -14,7 +14,7 @@ import { generatePointsOfInterest } from '../exploration/pointsOfInterest';
 describe('application rendering smoke tests', () => {
   it('renders the boot shell with the current version', () => {
     const html = renderToString(React.createElement(App));
-    expect(html).toContain('0.9.6');
+    expect(html).toContain('0.9.7');
     expect(html).toContain('Проверка локального архива');
   });
 
@@ -32,6 +32,11 @@ describe('application rendering smoke tests', () => {
     expect(adaptiveCss).toContain('.mobile-map-window');
     expect(adaptiveCss).toMatch(/\.system-planet-hitbox,[\s\S]*?box-shadow: none !important/);
     expect(adaptiveCss).toMatch(/\.tutorial-guide::before \{ background: transparent !important/);
+    const mobileGameplayCss = readFileSync(fileURLToPath(new URL('../styles/mobileGameplay.css', import.meta.url)), 'utf8');
+    expect(mobileGameplayCss).toMatch(/\.modal-backdrop,[\s\S]*?z-index: 1200 !important/);
+    expect(mobileGameplayCss).toContain('.expedition-modal.field-modal');
+    expect(mobileGameplayCss).toContain('.ship-operation-modal');
+    expect(mobileGameplayCss).toContain('.settings-cards');
   });
 
   it('renders the orbital map and expedition loadout without runtime exceptions', async () => {

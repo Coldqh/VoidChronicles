@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.9.7 — Mobile Combat & Windows
+
+- moved expedition and ship-operation windows above the mobile HUD and dock;
+- rebuilt the surface expedition layout to fit the available phone viewport;
+- reduced loadout, settings, contact, combat, boarding and story-event density;
+- changed the tactical map to explicit square grid rows so tall locations no longer stretch the page;
+- kept the save schema at v10.
+
 ## v0.9.6 — Navigation & Generation Recovery
 
 - replaced the oversized phone drawer with a compact bottom-center section menu;

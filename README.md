@@ -1,8 +1,15 @@
 # Void Chronicles
 
-**Current version: v0.9.6 — Navigation & Generation Recovery**
+**Current version: v0.9.7 — Mobile Combat & Windows**
 
 Procedural single-player space exploration roguelike built with React, TypeScript and Canvas.
+
+## v0.9.7 Mobile Combat & Windows
+
+- compact phone layouts for expedition preparation, tactical exploration and debriefing;
+- compact ship contact, combat and boarding windows;
+- mobile gameplay modals now cover the HUD and dock instead of rendering underneath them;
+- settings and story-event cards use reduced spacing and typography on phone web builds.
 
 ## v0.9.6 Navigation & Generation Recovery
 

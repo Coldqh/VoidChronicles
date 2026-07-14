@@ -1,4 +1,4 @@
-export const APP_VERSION = '0.9.6';
-export const APP_CODENAME = 'NAVIGATION & GENERATION RECOVERY';
+export const APP_VERSION = '0.9.7';
+export const APP_CODENAME = 'MOBILE COMBAT & WINDOWS';
 export const SAVE_SCHEMA_VERSION = 10;
 export const BUILD_TIME = typeof __BUILD_TIME__ !== 'undefined' ? __BUILD_TIME__ : 'development';

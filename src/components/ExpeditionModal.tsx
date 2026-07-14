@@ -249,10 +249,10 @@ export function ExpeditionModal({ seed, planet, point, artifact, crew, personalE
 
   const tutorialObjectId = map.objects.find((entry) => !entry.resolved && entry.evidence)?.id;
   return <div className="modal-backdrop">
-    <section className="modal expedition-modal">
+    <section className="modal expedition-modal field-modal">
       <header><div><span className="eyebrow">{map.biome.toUpperCase()}</span><h2>{point.name}</h2><p>{map.hazardName} · безопасное окно {turnsLeft} ходов</p></div><button className="icon-button" disabled={isLeaving} onClick={onClose}>×</button></header>
       <div className="expedition-layout">
-        <div className="surface-grid" style={{ gridTemplateColumns: `repeat(${map.width}, 1fr)` }}>
+        <div className="surface-grid" style={{ gridTemplateColumns: `repeat(${map.width}, minmax(0, 1fr))`, gridTemplateRows: `repeat(${map.height}, minmax(0, 1fr))`, aspectRatio: `${map.width} / ${map.height}` }}>
           {map.tiles.map((tile) => {
             const enemy = map.enemies.find((entry) => entry.x === tile.x && entry.y === tile.y && entry.health > 0);
             const player = map.player.x === tile.x && map.player.y === tile.y;
