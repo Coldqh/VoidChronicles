@@ -1,0 +1,50 @@
+.offline-runtime-panel {
+  position: fixed;
+  right: 14px;
+  bottom: 14px;
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: min(92vw, 430px);
+  padding: 9px 11px;
+  border: 1px solid rgba(129, 199, 212, .34);
+  border-radius: 10px;
+  background: rgba(5, 13, 19, .94);
+  box-shadow: 0 10px 35px rgba(0, 0, 0, .38);
+  color: #b7dce3;
+  font: 700 11px/1.2 system-ui, sans-serif;
+  letter-spacing: .08em;
+  backdrop-filter: blur(12px);
+}
+.offline-runtime-panel.is-offline { border-color: rgba(241, 183, 84, .6); color: #f1ca88; }
+.offline-runtime-panel.has-update { border-color: rgba(105, 211, 160, .55); color: #a5e9c8; }
+.offline-runtime-panel button {
+  border: 1px solid currentColor;
+  border-radius: 7px;
+  padding: 6px 8px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  letter-spacing: .03em;
+  cursor: pointer;
+}
+.mission-objective-card,
+.field-mission-strip {
+  border: 1px solid rgba(103, 194, 211, .28);
+  background: rgba(14, 31, 40, .58);
+  padding: 12px 14px;
+  border-radius: 10px;
+}
+.mission-objective-card > span,
+.field-mission-strip span { color: #70cbd9; font-size: 11px; letter-spacing: .12em; }
+.mission-objective-card h3 { margin: 5px 0; }
+.mission-objective-card.complete { border-color: rgba(91, 214, 151, .55); }
+.field-mission-strip { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-bottom: 10px; }
+.field-mission-strip div { display: grid; gap: 3px; }
+.field-mission-strip strong { font-size: 20px; color: #8fe0eb; }
+.tile-objective { box-shadow: inset 0 0 0 2px rgba(117, 223, 236, .6); }
+@media (max-width: 760px) {
+  .offline-runtime-panel { right: 8px; bottom: 76px; }
+  .field-mission-strip { align-items: flex-start; }
+}

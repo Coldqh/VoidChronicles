@@ -1,0 +1,38 @@
+Void Chronicles v0.30.0 — Lorebound Expeditions & True Offline
+
+Base: v0.29.0 or newer.
+Save schema: 13, no migration.
+
+Lorebound expeditions
+- replaces numbered generic POI names with locations derived from real Deep Time settlements, ruins, wars, events, figures and artifacts;
+- keeps natural biospheres, anomalies and geology meaningful without inventing ancient civilizations or random relics;
+- stores explicit links from every generated point to source events, settlements, ruins, wars, figures, polities and artifacts;
+- removes the global unrelated-artifact fallback from SystemScreen;
+- upgrades untouched legacy numbered signals during the next detailed scan while preserving IDs and every visited location;
+- gives each field expedition a concrete objective with required mission objects and evidence;
+- creates named terminals, samples, archives, black boxes, control systems and artifact vaults from the location lore;
+- only places an artifact when that exact artifact is linked to the location;
+- feeds a completed objective back into progressive player knowledge, hypotheses, discoveries and contracts;
+- recovery and rescue contracts no longer complete from one arbitrary piece of evidence.
+
+Offline
+- changes PWA updates from automatic reload to an explicit player-controlled prompt;
+- precaches JS, CSS, HTML, images, fonts, workers and local JSON assets;
+- adds same-origin runtime caches for navigation and assets;
+- adds online/offline/install/update status UI;
+- flushes the pending IndexedDB save before applying an update;
+- checkpoints an unfinished surface expedition in localStorage after each meaningful state change;
+- restores the same map, health, turns, enemies, objects, evidence, crew and loadout after reopening the browser;
+- clears the checkpoint only after the expedition result is persisted.
+
+Validation
+- focused strict TypeScript validation for all changed modules;
+- 10 deterministic tests for lore binding, legacy point upgrades, exact artifact placement, natural sites, checkpoints and offline configuration;
+- idempotent APPLY-v0.30.mjs validation;
+- full npm run check must be run in the complete repository after extraction.
+
+Installation
+1. Extract this ZIP over the repository.
+2. Run: node APPLY-v0.30.mjs
+3. Run: npm run check
+4. Commit and push.

@@ -4,9 +4,11 @@ import { registerSW } from 'virtual:pwa-register';
 import App from './App';
 import { RuntimeErrorBoundary } from './components/RuntimeErrorBoundary';
 import { installGlobalDiagnostics } from './runtime/diagnostics';
+import { installOfflineRuntime } from './runtime/offline';
 import { flushPendingSave } from './persistence/db';
 import './styles/mobileDenseScreens.css';
 import './styles/settlements.css';
+import './styles/offline.css';
 
 installGlobalDiagnostics();
 
@@ -14,21 +16,23 @@ const flushBeforeLeave = () => { void flushPendingSave(); };
 window.addEventListener('pagehide', flushBeforeLeave);
 window.addEventListener('beforeunload', flushBeforeLeave);
 
-let serviceWorkerReloading = false;
-if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.addEventListener('controllerchange', () => {
-    if (serviceWorkerReloading) return;
-    serviceWorkerReloading = true;
-    window.location.reload();
-  });
-}
+let applyServiceWorkerUpdate: (reloadPage?: boolean) => Promise<void> = async () => undefined;
+const offlineRuntime = installOfflineRuntime({
+  async applyUpdate() {
+    await flushPendingSave();
+    await applyServiceWorkerUpdate(true);
+  }
+});
 
-registerSW({
+applyServiceWorkerUpdate = registerSW({
   immediate: true,
-  onRegisteredSW(_url, registration) {
-    void registration?.update();
+  onOfflineReady() {
+    offlineRuntime.markOfflineReady();
   },
-  onRegisterError(error) {
+  onNeedRefresh() {
+    offlineRuntime.markUpdateAvailable();
+  },
+  onRegisterError(error: unknown) {
     console.error('Service worker registration failed', error);
   }
 });

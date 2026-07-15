@@ -15,6 +15,26 @@ export type ScanLevel = 0 | 1 | 2 | 3;
 export type PointOfInterestType = 'ruin' | 'wreck' | 'settlement' | 'laboratory' | 'cave' | 'ancientFactory' | 'graveyard' | 'smugglerCamp' | 'anomaly' | 'biosphere' | 'distress';
 export type PointOfInterestStatus = 'detected' | 'visited' | 'blocked' | 'resolved';
 export type PointOfInterestAccess = 'surface' | 'orbital' | 'remote';
+export type ExpeditionObjectiveKind =
+  | 'recover-artifact'
+  | 'restore-archive'
+  | 'determine-cause'
+  | 'recover-black-box'
+  | 'rescue-survivors'
+  | 'collect-sample'
+  | 'disable-system'
+  | 'document-site'
+  | 'establish-contact'
+  | 'investigate-anomaly';
+export interface ExpeditionObjective {
+  kind: ExpeditionObjectiveKind;
+  title: string;
+  description: string;
+  requiredObjects: number;
+  requiredEvidence: number;
+  requiresArtifact?: boolean;
+  completionText: string;
+}
 export type EquipmentId = 'pistol' | 'rifle' | 'armor' | 'medkit' | 'scanner' | 'cutter' | 'translator' | 'sampleContainer' | 'explosives' | 'oxygen';
 export type EvidenceKind = 'record' | 'body' | 'weapon' | 'architecture' | 'sample' | 'terminal' | 'damage' | 'signal';
 export type HypothesisStatus = 'tentative' | 'supported' | 'confirmed' | 'disproved';
@@ -443,6 +463,18 @@ export interface PointOfInterest {
   discoveredYear: number;
   lastVisitedYear?: number;
   access: PointOfInterestAccess;
+  confirmedSummary?: string;
+  completionSummary?: string;
+  sourceEventIds?: string[];
+  historicalSettlementId?: string;
+  ruinId?: string;
+  warId?: string;
+  artifactIds?: string[];
+  figureIds?: string[];
+  polityIds?: string[];
+  archiveId?: string;
+  loreTags?: string[];
+  objective?: ExpeditionObjective;
 }
 
 export interface ExpeditionLoadout {
@@ -829,6 +861,9 @@ export interface ExpeditionResult {
   blockedReason?: string;
   locationState: LocationState;
   defeatedEnemyIds: string[];
+  objectiveProgress?: number;
+  objectiveTotal?: number;
+  revealedEventIds?: string[];
 }
 
 export interface GameLogEntry {

@@ -57,7 +57,7 @@ import {
 import { APP_VERSION } from '../version';
 import { createRng } from '../generation/rng';
 import { recordDiagnostic } from '../runtime/diagnostics';
-import { generatePointsOfInterest } from '../exploration/pointsOfInterest';
+import { generatePointsOfInterest, refreshLoreboundPoints } from '../exploration/pointsOfInterest';
 import { buildHypothesis } from '../exploration/hypotheses';
 import { generateCrewCandidates } from '../crew/generateCrew';
 import { generateContracts, generateMarket, initializeLivingGalaxy } from '../world/livingGalaxy';
@@ -1355,8 +1355,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
       const projectedSystem = projectedGalaxy?.systems.find((entry) => entry.id === system.id) ?? system;
       const projectedPlanet = projectedSystem.planets.find((entry) => entry.id === planet.id) ?? planet;
       const existing = state.pointsOfInterest.filter((entry) => entry.planetId === planetId);
-      const generated = existing.length > 0 ? existing : generatePointsOfInterest(projectedGalaxy ?? galaxy, projectedSystem, projectedPlanet).map((entry) => ({ ...entry, discoveredYear: nextYear }));
-      const allPoints = existing.length > 0 ? state.pointsOfInterest : [...generated, ...state.pointsOfInterest];
+      const generated = refreshLoreboundPoints(projectedGalaxy ?? galaxy, projectedSystem, projectedPlanet, existing)
+        .map((entry) => existing.some((previous) => previous.id === entry.id) ? entry : { ...entry, discoveredYear: nextYear });
+      const allPoints = [...generated, ...state.pointsOfInterest.filter((entry) => entry.planetId !== planetId)];
       const archaeologyChains = bindArchaeologyPoints(state.archaeologyChains, allPoints);
       const civilizationContacts = state.civilizationContacts.map((contact) => planet.civilizationId === contact.civilizationId && (contact.stage === 'unknown' || contact.stage === 'observed') ? {
         ...contact,
@@ -1499,6 +1500,16 @@ export const useGameStore = create<GameStore>((set, get) => ({
       const logs = [...((advanced.patch.logs as GameLogEntry[] | undefined) ?? state.logs)];
       const newDiscoveries = [...state.discoveries];
       let playerKnowledge = state.knowledge;
+      if (result.outcome === 'resolved') {
+        const confirmedAt = advanced.patch.simulation?.clock.absoluteHour ?? state.simulation.clock.absoluteHour;
+        playerKnowledge = revealKnowledge(playerKnowledge, 'system', point.systemId, ['history', 'expedition', 'localEvents'], confirmedAt, 'direct', 94);
+        if (point.civilizationId) {
+          playerKnowledge = revealKnowledge(playerKnowledge, 'civilization', point.civilizationId, ['history', 'culture', 'artifacts'], confirmedAt, 'archive', 90);
+        }
+        for (const artifactId of point.artifactIds ?? []) {
+          playerKnowledge = revealKnowledge(playerKnowledge, 'artifact', artifactId, ['identity', 'location', 'history'], confirmedAt, 'direct', 84);
+        }
+      }
 
       if (result.artifact && !updatedShip.cargo.some((item) => item.artifactId === result.artifact?.id)) {
         const storedArtifact = updatedGalaxy.artifacts.find((entry) => entry.id === result.artifact?.id);
@@ -1514,7 +1525,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
               systemId: point.systemId,
               planetId: point.planetId,
               pointOfInterestId: point.id,
-              description: 'Объект извлечён. Назначение и происхождение требуют анализа.',
+              description: point.confirmedSummary ?? 'Объект извлечён. Назначение и происхождение требуют анализа.',
               confidence: 45,
               year: gameYear,
               tags: [result.artifact.kind, 'unverified'],
@@ -1576,13 +1587,13 @@ export const useGameStore = create<GameStore>((set, get) => ({
           systemId: point.systemId,
           planetId: point.planetId,
           pointOfInterestId: point.id,
-          description: `${newEvidence.length} новых улик. Гипотеза: ${hypothesis.title}.`,
+          description: result.outcome === 'resolved' ? (point.completionSummary ?? point.confirmedSummary ?? `${newEvidence.length} улик подтвердили задачу «${hypothesis.title}».`) : `${newEvidence.length} новых улик. Гипотеза: ${hypothesis.title}.`,
           confidence: hypothesis.confidence,
           year: gameYear,
           tags: ['expedition', 'field-confirmed', point.type]
         });
       }
-      logs.unshift(makeLog(gameYear, `Экспедиция: ${point.name}`, `Получено улик: ${newEvidence.length}. Статус гипотезы: ${hypothesis.status}.`, result.outcome === 'resolved' ? 'good' : 'warning'));
+      logs.unshift(makeLog(gameYear, `Экспедиция: ${point.name}`, result.outcome === 'resolved' ? (point.completionSummary ?? `Задача выполнена. Улик: ${newEvidence.length}.`) : `Задача не завершена. Улик: ${newEvidence.length}. Статус гипотезы: ${hypothesis.status}.`, result.outcome === 'resolved' ? 'good' : 'warning'));
 
       let updatedCrew = get().crew.map((member) => {
         if (!result.crewIds.includes(member.id)) return member;
@@ -1631,7 +1642,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
         if (contract.status !== 'active' || contract.targetSystemId !== point.systemId) return contract;
         let progress = contract.progress;
         if (contract.type === 'bounty') progress += result.defeatedEnemyIds.length;
-        if ((contract.type === 'recovery' || contract.type === 'rescue') && newEvidence.length > 0) progress = contract.requiredProgress;
+        if ((contract.type === 'recovery' || contract.type === 'rescue') && result.outcome === 'resolved') progress = contract.requiredProgress;
         if (progress >= contract.requiredProgress) {
           contractReward += contract.reward;
           factions = adjustFactionStanding(factions, contract.issuerFactionId, gameYear, 'contract-complete', 7, `Выполнен контракт «${contract.title}».`);

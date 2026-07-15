@@ -334,7 +334,9 @@ function GalaxyScreen() {
 }
 
 function artifactForPoint(point: PointOfInterest, artifacts: Artifact[]) {
-  return artifacts.find((entry) => entry.civilizationId === point.civilizationId && !entry.discovered) ?? artifacts.find((entry) => !entry.discovered);
+  return (point.artifactIds ?? [])
+    .map((id) => artifacts.find((entry) => entry.id === id))
+    .find((entry): entry is Artifact => Boolean(entry && !entry.discovered));
 }
 
 function SystemScreen() {

@@ -20,17 +20,42 @@ export default defineConfig({
   plugins: [
     react(),
     VitePWA({
-      registerType: 'autoUpdate',
+      registerType: 'prompt',
+      injectRegister: false,
+      includeAssets: ['brand/**/*'],
       workbox: {
         cleanupOutdatedCaches: true,
         clientsClaim: true,
-        skipWaiting: true,
-        navigateFallback: '/VoidChronicles/index.html'
+        skipWaiting: false,
+        navigateFallback: '/VoidChronicles/index.html',
+        globPatterns: ['**/*.{js,css,html,ico,png,svg,webp,json,woff,woff2}'],
+        maximumFileSizeToCacheInBytes: 8 * 1024 * 1024,
+        runtimeCaching: [
+          {
+            urlPattern: ({ request, sameOrigin }: { request: Request; sameOrigin: boolean }) => request.mode === 'navigate' && sameOrigin,
+            handler: 'NetworkFirst',
+            options: {
+              cacheName: 'void-pages-v030',
+              networkTimeoutSeconds: 3,
+              expiration: { maxEntries: 12, maxAgeSeconds: 60 * 60 * 24 * 30 },
+              cacheableResponse: { statuses: [0, 200] }
+            }
+          },
+          {
+            urlPattern: ({ request, sameOrigin }: { request: Request; sameOrigin: boolean }) => sameOrigin && ['script', 'style', 'image', 'font', 'worker'].includes(request.destination),
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'void-assets-v030',
+              expiration: { maxEntries: 240, maxAgeSeconds: 60 * 60 * 24 * 365 },
+              cacheableResponse: { statuses: [0, 200] }
+            }
+          }
+        ]
       },
       manifest: {
         name: 'Void Chronicles',
         short_name: 'Void',
-        description: 'Procedural space exploration roguelike',
+        description: 'Procedural space exploration roguelike and living galaxy chronicle',
         lang: 'ru',
         theme_color: '#071018',
         background_color: '#071018',

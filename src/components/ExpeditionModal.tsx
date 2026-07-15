@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type {
   Artifact,
   CrewMember,
@@ -12,6 +12,12 @@ import type {
 } from '../game/types';
 import { EQUIPMENT, equipmentWeight } from '../exploration/equipment';
 import { crewRoleBonus, roleLabel } from '../crew/generateCrew';
+import { expeditionObjectiveForPoint } from '../exploration/lore';
+import {
+  clearExpeditionCheckpoint,
+  loadExpeditionCheckpoint,
+  saveExpeditionCheckpoint
+} from '../exploration/expeditionCheckpoint';
 import { generateSurface, type SurfaceMap, type SurfaceObject, type SurfaceTile } from '../generation/surface';
 
 interface Props {
@@ -71,30 +77,40 @@ export function findFastestPath(state: SurfaceMap, target: { x: number; y: numbe
   return path.reverse();
 }
 
+function storage(): Storage | undefined {
+  try { return typeof window === 'undefined' ? undefined : window.localStorage; }
+  catch { return undefined; }
+}
+
 export function ExpeditionModal({ seed, planet, point, artifact, crew, personalEquipment, locationState, onClose, onComplete, onTutorialAction }: Props) {
-  const [phase, setPhase] = useState<Phase>('loadout');
-  const [selected, setSelected] = useState<EquipmentId[]>(DEFAULT_LOADOUT);
-  const [selectedCrewIds, setSelectedCrewIds] = useState<string[]>([]);
+  const mission = expeditionObjectiveForPoint(point);
   const initial = useMemo(() => generateSurface(seed, planet, point, locationState), [seed, planet, point, locationState]);
-  const [map, setMap] = useState<SurfaceMap>(initial);
-  const mapRef = useRef(initial);
-  const [playerHealth, setPlayerHealth] = useState(100);
-  const healthRef = useRef(100);
-  const [turns, setTurns] = useState(0);
-  const turnsRef = useRef(0);
-  const initialLog = locationState ? `Повторный заход. Локация помнит прошлую экспедицию: визитов ${locationState.visitCount}.` : `Цель: ${point.name}. Данные сканирования ненадёжны.`;
-  const [log, setLog] = useState<string[]>([initialLog]);
-  const logRef = useRef<string[]>([initialLog]);
-  const [collectedEvidence, setCollectedEvidence] = useState<EvidenceDraft[]>([]);
-  const evidenceRef = useRef<EvidenceDraft[]>([]);
-  const [hasArtifact, setHasArtifact] = useState(false);
-  const artifactRef = useRef(false);
-  const [blockedReason, setBlockedReason] = useState<string | undefined>();
-  const [medkitUsed, setMedkitUsed] = useState(false);
+  const checkpoint = useMemo(() => loadExpeditionCheckpoint(storage(), seed, point.id), [seed, point.id]);
+  const restored = Boolean(checkpoint);
+  const restoredMap = checkpoint?.map ?? initial;
+  const [phase, setPhase] = useState<Phase>(checkpoint?.phase ?? 'loadout');
+  const [selected, setSelected] = useState<EquipmentId[]>(checkpoint?.selected ?? DEFAULT_LOADOUT);
+  const [selectedCrewIds, setSelectedCrewIds] = useState<string[]>(checkpoint?.selectedCrewIds ?? []);
+  const [map, setMap] = useState<SurfaceMap>(restoredMap);
+  const mapRef = useRef(restoredMap);
+  const [playerHealth, setPlayerHealth] = useState(checkpoint?.playerHealth ?? 100);
+  const healthRef = useRef(checkpoint?.playerHealth ?? 100);
+  const [turns, setTurns] = useState(checkpoint?.turns ?? 0);
+  const turnsRef = useRef(checkpoint?.turns ?? 0);
+  const initialLog = checkpoint?.log ?? [mission.description, point.publicSummary];
+  const [log, setLog] = useState<string[]>(initialLog);
+  const logRef = useRef<string[]>(initialLog);
+  const [collectedEvidence, setCollectedEvidence] = useState<EvidenceDraft[]>(checkpoint?.collectedEvidence ?? []);
+  const evidenceRef = useRef<EvidenceDraft[]>(checkpoint?.collectedEvidence ?? []);
+  const [hasArtifact, setHasArtifact] = useState(checkpoint?.hasArtifact ?? false);
+  const artifactRef = useRef(checkpoint?.hasArtifact ?? false);
+  const [blockedReason, setBlockedReason] = useState<string | undefined>(checkpoint?.blockedReason);
+  const [medkitUsed, setMedkitUsed] = useState(checkpoint?.medkitUsed ?? false);
   const [isLeaving, setIsLeaving] = useState(false);
   const [isMoving, setIsMoving] = useState(false);
   const movingRef = useRef(false);
   const [selectedEnemyId, setSelectedEnemyId] = useState<string | null>(null);
+  const [lastOutcome, setLastOutcome] = useState<ExpeditionResult['outcome'] | null>(null);
 
   const selectedCrew = crew.filter((member) => selectedCrewIds.includes(member.id));
   const issuedEquipment = personalEquipment.filter((item) => item.assignedToId === 'captain_player' || selectedCrewIds.includes(item.assignedToId ?? ''));
@@ -114,6 +130,30 @@ export function ExpeditionModal({ seed, planet, point, artifact, crew, personalE
   const turnsLimit = map.baseTurns + (has('oxygen') ? 12 : 0) + crewTurnBonus;
   const turnsLeft = Math.max(0, turnsLimit - turns);
   const selectedEnemy = map.enemies.find((enemy) => enemy.id === selectedEnemyId && enemy.health > 0);
+  const objectiveObjects = map.objects.filter((object) => object.objective);
+  const objectiveResolved = objectiveObjects.filter((object) => object.resolved).length;
+  const objectiveTotal = Math.max(map.requiredObjectiveCount, objectiveObjects.length ? Math.min(objectiveObjects.length, map.requiredObjectiveCount) : 1);
+
+  useEffect(() => {
+    if (phase !== 'field' || isLeaving) return;
+    saveExpeditionCheckpoint(storage(), {
+      version: 1,
+      seed,
+      pointOfInterestId: point.id,
+      phase: 'field',
+      selected,
+      selectedCrewIds,
+      map,
+      playerHealth,
+      turns,
+      log,
+      collectedEvidence,
+      hasArtifact,
+      blockedReason,
+      medkitUsed,
+      savedAt: Date.now()
+    });
+  }, [phase, isLeaving, seed, point.id, selected, selectedCrewIds, map, playerHealth, turns, log, collectedEvidence, hasArtifact, blockedReason, medkitUsed]);
 
   const toggleCrew = (id: string) => setSelectedCrewIds((current) => current.includes(id) ? current.filter((entry) => entry !== id) : current.length < 3 ? [...current, id] : current);
   const toggle = (id: EquipmentId) => {
@@ -125,7 +165,7 @@ export function ExpeditionModal({ seed, planet, point, artifact, crew, personalE
   };
 
   const commitLog = (entries: string[]) => {
-    const next = entries.slice(0, 10);
+    const next = entries.slice(0, 12);
     logRef.current = next;
     setLog(next);
   };
@@ -152,14 +192,14 @@ export function ExpeditionModal({ seed, planet, point, artifact, crew, personalE
         setCollectedEvidence(evidenceRef.current);
       }
       onTutorialAction?.('collect-data');
-      nextLog.unshift(`Улика получена: ${evidence.title}.`);
+      nextLog.unshift(`${object.objective ? 'Цель' : 'Улика'}: ${object.title}.`);
     }
     if (object.kind === 'artifact') {
-      artifactRef.current = Boolean(artifact);
+      artifactRef.current = Boolean(artifact && object.artifactId === artifact.id);
       setHasArtifact(artifactRef.current);
-      nextLog.unshift(artifact ? `Извлечён объект: ${artifact.name}.` : 'Центральный объект изучен, но пригодной находки нет.');
+      nextLog.unshift(artifactRef.current ? `Извлечён объект: ${artifact?.name}.` : 'Хранилище пусто: связанный предмет уже был вынесен ранее.');
     }
-    if (canForceDoor && !has('cutter')) nextLog.unshift('Взрыв повредил часть доказательств.');
+    if (canForceDoor && !has('cutter')) nextLog.unshift('Взрыв открыл проход, но повредил часть данных.');
   };
 
   const performStep = (x: number, y: number): boolean => {
@@ -221,10 +261,7 @@ export function ExpeditionModal({ seed, planet, point, artifact, crew, personalE
     }
 
     const revealRadius = has('scanner') ? 5 : 3.5;
-    nextMap.tiles = nextMap.tiles.map((entry) => ({
-      ...entry,
-      revealed: entry.revealed || Math.hypot(entry.x - nextMap.player.x, entry.y - nextMap.player.y) < revealRadius
-    }));
+    nextMap.tiles = nextMap.tiles.map((entry) => ({ ...entry, revealed: entry.revealed || Math.hypot(entry.x - nextMap.player.x, entry.y - nextMap.player.y) < revealRadius }));
     const nextTurns = turnsRef.current + 1;
     if (nextTurns >= turnsLimit) {
       const damage = Math.max(1, (has('armor') ? 7 : 15) - personalArmorBonus);
@@ -245,10 +282,7 @@ export function ExpeditionModal({ seed, planet, point, artifact, crew, personalE
   const moveTo = async (x: number, y: number) => {
     if (movingRef.current || isLeaving || healthRef.current <= 0) return;
     const enemy = mapRef.current.enemies.find((entry) => entry.x === x && entry.y === y && entry.health > 0);
-    if (enemy) {
-      setSelectedEnemyId(enemy.id);
-      return;
-    }
+    if (enemy) { setSelectedEnemyId(enemy.id); return; }
     const target = tileAt(mapRef.current, x, y);
     if (!target?.revealed || target.kind === 'rock') return;
     movingRef.current = true;
@@ -286,7 +320,7 @@ export function ExpeditionModal({ seed, planet, point, artifact, crew, personalE
     setMedkitUsed(true);
     healthRef.current = Math.min(100, healthRef.current + 32 + healingBonus);
     setPlayerHealth(healthRef.current);
-    commitLog(['Использована аптечка: +32 здоровья.', ...logRef.current]);
+    commitLog(['Использована аптечка.', ...logRef.current]);
   };
 
   const leave = async () => {
@@ -295,7 +329,11 @@ export function ExpeditionModal({ seed, planet, point, artifact, crew, personalE
     try {
       const currentHealth = healthRef.current;
       const injury = currentHealth < 75 ? { bodyPart: 'torso' as const, severity: Math.min(10, Math.max(1, Math.ceil((100 - currentHealth) / 7))) } : undefined;
-      const resolved = evidenceRef.current.length >= 2 && (artifactRef.current || point.type === 'biosphere' || point.type === 'settlement');
+      const currentObjectiveResolved = mapRef.current.objects.filter((object) => object.objective && object.resolved).length;
+      const objectiveSatisfied = currentObjectiveResolved >= Math.max(1, mission.requiredObjects);
+      const evidenceSatisfied = evidenceRef.current.length >= Math.max(0, mission.requiredEvidence);
+      const artifactSatisfied = !mission.requiresArtifact || artifactRef.current;
+      const resolved = objectiveSatisfied && evidenceSatisfied && artifactSatisfied;
       const outcome = currentHealth <= 0 ? 'failed' as const : resolved ? 'resolved' as const : 'evacuated' as const;
       const previousEnemies = new Map((locationState?.enemyStates ?? []).map((enemy) => [enemy.id, enemy]));
       for (const enemy of mapRef.current.enemies) previousEnemies.set(enemy.id, { id: enemy.id, health: Math.max(0, enemy.health), x: enemy.x, y: enemy.y });
@@ -321,10 +359,15 @@ export function ExpeditionModal({ seed, planet, point, artifact, crew, personalE
         turnsSpent: turnsRef.current,
         blockedReason,
         locationState: nextLocationState,
-        defeatedEnemyIds
+        defeatedEnemyIds,
+        objectiveProgress: currentObjectiveResolved,
+        objectiveTotal: Math.max(1, mission.requiredObjects),
+        revealedEventIds: resolved ? point.sourceEventIds ?? [] : []
       };
       onTutorialAction?.('evacuate');
       await onComplete(result);
+      clearExpeditionCheckpoint(storage(), seed, point.id);
+      setLastOutcome(outcome);
       setPhase('debrief');
     } finally { setIsLeaving(false); }
   };
@@ -332,6 +375,7 @@ export function ExpeditionModal({ seed, planet, point, artifact, crew, personalE
   if (phase === 'loadout') {
     return <div className="modal-backdrop"><section className="modal expedition-modal loadout-modal">
       <header><div><span className="eyebrow">ПОДГОТОВКА ЭКСПЕДИЦИИ</span><h2>{point.name}</h2><p>{point.publicSummary}</p></div><button className="icon-button" onClick={onClose}>×</button></header>
+      <article className="mission-objective-card"><span>ЗАДАЧА</span><h3>{mission.title}</h3><p>{mission.description}</p><small>{point.sourceEventIds?.length ? `Связано с ${point.sourceEventIds.length} историческими записями` : 'Источник будет определён по полевым данным'}</small></article>
       <div className="mission-brief"><div><b>Память</b><span>{locationState ? `визитов ${locationState.visitCount}` : 'первый заход'}</span></div><div><b>Среда</b><span>{planet.type}</span></div><div><b>Угроза</b><span>{point.danger}</span></div><div><b>Скан</b><span>{point.scanConfidence}%</span></div></div>
       <section className="crew-selection"><h3>Группа · капитан + {selectedCrew.length}</h3><div className="crew-selection-grid">{crew.length === 0 ? <p>Высадка в одиночку.</p> : crew.map((member) => <button key={member.id} className={selectedCrewIds.includes(member.id) ? 'selected' : ''} onClick={() => toggleCrew(member.id)}><b>{member.name}</b><span>{roleLabel(member.primaryRole)} · {member.morale}</span></button>)}</div></section>
       {issuedEquipment.length > 0 && <section className="issued-equipment"><h3>Личное снаряжение</h3><div className="issued-equipment-grid">{issuedEquipment.map((item) => <article key={item.id}><b>{item.name}</b></article>)}</div></section>}
@@ -343,45 +387,34 @@ export function ExpeditionModal({ seed, planet, point, artifact, crew, personalE
   if (phase === 'debrief') {
     return <div className="modal-backdrop"><section className="modal expedition-modal debrief-modal">
       <header><div><span className="eyebrow">ОТЧЁТ ЭКСПЕДИЦИИ</span><h2>{point.name}</h2></div></header>
-      <div className="debrief-summary"><div><b>Улики</b><strong>{collectedEvidence.length}</strong></div><div><b>Находка</b><strong>{hasArtifact ? artifact?.name ?? 'получена' : 'нет'}</strong></div><div><b>Ходы</b><strong>{turns}</strong></div><div><b>Здоровье</b><strong>{playerHealth}</strong></div></div>
-      <div className="evidence-list">{collectedEvidence.length === 0 ? <p>Значимых доказательств не получено.</p> : collectedEvidence.map((entry) => <article key={entry.key}><span>{entry.kind} · {entry.reliability}%</span><b>{entry.title}</b></article>)}</div>
+      <article className={`mission-objective-card ${lastOutcome === 'resolved' ? 'complete' : ''}`}><span>{lastOutcome === 'resolved' ? 'ЗАДАЧА ВЫПОЛНЕНА' : lastOutcome === 'failed' ? 'ЭКСПЕДИЦИЯ ПРОВАЛЕНА' : 'ЗАДАЧА НЕ ЗАВЕРШЕНА'}</span><h3>{mission.title}</h3><p>{lastOutcome === 'resolved' ? point.completionSummary ?? mission.completionText : 'Собранные данные сохранены. Локация останется в текущем состоянии для повторного захода.'}</p></article>
+      <div className="debrief-summary"><div><b>Улики</b><strong>{collectedEvidence.length}/{mission.requiredEvidence}</strong></div><div><b>Цели</b><strong>{objectiveResolved}/{objectiveTotal}</strong></div><div><b>Находка</b><strong>{hasArtifact ? artifact?.name ?? 'получена' : 'нет'}</strong></div><div><b>Здоровье</b><strong>{playerHealth}</strong></div></div>
+      <div className="evidence-list">{collectedEvidence.length === 0 ? <p>Значимых доказательств не получено.</p> : collectedEvidence.map((entry) => <article key={entry.key}><span>{entry.kind} · {entry.reliability}%</span><b>{entry.title}</b><p>{entry.description}</p></article>)}</div>
       <button className="primary-button" onClick={onClose}>Вернуться на корабль</button>
     </section></div>;
   }
 
   const tutorialObjectId = map.objects.find((entry) => !entry.resolved && entry.evidence)?.id;
-  return <div className="modal-backdrop">
-    <section className="modal expedition-modal field-modal">
-      <header><div><span className="eyebrow">{map.biome.toUpperCase()}</span><h2>{point.name}</h2><p>{isMoving ? 'Перемещение…' : `${map.hazardName} · ${turnsLeft} ходов`}</p></div><button className="icon-button" disabled={isLeaving || isMoving} onClick={onClose}>×</button></header>
-      <section className={`field-target-panel ${selectedEnemy ? 'has-target' : ''}`}>
-        {selectedEnemy ? <><div><span>ЦЕЛЬ</span><b>{selectedEnemy.name}</b></div><div><span>HP</span><b>{Math.max(0, selectedEnemy.health)}/{selectedEnemy.maxHealth}</b></div><div><span>УРОН</span><b>{selectedEnemy.damage}</b></div><button disabled={isMoving || distance(map.player, selectedEnemy) !== 1} onClick={() => void attackSelected()}>{distance(map.player, selectedEnemy) === 1 ? 'Атаковать' : 'Слишком далеко'}</button></> : <p>Нажми на противника, чтобы увидеть здоровье и урон. Нажми на дальнюю клетку — маршрут пройдётся автоматически.</p>}
-      </section>
-      <div className="expedition-layout">
-        <div className="surface-grid" style={{ gridTemplateColumns: `repeat(${map.width}, minmax(0, 1fr))`, gridTemplateRows: `repeat(${map.height}, minmax(0, 1fr))` }}>
-          {map.tiles.map((tile) => {
-            const enemy = map.enemies.find((entry) => entry.x === tile.x && entry.y === tile.y && entry.health > 0);
-            const player = map.player.x === tile.x && map.player.y === tile.y;
-            const object = map.objects.find((entry) => entry.x === tile.x && entry.y === tile.y && !entry.resolved);
-            return <button
-              key={`${tile.x}-${tile.y}`}
-              aria-label={`${tile.x},${tile.y}`}
-              data-tutorial={tile.revealed && object?.id === tutorialObjectId ? 'collect-data' : undefined}
-              disabled={isLeaving || playerHealth <= 0 || isMoving}
-              className={`tile tile-${tile.revealed ? tile.kind : 'hidden'} ${player ? 'tile-player' : ''} ${enemy ? 'tile-enemy' : ''} ${enemy?.id === selectedEnemyId ? 'tile-selected-enemy' : ''} ${object ? 'tile-object' : ''}`}
-              onClick={() => void moveTo(tile.x, tile.y)}
-            >{player ? '◆' : enemy ? '▲' : tile.revealed && object ? object.kind === 'artifact' ? '✦' : object.kind === 'terminal' ? '▣' : object.kind === 'sample' ? '●' : '▥' : ''}</button>;
-          })}
-        </div>
-        <aside className="expedition-sidebar">
-          <div className="meter"><span>HP</span><strong>{playerHealth}</strong><i style={{ width: `${playerHealth}%` }} /></div>
-          <div className="meter warning"><span>ВРЕМЯ</span><strong>{turnsLeft}</strong><i style={{ width: `${Math.max(0, turnsLeft / turnsLimit * 100)}%` }} /></div>
-          <div className="stat-row"><span>Враги</span><b>{map.enemies.filter((enemy) => enemy.health > 0).length}</b></div>
-          <div className="stat-row"><span>Улики</span><b>{collectedEvidence.length}</b></div>
-          {blockedReason && <p className="warning-text">{blockedReason}</p>}
-          <div className="field-log">{log.map((entry, index) => <p key={`${entry}-${index}`}>{entry}</p>)}</div>
-          <div className="field-actions">{has('medkit') && <button disabled={medkitUsed || playerHealth >= 100 || isMoving} onClick={heal}>{medkitUsed ? 'Аптечка использована' : 'Аптечка'}</button>}<button data-tutorial="evacuate" className="primary-button" disabled={isLeaving || isMoving} onClick={() => void leave()}>{isLeaving ? 'Сохранение…' : playerHealth <= 0 ? 'Аварийная эвакуация' : 'Эвакуация'}</button></div>
-        </aside>
-      </div>
+  return <div className="modal-backdrop"><section className="modal expedition-modal field-modal">
+    <header><div><span className="eyebrow">{restored ? 'ВОССТАНОВЛЕННЫЙ ЗАХОД' : map.biome.toUpperCase()}</span><h2>{point.name}</h2><p>{isMoving ? 'Перемещение…' : `${map.hazardName} · ${turnsLeft} ходов`}</p></div><button className="icon-button" disabled={isLeaving || isMoving} onClick={onClose}>×</button></header>
+    <section className="field-mission-strip"><div><span>ЗАДАЧА</span><b>{map.objectiveTitle}</b><small>{map.objectiveDescription}</small></div><strong>{objectiveResolved}/{objectiveTotal}</strong></section>
+    <section className={`field-target-panel ${selectedEnemy ? 'has-target' : ''}`}>
+      {selectedEnemy ? <><div><span>ЦЕЛЬ</span><b>{selectedEnemy.name}</b></div><div><span>HP</span><b>{Math.max(0, selectedEnemy.health)}/{selectedEnemy.maxHealth}</b></div><div><span>УРОН</span><b>{selectedEnemy.damage}</b></div><button disabled={isMoving || distance(map.player, selectedEnemy) !== 1} onClick={() => void attackSelected()}>{distance(map.player, selectedEnemy) === 1 ? 'Атаковать' : 'Слишком далеко'}</button></> : <p>Объекты с меткой цели двигают конкретную задачу. Остальные дают контекст и повышают достоверность вывода.</p>}
     </section>
-  </div>;
+    <div className="expedition-layout"><div className="surface-grid" style={{ gridTemplateColumns: `repeat(${map.width}, minmax(0, 1fr))`, gridTemplateRows: `repeat(${map.height}, minmax(0, 1fr))` }}>
+      {map.tiles.map((tile) => {
+        const enemy = map.enemies.find((entry) => entry.x === tile.x && entry.y === tile.y && entry.health > 0);
+        const player = map.player.x === tile.x && map.player.y === tile.y;
+        const object = map.objects.find((entry) => entry.x === tile.x && entry.y === tile.y && !entry.resolved);
+        return <button key={`${tile.x}-${tile.y}`} aria-label={`${tile.x},${tile.y}`} data-tutorial={tile.revealed && object?.id === tutorialObjectId ? 'collect-data' : undefined} disabled={isLeaving || playerHealth <= 0 || isMoving} className={`tile tile-${tile.revealed ? tile.kind : 'hidden'} ${player ? 'tile-player' : ''} ${enemy ? 'tile-enemy' : ''} ${enemy?.id === selectedEnemyId ? 'tile-selected-enemy' : ''} ${object ? 'tile-object' : ''} ${object?.objective ? 'tile-objective' : ''}`} onClick={() => void moveTo(tile.x, tile.y)}>{player ? '◆' : enemy ? '▲' : tile.revealed && object ? object.kind === 'artifact' ? '✦' : object.kind === 'terminal' ? '▣' : object.kind === 'sample' ? '●' : object.objective ? '◆' : '▥' : ''}</button>;
+      })}
+    </div><aside className="expedition-sidebar">
+      <div className="meter"><span>HP</span><strong>{playerHealth}</strong><i style={{ width: `${playerHealth}%` }} /></div>
+      <div className="meter warning"><span>ВРЕМЯ</span><strong>{turnsLeft}</strong><i style={{ width: `${Math.max(0, turnsLeft / turnsLimit * 100)}%` }} /></div>
+      <div className="stat-row"><span>Цель</span><b>{objectiveResolved}/{objectiveTotal}</b></div><div className="stat-row"><span>Улики</span><b>{collectedEvidence.length}/{mission.requiredEvidence}</b></div>
+      {blockedReason && <p className="warning-text">{blockedReason}</p>}
+      <div className="field-log">{log.map((entry, index) => <p key={`${entry}-${index}`}>{entry}</p>)}</div>
+      <div className="field-actions">{has('medkit') && <button disabled={medkitUsed || playerHealth >= 100 || isMoving} onClick={heal}>{medkitUsed ? 'Аптечка использована' : 'Аптечка'}</button>}<button data-tutorial="evacuate" className="primary-button" disabled={isLeaving || isMoving} onClick={() => void leave()}>{isLeaving ? 'Сохранение…' : playerHealth <= 0 ? 'Аварийная эвакуация' : objectiveResolved >= objectiveTotal ? 'Завершить и эвакуироваться' : 'Эвакуация'}</button></div>
+    </aside></div>
+  </section></div>;
 }

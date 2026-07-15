@@ -20,26 +20,26 @@ export function buildHypothesis(
   year: number,
   previous?: Hypothesis
 ): Hypothesis {
-  const reliability = evidence.length === 0
-    ? 0
-    : evidence.reduce((sum, entry) => sum + entry.reliability, 0) / evidence.length;
+  const reliability = evidence.length === 0 ? 0 : evidence.reduce((sum, entry) => sum + entry.reliability, 0) / evidence.length;
   const diversity = new Set(evidence.map((entry) => entry.kind)).size;
+  const objectiveEvidence = point.objective?.requiredEvidence ?? 2;
   const confidence = Math.max(18, Math.min(98, Math.round(reliability * 0.7 + evidence.length * 7 + diversity * 4)));
-  const status: Hypothesis['status'] = confidence >= 85
+  const status: Hypothesis['status'] = confidence >= 85 && evidence.length >= objectiveEvidence
     ? 'confirmed'
     : confidence >= 60
       ? 'supported'
       : 'tentative';
-
   const strongest = [...evidence].sort((a, b) => b.reliability - a.reliability)[0];
-  const summary = strongest
-    ? `${strongest.description} ${evidence.length > 1 ? `Сопоставлено ${evidence.length} независимых улик.` : 'Версия требует дополнительных данных.'}`
-    : 'Недостаточно данных для уверенного вывода.';
+  const summary = status === 'confirmed'
+    ? point.confirmedSummary ?? point.truth
+    : strongest
+      ? `${strongest.description} ${evidence.length > 1 ? `Сопоставлено ${evidence.length} независимых улик.` : 'Версия требует дополнительных данных.'}`
+      : 'Недостаточно данных для уверенного вывода.';
 
   return {
     id: previous?.id ?? `hyp_${point.id}`,
     pointOfInterestId: point.id,
-    title: titles[point.type],
+    title: point.objective?.title ?? titles[point.type],
     summary,
     confidence,
     status,

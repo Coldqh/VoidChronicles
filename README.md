@@ -1,8 +1,18 @@
 # Void Chronicles
 
-**Current version: v0.29.0 — Progressive World Intelligence**
+**Current version: v0.30.0 — Lorebound Expeditions & True Offline**
 
 Procedural single-player space exploration roguelike and autonomous galaxy-history simulator built with React, TypeScript and Canvas.
+
+## v0.30.0 Lorebound Expeditions & True Offline
+
+- every generated expedition is tied to a real ruin, settlement, war, event, figure, artifact, biosphere or anomaly;
+- numbered generic locations and unrelated artifact fallbacks are removed;
+- field maps use a concrete mission objective and named evidence;
+- completed expeditions reveal linked history through the progressive intelligence model;
+- an unfinished surface expedition is checkpointed locally and restored after closing the browser;
+- the PWA precaches the full application, exposes an offline indicator and only applies updates after the player confirms them.
+
 
 The captain is a participant, not the center of the universe. Species, settlements, states, economies, cultures, social classes, ecosystems and wars continue to exist and change without player involvement.
 
