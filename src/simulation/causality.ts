@@ -78,7 +78,11 @@ export function recentCausalEvents(
   const limit = Math.max(1, params.limit ?? 3);
 
   return state.events
-    .filter((event) => event.atHour < beforeHour)
+    .filter((event) =>
+      event.atHour < beforeHour &&
+      event.visibility !== 'hidden' &&
+      !event.tags.includes('state-snapshot')
+    )
     .filter((event) => {
       const civilizationMatch =
         civilizationIds.size === 0 ||

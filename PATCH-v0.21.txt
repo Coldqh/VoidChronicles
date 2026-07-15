@@ -1,0 +1,33 @@
+Void Chronicles v0.21.0 — Living Economies, Cultures & Society
+
+Combined release for roadmap versions v0.19, v0.20 and v0.21.
+
+New files:
+- src/simulation/economy.ts
+- src/simulation/culture.ts
+- src/simulation/population.ts
+- src/simulation/society.ts
+- src/tests/economyCultureSociety.test.ts
+
+Changed files:
+- src/simulation/causality.ts
+- src/simulation/development.ts
+- src/simulation/projections.ts
+- src/screens/WorldScreen.tsx
+- src/version.ts
+- README.md
+
+Save compatibility:
+- SAVE_SCHEMA_VERSION remains 13.
+- Economy, culture and society state is persisted through compact hidden WorldEvent snapshots.
+- Existing SettlementState, PopulationGroupState and WorldEvent scalar data remain the storage foundation.
+- Old saves do not require a migration.
+
+Validation performed:
+- strict TypeScript validation of all v0.18 and v0.21 simulation modules;
+- strict JSX/type validation of the Living World integration;
+- existing causal-polity-war regression suite;
+- six deterministic economy, culture, language, religion, demography, class mobility, social conflict and causal-integration scenarios;
+- ZIP structure and SHA-256 verification.
+
+Run `npm run check` after applying the patch to validate the complete repository and production build.

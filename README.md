@@ -1,46 +1,72 @@
 # Void Chronicles
 
-**Current version: v0.18.0 — Causal Polities & War**
+**Current version: v0.21.0 — Living Economies, Cultures & Society**
 
 Procedural single-player space exploration roguelike and autonomous galaxy-history simulator built with React, TypeScript and Canvas.
 
-The captain is a participant, not the center of the universe. Species, settlements, states, economies, ecosystems and wars continue to exist and change without player involvement.
+The captain is a participant, not the center of the universe. Species, settlements, states, economies, cultures, social classes, ecosystems and wars continue to exist and change without player involvement.
+
+## v0.21.0 Living Economies, Cultures & Society
+
+This release combines the planned v0.19, v0.20 and v0.21 simulation layers into one compatible upgrade.
+
+### Economy and industry
+
+- each civilization receives an event-sourced live economy;
+- nine industrial sectors track output, capacity, employment, productivity and input pressure;
+- agriculture, water, energy, extraction, manufacturing, medicine, armaments, consumer production and advanced technology use real settlement resources;
+- production reacts to infrastructure, worker health, unrest, technology, stockpiles and functioning trade routes;
+- civilizations track gross product, growth, employment, unemployment, inequality, import dependence, consumer supply, industrial capacity and treasury flow;
+- broken routes and missing inputs can trigger supply-chain collapse, recession and industrial crises;
+- industrial growth changes civilization economy, research, faction wealth and political tension.
+
+### Cultures, languages and religions
+
+- Deep Time cultures continue into the living simulation;
+- static civilization cultures, languages and religions are connected to real population groups;
+- each culture tracks population, share, influence, cohesion, assimilation pressure and radicalization;
+- dominant languages and religions change with demographic influence;
+- mixed populations can form syncretic cultures;
+- assimilation, language standardization, religious reform and cultural conflict become causal world events;
+- cultural tension directly changes loyalty, radicalization, civilization cohesion and stability.
+
+### Population and social conflict
+
+- population groups now change between simulation cycles instead of remaining fixed records;
+- birth and death rates depend on health, housing, shortages, unrest and consumer supply;
+- settlement population is recalculated from real population groups;
+- worker, specialist, security, elite and migrant classes track wealth, health, loyalty, radicalization and migration desire;
+- education, research and infrastructure create class mobility and new elites;
+- unemployment, inequality and cultural tension produce class tension;
+- strikes reduce production;
+- riots damage infrastructure and security;
+- severe radicalization can produce mass revolt and civil conflict;
+- successful reforms can reduce tension and redistribute wealth.
+
+### Integrated causal simulation
+
+- economy, culture and population advance inside the civilization cycle;
+- all three layers update before the game chooses the most important public event;
+- hidden state snapshots stay out of news, contracts and the readable Chronicle;
+- public social events link to wars, shortages, migration, ecology and prior political crises;
+- old save files remain compatible because the new state uses existing scalar WorldEvent data.
+
+### Living World interface
+
+- known states now show their economy, unemployment, import dependence and class tension;
+- dominant cultures, cultural diversity and social loyalty are visible;
+- the strongest industrial sector is shown for known civilizations;
+- social crises appear in the same causal Chronicle as wars, state collapses and ecological disasters.
 
 ## v0.18.0 Causal Polities & War
 
-This release combines the planned v0.16, v0.17 and v0.18 layers into one compatible simulation upgrade.
-
-### Causal history
-
-- world events store machine-readable cause and result links inside the existing event data model;
-- causes link back to their results without changing the save schema;
-- events record created, changed and destroyed entities;
-- causal chains can be traversed in either direction;
-- era transitions, regressions, state crises, secessions, declarations, battles, occupations and peace treaties use the same history graph;
-- the Living World screen shows causal event counts, resolves known cause titles and mixes simulation events into the readable chronicle.
-
-### Living polities
-
-- active Deep Time polities continue into the live campaign;
-- living civilizations without an active historical state receive a continuity polity;
-- each polity tracks form of government, capital, territory, cultures, population, stability, legitimacy, military power, treasury, mobilization and war exhaustion;
-- polity state is persisted through compact hidden state events, so legacy saves remain compatible;
-- state metrics are recalculated from real settlements, population, security, unrest, infrastructure, supply and civilization cohesion;
-- states can collapse, reform, relocate capitals and split through secession;
-- the Living World screen exposes known states and their current strength.
-
-### War, territory and logistics
-
-- neighboring hostile states can start deterministic wars;
-- civil wars can emerge after secession;
-- wars have goals, fronts, strength, supply, exhaustion, casualties and occupied systems;
-- military strength depends on polity forces, mobilization and civilization military capacity;
-- logistics depend on system supply and functioning trade routes;
-- battles kill population, damage infrastructure, reduce health and security, increase unrest and migration pressure;
-- contested routes gain danger, lose traffic and become disrupted;
-- successful offensives occupy systems, transfer territory between states and replace the political owner of local settlements;
-- loss of a capital damages legitimacy and forces relocation;
-- exhaustion, territorial defeat and military collapse can produce peace or capitulation.
+- bidirectional cause and result links between world events;
+- event records for created, changed and destroyed entities;
+- active Deep Time states continue into live history;
+- capitals, territories, legitimacy, treasuries, mobilization and war exhaustion;
+- state collapse, reform, capital relocation and secession;
+- deterministic wars with goals, fronts, logistics, casualties, occupation and peace;
+- battles damage settlements, systems and trade routes.
 
 ## Existing simulation foundation
 

@@ -10,7 +10,7 @@ function visibleProjectionEvent(event: WorldEvent): boolean {
 function categoryFor(event: WorldEvent): NewsItem['category'] {
   if (['conflict', 'disaster', 'shortage'].includes(event.kind)) return 'security';
   if (event.kind === 'discovery' || event.kind === 'research' || event.kind === 'ecology') return 'discovery';
-  if (event.kind === 'politics' || event.kind === 'migration') return 'politics';
+  if (['politics', 'migration', 'demography'].includes(event.kind)) return 'politics';
   return 'trade';
 }
 
@@ -76,7 +76,7 @@ export function projectWorldThreads(args: {
     .slice(0, 12)) {
     threads.push({
       id: `thread_event_${event.id}`,
-      category: event.kind === 'conflict' ? 'conflict' : event.kind === 'ecology' || (event.kind === 'disaster' && event.tags.includes('ecology')) ? 'ecology' : event.kind === 'research' || event.kind === 'discovery' ? 'discovery' : event.kind === 'politics' ? 'politics' : 'culture',
+      category: event.kind === 'conflict' ? 'conflict' : event.kind === 'ecology' || (event.kind === 'disaster' && event.tags.includes('ecology')) ? 'ecology' : event.kind === 'research' || event.kind === 'discovery' ? 'discovery' : event.kind === 'politics' || event.kind === 'economy' || event.kind === 'shortage' ? 'politics' : 'culture',
       status: event.severity >= 7 ? 'escalating' : 'active',
       title: event.title,
       summary: event.summary,

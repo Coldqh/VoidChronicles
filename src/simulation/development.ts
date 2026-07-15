@@ -17,6 +17,7 @@ import {
   recentCausalEvents
 } from './causality';
 import { simulateLivingPolityCycle } from './polities';
+import { simulateLivingSocietyCycle } from './society';
 import { emptyStockpile, populationGroupsForSettlement } from './settlements';
 import type {
   SettlementState,
@@ -287,6 +288,8 @@ function simulateSocietalCycle(
   context: SimulationContext,
   atHour: number
 ): WorldEventDraft | null {
+  const societyEvent = simulateLivingSocietyCycle(state, civilization, context, atHour);
+  if (societyEvent) return societyEvent;
   const polityEvent = simulateLivingPolityCycle(state, civilization, context, atHour);
   if (polityEvent) return polityEvent;
   return simulateLivingWarCycle(state, civilization, context, atHour);
