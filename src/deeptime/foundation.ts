@@ -566,7 +566,7 @@ export function buildDeepTimeFoundation(
   transitions.sort((a, b) => a.year - b.year || a.id.localeCompare(b.id));
 
   const history: HistoricalEvent[] = events.map((event) => ({
-    id: `history_${event.id}`,
+    id: `history_${event.kind}_${event.id}`,
     year: event.year,
     title: event.title,
     summary: event.summary,

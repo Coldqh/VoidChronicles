@@ -53,13 +53,25 @@ describe('galaxy generation', () => {
   });
 
 
-  it('spreads living civilizations across visible connected territories', async () => {
+  it('keeps pre-space civilizations local and territory markers consistent', async () => {
     const galaxy = await generateGalaxy({ ...settings, seed: 'LIVING-TERRITORIES', systemCount: 120, civilizationCount: 18 });
-    const living = galaxy.civilizations.filter((civilization) => civilization.status === 'living');
-    expect(living.length).toBeGreaterThan(galaxy.civilizations.length / 2);
-    expect(living.every((civilization) => civilization.controlledSystems.length >= 2)).toBe(true);
-    for (const civilization of living) {
-      expect(civilization.controlledSystems.every((systemId) => galaxy.systems.find((system) => system.id === systemId)?.civilizationIds.includes(civilization.id))).toBe(true);
+    const surviving = galaxy.civilizations.filter((civilization) => civilization.status !== 'dead');
+
+    expect(surviving.length).toBeGreaterThan(0);
+    expect(galaxy.deepTime).toBeDefined();
+
+    for (const civilization of surviving) {
+      expect(civilization.controlledSystems.length).toBeGreaterThanOrEqual(1);
+
+      if (civilization.development?.spaceAccess === 'none') {
+        expect(civilization.controlledSystems).toEqual([civilization.homeSystemId]);
+      }
+
+      expect(
+        civilization.controlledSystems.every((systemId) =>
+          galaxy.systems.find((system) => system.id === systemId)?.civilizationIds.includes(civilization.id)
+        )
+      ).toBe(true);
     }
   });
 

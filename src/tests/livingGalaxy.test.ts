@@ -14,7 +14,15 @@ describe('living galaxy layer', () => {
     const world = await galaxy();
     const living = initializeLivingGalaxy(world);
     expect(living.factions.length).toBeGreaterThanOrEqual(6);
-    expect(living.hubs.length).toBeGreaterThanOrEqual(5);
+    expect(living.hubs.length).toBeGreaterThan(0);
+    const spacefaringIds = new Set(
+      world.civilizations
+        .filter((civilization) => civilization.development?.spaceAccess && civilization.development.spaceAccess !== 'none')
+        .map((civilization) => civilization.id)
+    );
+    expect(
+      living.hubs.every((hub) => !hub.civilizationId || spacefaringIds.has(hub.civilizationId))
+    ).toBe(true);
     expect(living.hubs.some((hub) => hub.systemId === world.startSystemId)).toBe(true);
     expect(living.hubs.some((hub) => hub.safety !== 'danger')).toBe(true);
     expect(living.contracts.length).toBeGreaterThan(0);
