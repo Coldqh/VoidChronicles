@@ -1,10 +1,62 @@
 # Void Chronicles
 
-**Current version: v0.21.0 — Living Economies, Cultures & Society**
+**Current version: v0.24.0 — Living Figures, Heritage & Planets**
 
 Procedural single-player space exploration roguelike and autonomous galaxy-history simulator built with React, TypeScript and Canvas.
 
 The captain is a participant, not the center of the universe. Species, settlements, states, economies, cultures, social classes, ecosystems and wars continue to exist and change without player involvement.
+
+## v0.24.0 Living Figures, Heritage & Planets
+
+This release combines roadmap versions v0.22, v0.23 and v0.24 and includes the v0.21 economy compatibility hotfix.
+
+### Historical figures and institutions
+
+- historical figures from generated galaxy history continue into the living simulation;
+- civilizations without surviving named figures receive deterministic rulers, commanders, scientists, merchants, religious leaders and explorers;
+- figures track role, influence, competence, ambition, loyalty, achievements, rivals, institution and polity membership;
+- age and species lifespan can end careers and create succession pressure;
+- scientists can create institutional breakthroughs;
+- governments, academies, military structures, religions, trade organizations, intelligence networks and archives become persistent institutions;
+- institutions track influence, wealth, membership, cohesion, corruption and research;
+- corruption scandals and the death of important figures become causal world events.
+
+### Living artifacts, archives and ruins
+
+- generated artifacts now have current owners, locations, integrity, authenticity, cultural value, danger and public knowledge;
+- ownership and event histories continue after campaign start;
+- wars can damage, displace or make artifacts disputed;
+- each living civilization receives an event-sourced historical archive;
+- archives track records, integrity, accessibility, secrecy and deciphering progress;
+- Deep Time ruins continue as active archaeological entities;
+- ruins track integrity, excavation, looting, linked archives and linked artifacts;
+- excavations, archive destruction and artifact disputes enter the causal Chronicle;
+- important living figures can create new historical artifacts during the campaign.
+
+### Planetary consequences
+
+- civilization settlements now apply direct pressure to their real planetary ecosystems;
+- industry, agriculture, extraction, warfare, population and trade determine ecological pressure;
+- conservation values and advanced technology can reduce damage;
+- interstellar societies can conduct persistent terraforming and restoration;
+- contamination, biomass, biodiversity, resilience, climate stability, carrying capacity and biological resources change from civilization activity;
+- trade can spread invasive organisms;
+- dense settlement and ecological disruption can activate pathogens;
+- ecological crisis, invasive spread and planetary restoration become causal world events.
+
+### v0.21 compatibility hotfix
+
+- restored `simulateSettlementCycle` for the simulation kernel;
+- restored `recomputeSystemFromSettlements` for the kernel, trade and migration layers;
+- restored `settlementShortages` for migration decisions;
+- added a regression test that verifies all three exports remain available.
+
+### Living World interface
+
+- known historical figures and their active roles are visible;
+- institutions show influence, cohesion, corruption and membership;
+- artifacts, archives and ruins expose their current condition;
+- known inhabited planets show industrial, military, conservation and terraforming pressure.
 
 ## v0.21.0 Living Economies, Cultures & Society
 

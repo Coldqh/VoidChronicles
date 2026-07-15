@@ -16,7 +16,10 @@ import {
   prospectiveCivilizationCycleEventId,
   recentCausalEvents
 } from './causality';
+import { simulateHistoricalFiguresCycle } from './figures';
+import { simulateHeritageCycle } from './heritage';
 import { simulateLivingPolityCycle } from './polities';
+import { simulatePlanetaryConsequencesCycle } from './planetaryConsequences';
 import { simulateLivingSocietyCycle } from './society';
 import { emptyStockpile, populationGroupsForSettlement } from './settlements';
 import type {
@@ -288,11 +291,32 @@ function simulateSocietalCycle(
   context: SimulationContext,
   atHour: number
 ): WorldEventDraft | null {
-  const societyEvent = simulateLivingSocietyCycle(state, civilization, context, atHour);
-  if (societyEvent) return societyEvent;
-  const polityEvent = simulateLivingPolityCycle(state, civilization, context, atHour);
-  if (polityEvent) return polityEvent;
-  return simulateLivingWarCycle(state, civilization, context, atHour);
+  const drafts = [
+    simulateLivingSocietyCycle(state, civilization, context, atHour),
+    simulateHistoricalFiguresCycle(state, civilization, context, atHour),
+    simulateHeritageCycle(state, civilization, context, atHour),
+    simulatePlanetaryConsequencesCycle(state, civilization, context, atHour),
+    simulateLivingPolityCycle(state, civilization, context, atHour),
+    simulateLivingWarCycle(state, civilization, context, atHour)
+  ].filter((draft): draft is WorldEventDraft => Boolean(draft));
+  const selected = drafts.sort((a, b) => b.severity - a.severity)[0];
+  if (!selected || selected.tags.includes('causal-history')) return selected ?? null;
+  return causalDevelopmentDraft(
+    state,
+    civilization,
+    atHour,
+    selected,
+    [
+      civilization.id,
+      ...selected.systemIds,
+      ...Object.values(state.settlements)
+        .filter((settlement) =>
+          settlement.civilizationId === civilization.id &&
+          selected.systemIds.includes(settlement.systemId)
+        )
+        .map((settlement) => settlement.id)
+    ]
+  );
 }
 
 function causalDevelopmentDraft(

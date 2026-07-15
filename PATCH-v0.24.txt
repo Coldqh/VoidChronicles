@@ -1,0 +1,42 @@
+Void Chronicles v0.24.0 — Living Figures, Heritage & Planets
+
+Combined release for roadmap versions v0.22, v0.23 and v0.24.
+Includes the v0.21 economy compatibility hotfix.
+
+New files:
+- src/simulation/figures.ts
+- src/simulation/heritage.ts
+- src/simulation/planetaryConsequences.ts
+- src/tests/figuresHeritagePlanet.test.ts
+- src/tests/economyCompatibility.test.ts
+
+Changed files:
+- src/simulation/economy.ts
+- src/simulation/development.ts
+- src/screens/WorldScreen.tsx
+- src/version.ts
+- README.md
+
+v0.21 hotfix:
+- restored simulateSettlementCycle;
+- restored recomputeSystemFromSettlements;
+- restored settlementShortages;
+- kernel, trade and migration imports remain source-compatible.
+
+Save compatibility:
+- SAVE_SCHEMA_VERSION remains 13;
+- figures, institutions, artifacts, archives, ruins and planetary impact use compact hidden WorldEvent snapshots;
+- existing saves require no migration;
+- service snapshots remain hidden from news, contracts and the readable Chronicle.
+
+Validation performed:
+- strict TypeScript validation of all changed simulation modules;
+- strict JSX/type validation of Living World integration;
+- five causal polity and war scenarios;
+- six economy, culture and society scenarios;
+- one explicit economy API compatibility scenario;
+- six figures, institutions, heritage and planetary consequence scenarios;
+- all 18 deterministic scenarios pass;
+- patch overlay and ZIP integrity verification.
+
+Run `npm run check` after applying the patch to validate the complete repository and production bundle.
