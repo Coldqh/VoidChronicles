@@ -1,0 +1,243 @@
+/* v0.11.3 — dense phone screens. Detailed text stays behind deliberate expansion. */
+@media (max-width: 700px) {
+  :root { --dense-gap: 3px; --dense-pad: 5px; }
+
+  .crew-screen,
+  .laboratory-screen,
+  .hub-screen,
+  .chronicle-screen,
+  .archive-screen,
+  .contracts-screen,
+  .factions-screen {
+    padding: 4px 4px calc(var(--ui-dock) + 5px) !important;
+    gap: var(--dense-gap) !important;
+    font-size: 9px !important;
+  }
+
+  .crew-screen > header,
+  .laboratory-screen > header,
+  .hub-screen > header,
+  .chronicle-screen > header,
+  .archive-screen > header,
+  .contracts-screen > header,
+  .factions-screen > header {
+    min-height: 0 !important;
+    margin: 0 0 3px !important;
+    padding: 3px 4px !important;
+    gap: 3px !important;
+    align-items: center !important;
+  }
+
+  .crew-screen > header h1,
+  .laboratory-screen h1,
+  .hub-screen > header h1,
+  .chronicle-screen h1,
+  .archive-screen > header h1,
+  .contracts-screen > header h1,
+  .factions-screen > header h1 {
+    margin: 0 !important;
+    font-size: .82rem !important;
+    line-height: 1 !important;
+  }
+
+  .crew-screen > header p,
+  .laboratory-hero p,
+  .hub-screen > header p,
+  .chronicle-hero p,
+  .factions-screen > header p { display: none !important; }
+
+  .crew-screen .eyebrow,
+  .laboratory-screen .eyebrow,
+  .hub-screen .eyebrow,
+  .chronicle-screen .eyebrow,
+  .archive-screen .eyebrow,
+  .contracts-screen .eyebrow,
+  .factions-screen .eyebrow {
+    font-size: .34rem !important;
+    letter-spacing: .07em !important;
+  }
+
+  .crew-screen button,
+  .laboratory-screen button,
+  .hub-screen button,
+  .chronicle-screen button,
+  .archive-screen button,
+  .contracts-screen button,
+  .factions-screen button {
+    min-height: 27px !important;
+    padding: 3px 5px !important;
+    font-size: .48rem !important;
+    line-height: 1.05 !important;
+    border-radius: 5px !important;
+  }
+
+  /* Crew: profiles become roster rows. */
+  .crew-screen > header > div:last-child {
+    display: grid !important;
+    grid-template-columns: 1fr 1fr;
+    gap: 2px !important;
+  }
+  .crew-columns { grid-template-columns: 1fr !important; gap: 4px !important; }
+  .crew-columns > div > h2 { margin: 2px 0 !important; font-size: .58rem !important; }
+  .crew-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; gap: 3px !important; }
+  .crew-card {
+    min-width: 0 !important;
+    display: grid !important;
+    grid-template-columns: 24px minmax(0,1fr) auto !important;
+    align-items: center !important;
+    gap: 1px 4px !important;
+    padding: 4px !important;
+    border-radius: 6px !important;
+  }
+  .crew-card .crew-avatar {
+    grid-row: 1 / span 3;
+    width: 24px !important; height: 24px !important;
+    font-size: .65rem !important;
+  }
+  .crew-card .crew-status { position: static !important; grid-column: 3; grid-row: 1; font-size: .34rem !important; }
+  .crew-card h3 { grid-column: 2; margin: 0 !important; font-size: .58rem !important; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .crew-card > p { grid-column: 2 / -1; margin: 0 !important; font-size: .42rem !important; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .crew-card > b { grid-column: 2 / -1; font-size: .46rem !important; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .crew-card .stat-row { display: inline-flex !important; min-height: 0 !important; padding: 1px 2px !important; font-size: .38rem !important; }
+  .crew-card .stat-row span { display: none; }
+  .crew-card .tags { grid-column: 1 / -1; gap: 2px !important; max-height: 15px; overflow: hidden; }
+  .crew-card .tags span { padding: 1px 3px !important; font-size: .34rem !important; }
+  .crew-card > small { grid-column: 1 / -1; font-size: .38rem !important; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .crew-card > button { grid-column: 1 / -1; min-height: 24px !important; }
+  .crew-card.candidate .stat-row { grid-column: 1 / -1; }
+
+  /* Laboratory: no presentation hero, compact working lists. */
+  .laboratory-hero { min-height: 0 !important; }
+  .laboratory-hero .hero-metric { padding: 3px 5px !important; min-width: 68px !important; }
+  .laboratory-hero .hero-metric b { font-size: .8rem !important; }
+  .laboratory-hero .hero-metric small { display: none !important; }
+  .laboratory-layout { grid-template-columns: 1fr !important; gap: 4px !important; }
+  .lab-column { gap: 3px !important; }
+  .section-heading { min-height: 0 !important; margin: 2px 0 !important; }
+  .section-heading h2 { margin: 0 !important; font-size: .58rem !important; }
+  .section-heading > span { font-size: .4rem !important; }
+  .research-card,
+  .artifact-lab-card,
+  .blueprint-card,
+  .equipment-card,
+  .empty-panel {
+    padding: 5px !important;
+    gap: 3px !important;
+    border-radius: 6px !important;
+  }
+  .research-card header { margin: 0 !important; }
+  .research-card h3,
+  .artifact-lab-card h3,
+  .blueprint-card h3,
+  .equipment-card h3 { margin: 0 !important; font-size: .56rem !important; }
+  .research-card > p,
+  .artifact-lab-card p,
+  .blueprint-card > p,
+  .equipment-card p,
+  .empty-panel p { display: none !important; }
+  .research-card .research-log,
+  .blueprint-card .effect-block { display: none !important; }
+  .research-track { height: 3px !important; margin: 3px 0 !important; }
+  .artifact-glyph,
+  .equipment-icon { width: 24px !important; height: 24px !important; font-size: .65rem !important; }
+  .artifact-lab-card { grid-template-columns: 24px minmax(0,1fr) auto !important; }
+  .artifact-lab-card .tags { max-height: 15px; overflow: hidden; }
+  .technology-section,
+  .equipment-section { margin-top: 4px !important; }
+  .blueprint-grid,
+  .equipment-grid { grid-template-columns: repeat(2,minmax(0,1fr)) !important; gap: 3px !important; }
+  .equipment-card { grid-template-columns: 24px minmax(0,1fr) !important; }
+  .equipment-card select { min-height: 25px !important; padding: 2px !important; font-size: .43rem !important; }
+
+  /* Hub/city: functional dashboard, not a wall of prose. */
+  .hub-grid { grid-template-columns: repeat(2,minmax(0,1fr)) !important; gap: 3px !important; }
+  .hub-grid > article { min-width: 0; padding: 5px !important; border-radius: 6px !important; }
+  .hub-grid h2 { margin: 0 0 3px !important; font-size: .58rem !important; }
+  .hub-grid h3 { margin: 2px 0 !important; font-size: .5rem !important; }
+  .hub-grid article > p,
+  .district-row p,
+  .npc-card > p,
+  .contract-mini > p,
+  .artifact-offer > small { display: none !important; }
+  .district-row,
+  .market-row,
+  .npc-card,
+  .contract-mini,
+  .artifact-offer {
+    margin: 2px 0 !important;
+    padding: 3px !important;
+    gap: 2px !important;
+    border-radius: 4px !important;
+  }
+  .market-row b,
+  .npc-card b,
+  .contract-mini b,
+  .artifact-offer b { font-size: .45rem !important; }
+  .market-row small,
+  .npc-card small,
+  .district-row small { font-size: .35rem !important; }
+  .npc-actions { grid-template-columns: repeat(3,minmax(0,1fr)) !important; gap: 2px !important; }
+  .npc-actions button { min-height: 23px !important; padding: 2px !important; font-size: .4rem !important; }
+  .hub-grid .tags { max-height: 16px; overflow: hidden; }
+
+  /* Chronicle / expedition trace. */
+  .chronicle-hero { min-height: 0 !important; }
+  .chronicle-actions { display: grid !important; grid-template-columns: 1fr 1fr; gap: 2px !important; }
+  .chronicle-metrics { grid-template-columns: repeat(4,minmax(0,1fr)) !important; gap: 2px !important; margin: 3px 0 !important; }
+  .chronicle-metrics article { padding: 3px !important; }
+  .chronicle-metrics b { font-size: .66rem !important; }
+  .chronicle-metrics span { font-size: .32rem !important; }
+  .chronicle-screen .tabs { gap: 2px !important; padding: 2px !important; }
+  .chronicle-screen .tabs button { min-height: 25px !important; }
+  .chronicle-timeline,
+  .captain-legacy-grid,
+  .lost-expedition-grid,
+  .memorial-grid { gap: 3px !important; }
+  .chronicle-entry,
+  .captain-legacy-grid article,
+  .lost-expedition-grid article,
+  .memorial-grid article { padding: 4px !important; border-radius: 5px !important; }
+  .chronicle-entry time { font-size: .42rem !important; }
+  .chronicle-entry h3,
+  .lost-expedition-grid h3,
+  .memorial-grid h3 { margin: 1px 0 !important; font-size: .52rem !important; }
+  .chronicle-entry p,
+  .lost-expedition-grid p,
+  .memorial-grid p {
+    margin: 1px 0 !important;
+    font-size: .4rem !important;
+    line-height: 1.15 !important;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  }
+  .chronicle-footer { gap: 3px !important; padding: 4px 0 !important; }
+
+  /* Other remaining database-like screens. */
+  .archive-grid,
+  .contract-grid,
+  .faction-grid { grid-template-columns: repeat(2,minmax(0,1fr)) !important; gap: 3px !important; }
+  .archive-grid article,
+  .contract-card,
+  .faction-card { padding: 5px !important; border-radius: 6px !important; }
+  .archive-grid h3,
+  .contract-card h2,
+  .faction-card h2 { margin: 1px 0 !important; font-size: .54rem !important; }
+  .archive-grid p,
+  .contract-card > p,
+  .faction-card > p {
+    margin: 1px 0 !important;
+    font-size: .4rem !important;
+    line-height: 1.15 !important;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  }
+  .archive-summary { display: none !important; }
+}
+
+@media (max-width: 340px) {
+  .crew-grid,
+  .blueprint-grid,
+  .equipment-grid,
+  .hub-grid,
+  .archive-grid,
+  .contract-grid,
+  .faction-grid { grid-template-columns: 1fr !important; }
+}
