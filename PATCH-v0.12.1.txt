@@ -1,0 +1,11 @@
+Void Chronicles v0.12.1
+
+Исправление:
+- миграция schema v11 принимает новые типы событий v0.12;
+- добавлены settlement-cycle, trade-cycle и migration-cycle;
+- ecology-cycle также допускается в legacy-парсере;
+- версия приложения обновляется до 0.12.1;
+- данные сейва и сама симуляция не изменяются.
+
+Применение:
+node .\scripts\apply-v0121-snapshot-migration-hotfix.mjs

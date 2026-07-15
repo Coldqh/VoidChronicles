@@ -505,7 +505,7 @@ const worldEventSchema = z.object({
   tags: z.array(z.string()), data: z.record(z.string(), z.union([z.string(), finiteNumber, z.boolean()])).optional()
 });
 const scheduledEventV1Schema = z.object({
-  id: z.string(), kind: z.enum(['civilization-cycle','faction-cycle','system-cycle','war-cycle']), dueHour: finiteNumber,
+  id: z.string(), kind: z.enum(['civilization-cycle','faction-cycle','system-cycle','war-cycle','ecology-cycle','settlement-cycle','trade-cycle','migration-cycle']), dueHour: finiteNumber,
   repeatHours: finiteNumber.optional(), entityId: z.string().optional(), seedKey: z.string()
 });
 const scheduledEventV2Schema = z.object({
