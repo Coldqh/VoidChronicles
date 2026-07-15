@@ -1,132 +1,116 @@
 # Void Chronicles
 
-**Current version: v0.11.0 — Ecosystems**
+**Current version: v0.18.0 — Causal Polities & War**
 
-Procedural single-player space exploration roguelike built with React, TypeScript and Canvas.
+Procedural single-player space exploration roguelike and autonomous galaxy-history simulator built with React, TypeScript and Canvas.
 
+The captain is a participant, not the center of the universe. Species, settlements, states, economies, ecosystems and wars continue to exist and change without player involvement.
 
+## v0.18.0 Causal Polities & War
 
-## v0.11.0 Ecosystems
+This release combines the planned v0.16, v0.17 and v0.18 layers into one compatible simulation upgrade.
+
+### Causal history
+
+- world events store machine-readable cause and result links inside the existing event data model;
+- causes link back to their results without changing the save schema;
+- events record created, changed and destroyed entities;
+- causal chains can be traversed in either direction;
+- era transitions, regressions, state crises, secessions, declarations, battles, occupations and peace treaties use the same history graph;
+- the Living World screen shows causal event counts, resolves known cause titles and mixes simulation events into the readable chronicle.
+
+### Living polities
+
+- active Deep Time polities continue into the live campaign;
+- living civilizations without an active historical state receive a continuity polity;
+- each polity tracks form of government, capital, territory, cultures, population, stability, legitimacy, military power, treasury, mobilization and war exhaustion;
+- polity state is persisted through compact hidden state events, so legacy saves remain compatible;
+- state metrics are recalculated from real settlements, population, security, unrest, infrastructure, supply and civilization cohesion;
+- states can collapse, reform, relocate capitals and split through secession;
+- the Living World screen exposes known states and their current strength.
+
+### War, territory and logistics
+
+- neighboring hostile states can start deterministic wars;
+- civil wars can emerge after secession;
+- wars have goals, fronts, strength, supply, exhaustion, casualties and occupied systems;
+- military strength depends on polity forces, mobilization and civilization military capacity;
+- logistics depend on system supply and functioning trade routes;
+- battles kill population, damage infrastructure, reduce health and security, increase unrest and migration pressure;
+- contested routes gain danger, lose traffic and become disrupted;
+- successful offensives occupy systems, transfer territory between states and replace the political owner of local settlements;
+- loss of a capital damages legitimacy and forces relocation;
+- exhaustion, territorial defeat and military collapse can produce peace or capitulation.
+
+## Existing simulation foundation
+
+### v0.15 Living History Continuity
+
+- active Deep Time settlements are projected into the live simulation;
+- pre-space civilizations remain living planetary societies;
+- civilizations continue advancing or regressing after campaign start;
+- historical founding dates survive the transition into live time.
+
+### v0.14 Deep History
+
+- settlements, states, wars, migrations, technologies, ruins and long historical event chains;
+- millions of years of deterministic pre-campaign history;
+- historical entities remain linked through stable identifiers.
+
+### v0.13 Deep Time
+
+- civilizational eras from pre-sapient life to advanced interstellar societies;
+- population, literacy, urbanization, industry, energy use, innovation, stability and collapse risk;
+- technological development and regression.
+
+### v0.12 Settlements, Trade and Migration
+
+- persistent settlements and population groups;
+- production, consumption, stockpiles and shortages;
+- trade routes and migration cycles;
+- settlement state drives system population and economy.
+
+### v0.11 Ecosystems
 
 - deterministic planetary biomes, species, food webs and pathogens;
-- climate stability, biomass, biodiversity, resilience, contamination and biological resources;
-- autonomous ecological cycles that continue without player involvement;
-- extinctions, outbreaks, collapses, blooms and recoveries become world events, news and contracts;
-- detailed planetary scans reveal compact ecosystem reports and dominant species;
-- biosphere expeditions can extract samples and leave measurable ecological impact;
-- save schema v12 migrates v11 simulation campaigns into ecological state.
+- climate stability, biomass, biodiversity, resilience and contamination;
+- extinctions, outbreaks, collapses, blooms and recoveries;
+- expeditions can extract samples and damage ecosystems.
 
-## v0.10.0 Simulation Kernel
+### v0.10 Simulation Kernel
 
-- independent world clock measured in hours instead of player-triggered year jumps;
-- deterministic scheduled simulation for civilizations, factions and important systems;
-- world events are now the source for news, contracts and Living World projections;
-- player knowledge is stored separately from the real state of systems, planets and artifacts;
-- markets react to simulated supply and trade pressure;
-- travel, scans, expeditions, repairs, research, docking, recruitment and trade consume world time;
-- Chronicle observation advances the same galaxy simulation after the captain dies;
-- save schema v11 migrates v10 campaigns into simulation and knowledge records.
+- independent world clock measured in hours;
+- deterministic scheduled simulation;
+- world events drive news, contracts and Living World projections;
+- player knowledge is stored separately from real state;
+- travel, research, trade, repairs and expeditions consume world time;
+- Chronicle observation advances the same galaxy after the captain dies.
 
-## v0.9.8 Expedition Flow & Roguelike Cleanup
+## Player layer
 
-- square tactical expedition maps with enemy inspection;
-- tap-to-path movement with animated turns;
-- contextual event windows instead of a separate scene database;
-- restored crew recruitment and clearer signal access rules;
-- denser living-civilization territories;
-- strict roguelike death with no AI continuation;
-- compact loadout, combat and game-over windows.
+The existing game includes:
 
-## v0.9.7 Mobile Combat & Windows
-
-- compact phone layouts for expedition preparation, tactical exploration and debriefing;
-- compact ship contact, combat and boarding windows;
-- mobile gameplay modals now cover the HUD and dock instead of rendering underneath them;
-- settings and story-event cards use reduced spacing and typography on phone web builds.
-
-## v0.9.6 Navigation & Generation Recovery
-
-- compact bottom-center phone section menu without duplicated primary tabs;
-- smaller desktop drawer;
-- centered route, planet and gameplay windows;
-- clean orbital touch targets without grey overlays;
-- tutorial target highlighting without blurring the game;
-- exact system-count validation, worker recovery and a 300-system generation test;
-- anonymous sensor returns show that unexplored systems exist without revealing their data.
-
-## v0.9.5.1 Start Screen Scroll Hotfix
-
-- mobile new-campaign screen owns vertical scrolling in browser and installed PWA mode;
-- campaign creation controls remain reachable on short displays;
-- start-screen form, title, spacing and buttons are compacted without touching save data.
-
-## v0.9.5 Mobile Density & Scroll Core
-
-- fixed vertical scrolling in installed mobile PWA mode with one internal scroll owner per data screen;
-- changed the galaxy camera to open on the local sector instead of fitting the whole known galaxy;
-- added explicit local-sector and overview camera controls;
-- reduced mobile HUD, dock, cards, spacing and headings by roughly 35–50%;
-- removed secondary text and repeated statistics from compact lists and bridge shortcuts;
-- shortened Living World and Operations rows and moved details behind deliberate disclosure;
-- kept map screens fixed while data screens scroll independently.
-
-## v0.9.4 Mobile Interface Rebuild
-
-- full-screen touch-native galaxy and system maps;
-- compact bridge and bottom-sheet object inspection;
-- list/detail navigation for Living World and Civilizations;
-- segmented mobile Operations and Ship screens;
-- no document-level horizontal movement and no squeezed desktop panels.
-
-## v0.9.3 Adaptive Interface
-
-- one vertical scroll flow on phones and tablets;
-- no document-level horizontal scrolling or tab rails;
-- circular responsive star-system orbits on every viewport;
-- galaxy-map gestures no longer block normal page scrolling;
-- separate density rules for phone, tablet, laptop and wide desktop screens.
-
-## v0.9.2 Responsive Shell
-
-- device-specific layouts for phones, tablets, laptops and wide desktop screens;
-- natural vertical page scrolling restored across the application;
-- compact mobile HUD and fixed five-action mobile dock;
-- responsive maps, panels, cards, modals, combat and expedition layouts;
-- safe-area support for installed iOS/Android PWA mode.
-
-## v0.9 Legacy & Continuity
-
-- captain loss can lead to death, capture, disappearance, retirement or an interrupted command instead of deleting the run;
-- living crew members and the ship AI can inherit command with different strengths and restrictions;
-- lost expeditions, captain records, memorials and a readable campaign chronicle persist in the ironman archive;
-- a finished run enters Chronicle mode where the galaxy can be observed for future years;
-- ship defeat now interrupts command and opens succession instead of silently restoring the captured captain;
-- Settings, succession and chronicle screens include confirmed campaign reset and start-over actions;
-- save schema v10 migrates v9 warfare saves automatically.
+- captain, ship and crew management;
+- galaxy and star-system maps;
+- scans, discoveries and persistent expedition locations;
+- tactical surface expeditions;
+- artifacts, evidence, hypotheses and research;
+- factions, hubs, contracts, markets and local NPCs;
+- ship contacts, combat, boarding and pursuit;
+- strict death, succession records, memorials and Chronicle mode;
+- responsive desktop, tablet and mobile PWA layouts.
 
 ## Development
 
 ```bash
 npm ci
-npm run dev
 npm run typecheck
 npm test
 npm run build
 ```
 
-## v0.3 Command Deck
+The full validation command is:
 
-- dedicated bridge/home screen;
-- separate galaxy and star-system maps;
-- crew recruitment, contracts, payroll, morale and memories;
-- expedition team selection with role bonuses;
-- save schema v4 with v3 migration.
-
-
-### v0.7.1 corrective layer
-
-- resilient IndexedDB + localStorage ironman rescue;
-- contextual interface onboarding with real actions;
-- unknown-by-default knowledge model;
-- varied persistent expedition locations;
-- simplified command and navigation surfaces.
+```bash
+npm run check
+```

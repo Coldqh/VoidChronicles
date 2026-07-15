@@ -3,6 +3,10 @@ import type { PlayerKnowledgeState, SimulationState, WorldEvent } from './types'
 import { knowsEntity } from './knowledge';
 import { worldYear } from './clock';
 
+function visibleProjectionEvent(event: WorldEvent): boolean {
+  return event.visibility !== 'hidden' && !event.tags.includes('state-snapshot');
+}
+
 function categoryFor(event: WorldEvent): NewsItem['category'] {
   if (['conflict', 'disaster', 'shortage'].includes(event.kind)) return 'security';
   if (event.kind === 'discovery' || event.kind === 'research' || event.kind === 'ecology') return 'discovery';
@@ -17,6 +21,7 @@ export function projectNewsFromEvents(
   currentSystemId?: string
 ): NewsItem[] {
   const known = events.filter((event) => {
+    if (!visibleProjectionEvent(event)) return false;
     if (event.visibility === 'public') return true;
     if (currentSystemId && event.systemIds.includes(currentSystemId)) return true;
     return event.systemIds.some((id) => knowsEntity(knowledge, 'system', id));
@@ -66,7 +71,9 @@ export function projectWorldThreads(args: {
     });
   }
 
-  for (const event of simulation.events.filter((entry) => entry.severity >= 4).slice(0, 12)) {
+  for (const event of simulation.events
+    .filter((entry) => visibleProjectionEvent(entry) && entry.severity >= 4)
+    .slice(0, 12)) {
     threads.push({
       id: `thread_event_${event.id}`,
       category: event.kind === 'conflict' ? 'conflict' : event.kind === 'ecology' || (event.kind === 'disaster' && event.tags.includes('ecology')) ? 'ecology' : event.kind === 'research' || event.kind === 'discovery' ? 'discovery' : event.kind === 'politics' ? 'politics' : 'culture',
@@ -114,7 +121,10 @@ export function projectContractsFromEvents(args: {
 }): Contract[] {
   const { events, existing, hubs, year } = args;
   const generated: Contract[] = [];
-  for (const event of events.filter((entry) => ['shortage', 'migration', 'conflict', 'disaster', 'ecology'].includes(entry.kind))) {
+  for (const event of events.filter((entry) =>
+    visibleProjectionEvent(entry) &&
+    ['shortage', 'migration', 'conflict', 'disaster', 'ecology'].includes(entry.kind)
+  )) {
     const targetSystemId = event.systemIds[0];
     const issuer = hubs.find((hub) => hub.safety !== 'danger' && hub.systemId !== targetSystemId) ?? hubs.find((hub) => hub.safety !== 'danger');
     if (!targetSystemId || !issuer) continue;

@@ -11,6 +11,12 @@ import {
 } from '../deeptime/eras';
 import type { CivilizationalEra, CivilizationSpaceAccess } from '../deeptime/types';
 import type { SimulationContext } from './context';
+import {
+  causalizeDraft,
+  prospectiveCivilizationCycleEventId,
+  recentCausalEvents
+} from './causality';
+import { simulateLivingPolityCycle } from './polities';
 import { emptyStockpile, populationGroupsForSettlement } from './settlements';
 import type {
   SettlementState,
@@ -18,6 +24,7 @@ import type {
   WorldEvent,
   WorldEventDraft
 } from './types';
+import { simulateLivingWarCycle } from './war';
 
 const HOURS_PER_YEAR = 365 * 24;
 const ERA_SET = new Set<CivilizationalEra>([
@@ -274,6 +281,42 @@ function lastDevelopmentHour(state: SimulationState, civilizationId: string): nu
   return latestEraEvent(state, civilizationId)?.atHour ?? 0;
 }
 
+function simulateSocietalCycle(
+  state: SimulationState,
+  civilization: Civilization,
+  context: SimulationContext,
+  atHour: number
+): WorldEventDraft | null {
+  const polityEvent = simulateLivingPolityCycle(state, civilization, context, atHour);
+  if (polityEvent) return polityEvent;
+  return simulateLivingWarCycle(state, civilization, context, atHour);
+}
+
+function causalDevelopmentDraft(
+  state: SimulationState,
+  civilization: Civilization,
+  atHour: number,
+  draft: WorldEventDraft,
+  changedEntityIds: string[]
+): WorldEventDraft {
+  const systemIds = Object.values(state.settlements)
+    .filter((settlement) => settlement.civilizationId === civilization.id)
+    .map((settlement) => settlement.systemId);
+  const causeEventIds = recentCausalEvents(state, {
+    civilizationIds: [civilization.id],
+    systemIds,
+    kinds: ['shortage', 'ecology', 'conflict', 'migration', 'politics', 'disaster'],
+    tags: ['living-polity', 'living-war', 'causal-history'],
+    beforeHour: atHour,
+    limit: 3
+  }).map((event) => event.id);
+  return causalizeDraft(state, draft, {
+    causeEventIds,
+    changedEntityIds,
+    prospectiveEventId: prospectiveCivilizationCycleEventId(state, civilization.id, atHour)
+  });
+}
+
 export function simulateCivilizationDevelopmentCycle(
   state: SimulationState,
   civilization: Civilization,
@@ -283,12 +326,14 @@ export function simulateCivilizationDevelopmentCycle(
   const simulationCivilization = state.civilizations[civilization.id];
   if (!simulationCivilization?.alive) return null;
 
+  const societalEvent = simulateSocietalCycle(state, civilization, context, atHour);
+  if (societalEvent) return societalEvent;
   const currentEra = liveEraForCivilization(state, civilization);
   const yearsSinceLastChange = Math.max(
     0,
     (atHour - lastDevelopmentHour(state, civilization.id)) / HOURS_PER_YEAR
   );
-  if (yearsSinceLastChange < ERA_CHECK_YEARS[currentEra]) return null;
+  if (yearsSinceLastChange < ERA_CHECK_YEARS[currentEra]) return societalEvent;
 
   const metrics = eraProgressScore(state, civilization.id);
   const rng = createRng(
@@ -317,44 +362,52 @@ export function simulateCivilizationDevelopmentCycle(
       simulationCivilization.military = clamp(simulationCivilization.military - 8);
       simulationCivilization.lastUpdatedHour = atHour;
 
-      return {
-        kind: 'disaster',
-        title: `${civilization.name}: цивилизационный регресс`,
-        summary: `Кризис разрушил часть институтов и инфраструктуры. Общество откатилось из эпохи «${ERA_LABELS[currentEra]}» в эпоху «${ERA_LABELS[targetEra]}».`,
-        severity: 9,
-        visibility: 'public',
-        systemIds: Object.values(state.settlements)
+      return causalDevelopmentDraft(
+        state,
+        civilization,
+        atHour,
+        {
+          kind: 'disaster',
+          title: `${civilization.name}: цивилизационный регресс`,
+          summary: `Кризис разрушил часть институтов и инфраструктуры. Общество откатилось из эпохи «${ERA_LABELS[currentEra]}» в эпоху «${ERA_LABELS[targetEra]}».`,
+          severity: 9,
+          visibility: 'public',
+          systemIds: Object.values(state.settlements)
+            .filter((settlement) => settlement.civilizationId === civilization.id)
+            .map((settlement) => settlement.systemId),
+          civilizationIds: [civilization.id],
+          factionIds: context.factions
+            .filter((faction) => faction.civilizationId === civilization.id)
+            .map((faction) => faction.id),
+          tags: ['simulation', 'living-history', 'living-history-era', 'regression'],
+          data: {
+            era: targetEra,
+            previousEra: currentEra,
+            spaceAccess: spaceAccessForEra(targetEra),
+            techLevel: legacyTechLevelForEra(targetEra),
+            progressScore: Math.round(metrics.score),
+            regression: true
+          }
+        },
+        [civilization.id, ...Object.values(state.settlements)
           .filter((settlement) => settlement.civilizationId === civilization.id)
-          .map((settlement) => settlement.systemId),
-        civilizationIds: [civilization.id],
-        factionIds: context.factions
-          .filter((faction) => faction.civilizationId === civilization.id)
-          .map((faction) => faction.id),
-        tags: ['simulation', 'living-history', 'living-history-era', 'regression'],
-        data: {
-          era: targetEra,
-          previousEra: currentEra,
-          spaceAccess: spaceAccessForEra(targetEra),
-          techLevel: legacyTechLevelForEra(targetEra),
-          progressScore: Math.round(metrics.score),
-          regression: true
-        }
-      };
+          .map((settlement) => settlement.id)]
+      );
     }
   }
 
   const targetEra = nextEra(currentEra);
-  if (!targetEra) return null;
+  if (!targetEra) return societalEvent;
 
   const windowYears = developmentWindowYears(currentEra);
   const accumulatedProgress = metrics.score * yearsSinceLastChange;
   const requiredProgress = windowYears * (58 + eraIndex(currentEra) * 1.5);
-  if (accumulatedProgress < requiredProgress) return null;
+  if (accumulatedProgress < requiredProgress) return societalEvent;
 
   const stabilityGate = simulationCivilization.stability >= 26;
   const healthGate = metrics.health >= 32;
   const researchGate = simulationCivilization.research >= Math.min(88, 22 + eraIndex(targetEra) * 4);
-  if (!stabilityGate || !healthGate || !researchGate) return null;
+  if (!stabilityGate || !healthGate || !researchGate) return societalEvent;
 
   applyEraEffects(state, civilization, currentEra, targetEra, atHour, context);
   simulationCivilization.research = clamp(simulationCivilization.research + 4);
@@ -362,27 +415,35 @@ export function simulateCivilizationDevelopmentCycle(
   simulationCivilization.military = clamp(simulationCivilization.military + 2);
   simulationCivilization.lastUpdatedHour = atHour;
 
-  return {
-    kind: 'research',
-    title: `${civilization.name}: переход в эпоху «${ERA_LABELS[targetEra]}»`,
-    summary: `Рост знаний, производства и институтов завершил эпоху «${ERA_LABELS[currentEra]}». Развитие произошло внутри живой симуляции после начала кампании.`,
-    severity: Math.min(10, 5 + Math.floor(eraIndex(targetEra) / 2)),
-    visibility: eraIndex(targetEra) >= eraIndex('early-space') ? 'public' : 'local',
-    systemIds: Object.values(state.settlements)
+  return causalDevelopmentDraft(
+    state,
+    civilization,
+    atHour,
+    {
+      kind: 'research',
+      title: `${civilization.name}: переход в эпоху «${ERA_LABELS[targetEra]}»`,
+      summary: `Рост знаний, производства и институтов завершил эпоху «${ERA_LABELS[currentEra]}». Развитие произошло внутри живой симуляции после начала кампании.`,
+      severity: Math.min(10, 5 + Math.floor(eraIndex(targetEra) / 2)),
+      visibility: eraIndex(targetEra) >= eraIndex('early-space') ? 'public' : 'local',
+      systemIds: Object.values(state.settlements)
+        .filter((settlement) => settlement.civilizationId === civilization.id)
+        .map((settlement) => settlement.systemId),
+      civilizationIds: [civilization.id],
+      factionIds: context.factions
+        .filter((faction) => faction.civilizationId === civilization.id)
+        .map((faction) => faction.id),
+      tags: ['simulation', 'living-history', 'living-history-era', 'era-transition'],
+      data: {
+        era: targetEra,
+        previousEra: currentEra,
+        spaceAccess: spaceAccessForEra(targetEra),
+        techLevel: legacyTechLevelForEra(targetEra),
+        progressScore: Math.round(metrics.score),
+        regression: false
+      }
+    },
+    [civilization.id, ...Object.values(state.settlements)
       .filter((settlement) => settlement.civilizationId === civilization.id)
-      .map((settlement) => settlement.systemId),
-    civilizationIds: [civilization.id],
-    factionIds: context.factions
-      .filter((faction) => faction.civilizationId === civilization.id)
-      .map((faction) => faction.id),
-    tags: ['simulation', 'living-history', 'living-history-era', 'era-transition'],
-    data: {
-      era: targetEra,
-      previousEra: currentEra,
-      spaceAccess: spaceAccessForEra(targetEra),
-      techLevel: legacyTechLevelForEra(targetEra),
-      progressScore: Math.round(metrics.score),
-      regression: false
-    }
-  };
+      .map((settlement) => settlement.id)]
+  );
 }

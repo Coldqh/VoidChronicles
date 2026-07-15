@@ -1,0 +1,28 @@
+Void Chronicles v0.18.0 — Causal Polities & War
+
+Combined release for roadmap versions v0.16, v0.17 and v0.18.
+
+New files:
+- src/simulation/causality.ts
+- src/simulation/polities.ts
+- src/simulation/war.ts
+- src/tests/causalPolitiesWar.test.ts
+
+Changed files:
+- src/simulation/development.ts
+- src/simulation/projections.ts
+- src/screens/WorldScreen.tsx
+- src/version.ts
+- README.md
+
+Save compatibility:
+- SAVE_SCHEMA_VERSION remains 13.
+- New polity and war state is event-sourced through existing WorldEvent.data scalar fields.
+- Old saves do not require a migration.
+
+Validation performed:
+- strict TypeScript check for new simulation modules and development integration;
+- strict JSX/type check for WorldScreen integration against project-shaped store types;
+- five deterministic runtime scenarios for polity projection, bidirectional causal links, polity persistence, hidden-state projection isolation, war creation, casualties, settlement damage, occupation, territory transfer and trade disruption.
+
+Full repository npm run check must be executed after applying the patch because this environment does not contain the complete dependency-installed checkout.
