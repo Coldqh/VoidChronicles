@@ -1,0 +1,10 @@
+Void Chronicles v0.12.2.1 — Build Test Hotfix
+
+Исправлено:
+- ecology.test.ts ожидает SimulationState v3 вместо устаревшего v2;
+- package.json обновлён с 0.11.0 до 0.12.2;
+- package-lock.json синхронизирован с package.json;
+- игровая логика, симуляция и сейвы не изменяются.
+
+Применение:
+node .\scripts\apply-v01221-build-test-hotfix.mjs

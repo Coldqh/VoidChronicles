@@ -49,7 +49,7 @@ describe('planetary ecosystems', () => {
     const { ecosystems: _ecosystems, ...legacyData } = current;
     const legacy = { ...legacyData, version: 1 as const, scheduledEvents: legacyData.scheduledEvents.filter((entry) => entry.kind !== 'ecology-cycle') };
     const upgraded = upgradeSimulationEcosystems(legacy, generated.context);
-    expect(upgraded.version).toBe(2);
+    expect(upgraded.version).toBe(3);
     expect(upgraded.clock.absoluteHour).toBe(12_345);
     expect(Object.keys(upgraded.ecosystems).length).toBeGreaterThan(0);
     expect(upgraded.scheduledEvents.some((entry) => entry.kind === 'ecology-cycle')).toBe(true);
