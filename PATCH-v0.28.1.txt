@@ -1,0 +1,11 @@
+Void Chronicles v0.28.1 — Scheduled event fixture hotfix
+
+Исправлено:
+- simulationStability.test.ts теперь создаёт полноценные ScheduledWorldEvent;
+- добавлены kind, dueHour, entityId и seedKey;
+- устранена ошибка TypeScript TS2322 на строке scheduledEvents.
+
+Проверено:
+- TypeScript typecheck;
+- simulationStability.test.ts: 9 тестов;
+- kernelStability.test.ts: 1 тест.

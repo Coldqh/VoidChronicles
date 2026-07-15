@@ -5,7 +5,7 @@ import {
   SIMULATION_EVENT_LIMIT,
   SIMULATION_SCHEDULE_LIMIT
 } from '../simulation/stability';
-import type { SimulationState, WorldEvent } from '../simulation/types';
+import type { ScheduledWorldEvent, SimulationState, WorldEvent } from '../simulation/types';
 
 const stock = (value: number) => ({
   food: value,
@@ -59,7 +59,13 @@ function fixture(): SimulationState {
     tradeRoutes: {
       valid: { id: 'wrong', originSettlementId: 'settlement', destinationSettlementId: 'settlement_missing', pathSystemIds: ['sys', 'missing'], cargo: ['food'], capacity: -5, traffic: 150, danger: -4, disrupted: false, lastUpdatedHour: -1 }
     },
-    scheduledEvents: Array.from({ length: 30_500 }, (_, index) => ({ id: `scheduled_${index % 25_500}` })),
+    scheduledEvents: Array.from({ length: 30_500 }, (_, index): ScheduledWorldEvent => ({
+      id: `scheduled_${index % 25_500}`,
+      kind: 'system-cycle',
+      dueHour: index + 1,
+      entityId: 'sys',
+      seedKey: `stability:${index}`
+    })),
     events: [],
     nextSequence: -5,
     lastAdvanceReason: 'test'
