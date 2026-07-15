@@ -1,10 +1,50 @@
 # Void Chronicles
 
-**Current version: v0.28.0 — Simulation Stability**
+**Current version: v0.29.0 — Progressive World Intelligence**
 
 Procedural single-player space exploration roguelike and autonomous galaxy-history simulator built with React, TypeScript and Canvas.
 
 The captain is a participant, not the center of the universe. Species, settlements, states, economies, cultures, social classes, ecosystems and wars continue to exist and change without player involvement.
+
+
+## v0.29.0 Progressive World Intelligence
+
+The world is now readable without becoming omniscient. Every dossier, war report and Chronicle entry is projected through the captain's actual knowledge.
+
+### Progressive discovery
+
+- unknown systems, states, wars and historical events are not counted or displayed;
+- weak signals create redacted rumors instead of exact dossiers;
+- scans reveal presence and approximate scale;
+- visits and direct observation confirm local conditions;
+- translated signals reveal identity, language and culture;
+- formal contact reveals politics, territory and economy;
+- trusted relations reveal population, military strength, historical figures and institutions;
+- completed archaeology and archive work unlock historical records;
+- operational intelligence becomes stale when it is not confirmed for decades.
+
+### Knowledge-safe Chronicle
+
+- the old `Вся симуляция` access mode has been removed from the player interface;
+- Deep Time events remain hidden until connected archives, systems or civilizations are known;
+- rumors hide names, exact figures, participants and causal links;
+- observations reveal the narrative but redact exact numbers;
+- confirmed reports reveal known participants and some causes;
+- only verified access reveals complete causal chains and entity changes;
+- period comparisons count only information available to the player.
+
+### Progressive dossiers
+
+- polity, war and settlement cards show a confidence level and source;
+- hidden fields display `нет данных` instead of leaking simulation values;
+- scanned settlements show approximate population but not stockpiles;
+- stockpiles require confirmed local access;
+- full production data requires direct verified access;
+- figures and institutions require trusted contact;
+- archives and ruins require discoveries or historical access;
+- planetary pressure requires confirmed planetary scans.
+
+`SAVE_SCHEMA_VERSION` remains 13. Existing knowledge and contact records drive the new interface without a save migration.
 
 ## v0.28.0 Simulation Stability
 

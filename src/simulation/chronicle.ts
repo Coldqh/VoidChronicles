@@ -1,6 +1,20 @@
+import type { CivilizationContact } from '../game/types';
 import type { SimulationContext } from './context';
 import { causalLinksForEvent } from './causality';
-import type { SimulationState, WorldEvent } from './types';
+import type { PlayerKnowledgeState, SimulationState, WorldEvent } from './types';
+import {
+  civilizationIntelligence,
+  combineIntelligence,
+  eventIntelligence,
+  intelligenceAtLeast,
+  intelligenceFor,
+  intelligenceLabel,
+  intelligenceSourceLabel,
+  publicRumor,
+  redactExactFigures,
+  type EntityIntelligence,
+  type IntelligenceLevel
+} from './intelligence';
 
 const HOURS_PER_YEAR = 365 * 24;
 
@@ -296,4 +310,219 @@ export function chronicleDomainLabel(domain: ChronicleDomain): string {
     player: 'Действие игрока',
     other: 'Другое'
   }[domain];
+}
+
+
+export interface ChronicleIntelligenceContext {
+  knowledge: PlayerKnowledgeState;
+  contacts: CivilizationContact[];
+  currentHour: number;
+  archiveCivilizationIds?: string[];
+}
+
+export interface KnownChronicleRecord extends ChronicleRecord {
+  intelligenceLevel: IntelligenceLevel;
+  confidence: number;
+  intelligenceSource: string;
+  staleYears: number;
+  redacted: boolean;
+  unknownCauseLinks: boolean;
+  unknownResultLinks: boolean;
+}
+
+export interface KnownChronicleQuery extends ChronicleQuery {
+  minimumIntelligence?: IntelligenceLevel;
+}
+
+function historicalIntelligence(
+  record: ChronicleRecord,
+  access: ChronicleIntelligenceContext
+): EntityIntelligence {
+  const contactByCivilization = new Map(access.contacts.map((contact) => [contact.civilizationId, contact]));
+  const entries: EntityIntelligence[] = [];
+  for (const systemId of record.systemIds) {
+    entries.push(intelligenceFor(access.knowledge, 'system', systemId, access.currentHour));
+  }
+  for (const civilizationId of record.civilizationIds) {
+    entries.push(civilizationIntelligence(access.knowledge, contactByCivilization.get(civilizationId), civilizationId, access.currentHour));
+    if (access.archiveCivilizationIds?.includes(civilizationId)) {
+      entries.push({
+        entityId: civilizationId,
+        entityType: 'civilization',
+        level: 'confirmed',
+        confidence: 88,
+        source: 'archive',
+        knownFields: ['identity', 'history', 'events'],
+        staleYears: 0
+      });
+    }
+  }
+  const combined = entries.length ? combineIntelligence(...entries) : publicRumor('system', record.id, 0);
+  if (combined.level === 'unknown') return combined;
+  const hasHistoricalAccess = combined.source === 'archive' || combined.knownFields.includes('history') || combined.knownFields.includes('events');
+  if (hasHistoricalAccess) return combined;
+  return {
+    ...combined,
+    level: combined.level === 'verified' ? 'confirmed' : combined.level === 'confirmed' ? 'observed' : 'rumor',
+    confidence: Math.min(combined.confidence, 62)
+  };
+}
+
+function recordIntelligence(
+  record: ChronicleRecord,
+  state: SimulationState,
+  access: ChronicleIntelligenceContext
+): EntityIntelligence {
+  if (record.source === 'deep-history') return historicalIntelligence(record, access);
+  const event = state.events.find((entry) => entry.id === record.id);
+  return event
+    ? eventIntelligence(event, access.knowledge, access.contacts, access.currentHour)
+    : publicRumor('system', record.id, 0);
+}
+
+function knownEntityIds(
+  record: ChronicleRecord,
+  access: ChronicleIntelligenceContext,
+  minimum: IntelligenceLevel
+): Pick<ChronicleRecord, 'systemIds' | 'civilizationIds' | 'factionIds'> {
+  const contacts = new Map(access.contacts.map((contact) => [contact.civilizationId, contact]));
+  return {
+    systemIds: record.systemIds.filter((id) => intelligenceAtLeast(intelligenceFor(access.knowledge, 'system', id, access.currentHour), minimum)),
+    civilizationIds: record.civilizationIds.filter((id) => intelligenceAtLeast(civilizationIntelligence(access.knowledge, contacts.get(id), id, access.currentHour), minimum)),
+    factionIds: record.factionIds.filter((id) => intelligenceAtLeast(intelligenceFor(access.knowledge, 'faction', id, access.currentHour), minimum))
+  };
+}
+
+function genericRecordTitle(record: ChronicleRecord): string {
+  return record.source === 'deep-history'
+    ? `Фрагмент прошлого: ${chronicleDomainLabel(record.domain)}`
+    : `Непроверенные сведения: ${chronicleDomainLabel(record.domain)}`;
+}
+
+function projectKnownRecord(
+  record: ChronicleRecord,
+  intelligence: EntityIntelligence,
+  access: ChronicleIntelligenceContext
+): KnownChronicleRecord {
+  const visibleEntities = knownEntityIds(record, access, intelligence.level === 'rumor' ? 'observed' : 'rumor');
+  const rumor = intelligence.level === 'rumor';
+  const observed = intelligence.level === 'observed';
+  const verified = intelligence.level === 'verified';
+  return {
+    ...record,
+    title: rumor ? genericRecordTitle(record) : record.title,
+    summary: rumor
+      ? 'Получен обрывочный сигнал. Место, участники и масштаб события не подтверждены.'
+      : observed
+        ? redactExactFigures(record.summary)
+        : record.summary,
+    severity: rumor ? Math.max(1, Math.min(5, record.severity - 2)) : observed ? Math.max(1, record.severity - 1) : record.severity,
+    systemIds: visibleEntities.systemIds,
+    civilizationIds: visibleEntities.civilizationIds,
+    factionIds: visibleEntities.factionIds,
+    figureIds: verified ? record.figureIds : [],
+    causedByEventIds: intelligenceAtLeast(intelligence, 'confirmed') ? record.causedByEventIds : [],
+    resultedInEventIds: verified ? record.resultedInEventIds : [],
+    createdEntityIds: verified ? record.createdEntityIds : [],
+    changedEntityIds: verified ? record.changedEntityIds : [],
+    destroyedEntityIds: verified ? record.destroyedEntityIds : [],
+    intelligenceLevel: intelligence.level,
+    confidence: Math.round(intelligence.confidence),
+    intelligenceSource: intelligenceSourceLabel(intelligence.source),
+    staleYears: intelligence.staleYears,
+    redacted: !verified,
+    unknownCauseLinks: record.causedByEventIds.length > 0 && !intelligenceAtLeast(intelligence, 'confirmed'),
+    unknownResultLinks: record.resultedInEventIds.length > 0 && !verified
+  };
+}
+
+export function buildKnownChronicle(
+  state: SimulationState,
+  context: SimulationContext,
+  access: ChronicleIntelligenceContext,
+  query: KnownChronicleQuery = {}
+): KnownChronicleRecord[] {
+  const minimum = query.minimumIntelligence ?? 'observed';
+  const base = buildChronicle(state, context, { ...query, includeHidden: true, limit: Math.max(query.limit ?? 1_000, 10_000) });
+  const projected = base
+    .map((record) => {
+      const intelligence = recordIntelligence(record, state, access);
+      return intelligenceAtLeast(intelligence, minimum) ? projectKnownRecord(record, intelligence, access) : null;
+    })
+    .filter((record): record is KnownChronicleRecord => Boolean(record));
+  const visibleIds = new Set(projected.map((record) => record.id));
+  return projected.map((record) => ({
+    ...record,
+    causedByEventIds: record.causedByEventIds.filter((id) => visibleIds.has(id)),
+    resultedInEventIds: record.resultedInEventIds.filter((id) => visibleIds.has(id)),
+    unknownCauseLinks: record.unknownCauseLinks || record.causedByEventIds.some((id) => !visibleIds.has(id)),
+    unknownResultLinks: record.unknownResultLinks || record.resultedInEventIds.some((id) => !visibleIds.has(id))
+  })).slice(0, Math.max(1, query.limit ?? 1_000));
+}
+
+export function traceKnownCausalChain(
+  state: SimulationState,
+  eventId: string,
+  access: ChronicleIntelligenceContext,
+  minimum: IntelligenceLevel = 'observed',
+  maxDepth = 6
+): WorldEvent[] {
+  return traceCausalChain(state, eventId, 'both', maxDepth).filter((event) =>
+    intelligenceAtLeast(eventIntelligence(event, access.knowledge, access.contacts, access.currentHour), minimum)
+  );
+}
+
+export function compareKnownChroniclePeriods(
+  state: SimulationState,
+  context: SimulationContext,
+  access: ChronicleIntelligenceContext,
+  fromYear: number,
+  toYear: number,
+  minimumIntelligence: IntelligenceLevel = 'observed'
+): ChronicleComparison {
+  const records = buildKnownChronicle(state, context, access, { fromYear, toYear, minimumIntelligence, limit: 10_000 });
+  const eventById = new Map(state.events.map((event) => [event.id, event]));
+  const recordedPopulationDelta = records.reduce((sum, record) => {
+    if (!intelligenceAtLeast({ entityId: record.id, entityType: 'system', level: record.intelligenceLevel, confidence: record.confidence, knownFields: [], staleYears: record.staleYears }, 'confirmed')) return sum;
+    const value = eventById.get(record.id)?.data?.populationDelta;
+    return sum + (typeof value === 'number' ? value : 0);
+  }, 0);
+  const recordedCasualties = records.reduce((sum, record) => {
+    if (record.intelligenceLevel !== 'verified') return sum;
+    const event = eventById.get(record.id);
+    const values = [event?.data?.casualties, event?.data?.warCasualties, event?.data?.playerCasualtiesAvoided];
+    return sum + values.reduce<number>((inner, value) => inner + (typeof value === 'number' ? value : 0), 0);
+  }, 0);
+  const changedSystemIds = unique(records.flatMap((record) => record.systemIds));
+  const changedCivilizationIds = unique(records.flatMap((record) => record.civilizationIds));
+  const severeEvents = records.filter((record) => record.severity >= 7).length;
+  const playerInterventions = records.filter((record) => record.playerInvolved).length;
+  const wars = records.filter((record) => record.domain === 'war').length;
+  const crises = records.filter((record) => ['economy', 'society', 'ecology', 'demography'].includes(record.domain) && record.severity >= 6).length;
+  const discoveries = records.filter((record) => record.domain === 'science' || record.domain === 'heritage').length;
+  const createdEntities = unique(records.flatMap((record) => record.createdEntityIds)).length;
+  const destroyedEntities = unique(records.flatMap((record) => record.destroyedEntityIds)).length;
+  return {
+    fromYear,
+    toYear,
+    events: records.length,
+    severeEvents,
+    wars,
+    crises,
+    discoveries,
+    playerInterventions,
+    recordedPopulationDelta,
+    recordedCasualties,
+    createdEntities,
+    destroyedEntities,
+    changedSystemIds,
+    changedCivilizationIds,
+    headline: records.length === 0
+      ? 'За выбранный период доступных сведений нет.'
+      : `${records.length} известных событий: ${wars} военных, ${crises} кризисных, ${discoveries} исследовательских. Часть истории остаётся скрытой.`
+  };
+}
+
+export function knownChronicleStatus(record: KnownChronicleRecord): string {
+  return `${intelligenceLabel(record.intelligenceLevel)} · ${record.confidence}% · ${record.intelligenceSource}`;
 }

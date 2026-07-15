@@ -1,0 +1,27 @@
+Void Chronicles v0.29.0 — Progressive World Intelligence
+
+Base: v0.28.1 or newer.
+Save schema: 13, no migration.
+
+Changes:
+- adds a five-level intelligence model: unknown, rumor, observed, confirmed, verified;
+- derives access from knowledge records, source confidence, contact stage and data age;
+- removes the player-facing "entire simulation" Chronicle mode;
+- hides Deep Time records until systems, civilizations or archives are known;
+- redacts names, exact values, participants and causal links at low intelligence levels;
+- adds knowledge-safe Chronicle comparison and causal tracing;
+- replaces omniscient polity, war and settlement cards with progressive dossiers;
+- gates economy, society, figures, institutions, heritage and planetary pressure behind suitable sources;
+- adds deterministic tests for secrecy, rumors, contact progression, staleness and known-only comparisons.
+
+Validation performed in the patch harness:
+- strict TypeScript for simulation modules;
+- strict JSX/type validation for WorldScreen and LegacyScreen;
+- 44 deterministic tests across v0.18-v0.29 systems.
+
+After extraction:
+  cd C:\VoidChronicles
+  npm run check
+  git add README.md PATCH-v0.29.txt src
+  git commit -m "feat: v0.29 progressive world intelligence"
+  git push origin main
