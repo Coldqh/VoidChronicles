@@ -221,7 +221,12 @@ export function generateSurface(seed: string, planet: Planet, point: PointOfInte
   const interior = tiles.filter((tile) => tile.x > 1 && tile.y > 1 && tile.x < mapWidth - 2 && tile.y < mapHeight - 2);
   const farCandidates = interior.filter((tile) => Math.abs(tile.x - player.x) + Math.abs(tile.y - player.y) > Math.floor((mapWidth + mapHeight) * 0.28));
   const objectiveItems = objectiveBlueprints(point);
-  const supportCount = tutorialMap ? 0 : Math.max(1, Math.min(3, mission.requiredEvidence - 1));
+  const supportBase = Math.max(1, Math.min(3, mission.requiredEvidence - 1));
+  const supportVariation = Array.from(point.id).reduce(
+    (value, character) => (Math.imul(value, 33) + character.charCodeAt(0)) >>> 0,
+    point.possibleRewards.length
+  ) % 3;
+  const supportCount = tutorialMap ? 0 : Math.min(4, supportBase + supportVariation);
   const blueprints = [...objectiveItems, ...supportBlueprints(point, supportCount)];
   const positions = tutorialMap
     ? [{ x: Math.min(mapWidth - 3, player.x + 4), y: player.y }, { x: mapWidth - 3, y: Math.max(2, player.y - 2) }].slice(0, blueprints.length)
