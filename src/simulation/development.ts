@@ -353,14 +353,14 @@ export function simulateCivilizationDevelopmentCycle(
   const simulationCivilization = state.civilizations[civilization.id];
   if (!simulationCivilization?.alive) return null;
 
-  const societalEvent = simulateSocietalCycle(state, civilization, context, atHour);
-  if (societalEvent) return societalEvent;
   const currentEra = liveEraForCivilization(state, civilization);
   const yearsSinceLastChange = Math.max(
     0,
     (atHour - lastDevelopmentHour(state, civilization.id)) / HOURS_PER_YEAR
   );
-  if (yearsSinceLastChange < ERA_CHECK_YEARS[currentEra]) return societalEvent;
+  if (yearsSinceLastChange < ERA_CHECK_YEARS[currentEra]) {
+    return simulateSocietalCycle(state, civilization, context, atHour);
+  }
 
   const metrics = eraProgressScore(state, civilization.id);
   const rng = createRng(
@@ -421,20 +421,25 @@ export function simulateCivilizationDevelopmentCycle(
           .map((settlement) => settlement.id)]
       );
     }
+    return null;
   }
 
   const targetEra = nextEra(currentEra);
-  if (!targetEra) return societalEvent;
+  if (!targetEra) return simulateSocietalCycle(state, civilization, context, atHour);
 
   const windowYears = developmentWindowYears(currentEra);
   const accumulatedProgress = metrics.score * yearsSinceLastChange;
   const requiredProgress = windowYears * (58 + eraIndex(currentEra) * 1.5);
-  if (accumulatedProgress < requiredProgress) return societalEvent;
+  if (accumulatedProgress < requiredProgress) {
+    return simulateSocietalCycle(state, civilization, context, atHour);
+  }
 
   const stabilityGate = simulationCivilization.stability >= 26;
   const healthGate = metrics.health >= 32;
   const researchGate = simulationCivilization.research >= Math.min(88, 22 + eraIndex(targetEra) * 4);
-  if (!stabilityGate || !healthGate || !researchGate) return societalEvent;
+  if (!stabilityGate || !healthGate || !researchGate) {
+    return simulateSocietalCycle(state, civilization, context, atHour);
+  }
 
   applyEraEffects(state, civilization, currentEra, targetEra, atHour, context);
   simulationCivilization.research = clamp(simulationCivilization.research + 4);
