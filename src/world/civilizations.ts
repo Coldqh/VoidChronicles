@@ -59,9 +59,13 @@ export function enrichCivilization(civilization: Civilization, galaxySeed: strin
     sacredObjects: pickMany(['останки основателей', 'навигационные карты', 'ритуальное оружие', 'архивные кристаллы', 'семена родного мира', 'маски правителей'], 2, `${galaxySeed}:${civilization.id}:religion:${index}:objects`)
   }));
   const cultureCount = civilization.status === 'living' ? rng.int(2, 4) : rng.int(1, 3);
+  const preSpace = (civilization.development?.spaceAccess ?? 'interstellar') === 'none';
+  const culturePrefixes = preSpace
+    ? ['Речная', 'Прибрежная', 'Горная', 'Династическая', 'Лесная', 'Кочевая']
+    : ['Орбитальная', 'Прибрежная', 'Пограничная', 'Династическая', 'Архивная', 'Кочевая'];
   const cultures = Array.from({ length: cultureCount }, (_, index) => ({
     id: `culture_${civilization.id}_${index}`,
-    name: `${rng.pick(['Орбитальная', 'Прибрежная', 'Пограничная', 'Династическая', 'Архивная', 'Кочевая'])} культура ${civilization.speciesName}`,
+    name: `${rng.pick(culturePrefixes)} культура ${civilization.speciesName}`,
     values: pickMany(values, 3, `${galaxySeed}:${civilization.id}:culture:${index}:values`),
     taboos: pickMany(taboos, 2, `${galaxySeed}:${civilization.id}:culture:${index}:taboos`),
     artForms: pickMany(artForms, 2, `${galaxySeed}:${civilization.id}:culture:${index}:arts`),
@@ -70,9 +74,11 @@ export function enrichCivilization(civilization: Civilization, galaxySeed: strin
   }));
   const stateCount = civilization.status === 'living' ? rng.int(1, Math.min(4, Math.max(1, civilization.controlledSystems.length))) : rng.int(1, 3);
   const stateSystems = civilization.controlledSystems.length > 0 ? civilization.controlledSystems : [civilization.homeSystemId];
+  const statePrefixes = preSpace ? ['Царство', 'Империя', 'Республика', 'Синод', 'Династия', 'Лига городов'] : ['Союз', 'Доминион', 'Республика', 'Синод', 'Династия', 'Лига'];
+  const stateSuffixes = preSpace ? ['Семи Рек', 'Первой Памяти', 'Свободных Городов', 'Высоких Плато', 'Внутреннего Моря'] : ['Внутренних Миров', 'Семи Портов', 'Первой Памяти', 'Свободных Колоний', 'Стеклянных Орбит'];
   const states = Array.from({ length: stateCount }, (_, index) => ({
     id: `state_${civilization.id}_${index}`,
-    name: `${rng.pick(['Союз', 'Доминион', 'Республика', 'Синод', 'Династия', 'Лига'])} ${rng.pick(['Внутренних Миров', 'Семи Портов', 'Первой Памяти', 'Свободных Колоний', 'Стеклянных Орбит'])}`,
+    name: `${rng.pick(statePrefixes)} ${rng.pick(stateSuffixes)}`,
     government: rng.pick(governments),
     capitalSystemId: stateSystems[index % stateSystems.length]!,
     status: civilization.status === 'living' ? 'active' as const : rng.chance(0.25) ? 'exiled' as const : 'collapsed' as const,

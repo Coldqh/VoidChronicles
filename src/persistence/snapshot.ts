@@ -71,6 +71,60 @@ const civilizationStateSchema = z.object({
   status: z.enum(['active','collapsed','exiled']), outsiderPolicy: z.string()
 });
 
+const civilizationalEraSchema = z.enum(['pre-sapient','tribal','neolithic','urban','bronze','iron','medieval','gunpowder','industrial','modern','atomic','early-space','interplanetary','interstellar','advanced']);
+const deepTechnologyProfileSchema = z.object({
+  subsistence: finiteNumber, agriculture: finiteNumber, materials: finiteNumber, writing: finiteNumber,
+  governance: finiteNumber, medicine: finiteNumber, navigation: finiteNumber, military: finiteNumber,
+  industry: finiteNumber, energy: finiteNumber, computing: finiteNumber, biology: finiteNumber,
+  spaceflight: finiteNumber, ftl: finiteNumber
+});
+const civilizationDevelopmentSchema = z.object({
+  civilizationId: z.string(), era: civilizationalEraSchema, eraStartedYear: finiteNumber,
+  technology: deepTechnologyProfileSchema, population: finiteNumber, urbanization: finiteNumber,
+  literacy: finiteNumber, industrialization: finiteNumber, energyUse: finiteNumber,
+  ecologicalPressure: finiteNumber, stability: finiteNumber, innovation: finiteNumber,
+  spaceAccess: z.enum(['none','orbital','interplanetary','interstellar','ftl']), regressionCount: finiteNumber,
+  collapseRisk: finiteNumber, extinct: z.boolean(), extinctionYear: finiteNumber.optional()
+});
+const deepTimeSpeciesSchema = z.object({
+  id: z.string(), civilizationId: z.string(), name: z.string(), originPlanetId: z.string(),
+  biologicalOriginYear: finiteNumber, sapienceYear: finiteNumber, status: z.enum(['extant','extinct','diaspora']),
+  population: finiteNumber, adaptability: finiteNumber, cooperation: finiteNumber, aggression: finiteNumber,
+  cognition: finiteNumber, homeEnvironment: z.string()
+});
+const deepTimeCultureSchema = z.object({
+  id: z.string(), civilizationId: z.string(), name: z.string(), originYear: finiteNumber,
+  endedYear: finiteNumber.optional(), status: z.enum(['living','absorbed','extinct']), values: z.array(z.string()),
+  adaptation: z.string(), parentCultureId: z.string().optional()
+});
+const deepTimePolitySchema = z.object({
+  id: z.string(), civilizationId: z.string(), name: z.string(),
+  form: z.enum(['band','tribal-confederation','city-state','kingdom','empire','republic','theocracy','industrial-state','planetary-union','orbital-polity','interplanetary-state','stellar-state']),
+  status: z.enum(['active','collapsed','absorbed','exiled']), formedYear: finiteNumber, endedYear: finiteNumber.optional(),
+  capitalSystemId: z.string(), territorySystemIds: z.array(z.string()), cultureIds: z.array(z.string()),
+  population: finiteNumber, stability: finiteNumber, legitimacy: finiteNumber, military: finiteNumber
+});
+const eraTransitionSchema = z.object({
+  id: z.string(), civilizationId: z.string(), from: civilizationalEraSchema, to: civilizationalEraSchema,
+  year: finiteNumber, reason: z.string(), regression: z.boolean()
+});
+const deepTimeEventSchema = z.object({
+  id: z.string(), year: finiteNumber,
+  kind: z.enum(['biological-origin','sapience','era-transition','state-formation','state-collapse','war','migration','discovery','regression','collapse','extinction']),
+  title: z.string(), summary: z.string(), severity: finiteNumber, civilizationIds: z.array(z.string()),
+  polityIds: z.array(z.string()), systemIds: z.array(z.string()), tags: z.array(z.string())
+});
+const deepTimeStateSchema = z.object({
+  version: z.literal(1), startYear: finiteNumber, endYear: finiteNumber,
+  species: z.array(deepTimeSpeciesSchema), cultures: z.array(deepTimeCultureSchema), polities: z.array(deepTimePolitySchema),
+  civilizations: z.record(z.string(), civilizationDevelopmentSchema), transitions: z.array(eraTransitionSchema), events: z.array(deepTimeEventSchema),
+  statistics: z.object({
+    generatedCivilizations: finiteNumber, livingCivilizations: finiteNumber, extinctCivilizations: finiteNumber,
+    hiddenCivilizations: finiteNumber, preSpaceCivilizations: finiteNumber, spacefaringCivilizations: finiteNumber,
+    transitions: finiteNumber, regressions: finiteNumber, events: finiteNumber
+  })
+});
+
 const civilizationSchema = z.object({
   id: z.string().min(1),
   name: z.string(),
@@ -91,7 +145,12 @@ const civilizationSchema = z.object({
   socialClasses: z.array(z.string()).optional(),
   outsiderPolicy: z.string().optional(),
   originMystery: z.string().optional(),
-  extinctionCause: z.string().optional()
+  extinctionCause: z.string().optional(),
+  era: civilizationalEraSchema.optional(),
+  technology: deepTechnologyProfileSchema.optional(),
+  development: civilizationDevelopmentSchema.optional(),
+  deepTimeCultureIds: z.array(z.string()).optional(),
+  deepTimePolityIds: z.array(z.string()).optional()
 });
 
 const figureSchema = z.object({
@@ -153,6 +212,7 @@ const galaxySchema = z.object({
   figures: z.array(figureSchema),
   history: z.array(historySchema),
   artifacts: z.array(artifactSchema),
+  deepTime: deepTimeStateSchema.optional(),
   startSystemId: z.string().min(1)
 });
 

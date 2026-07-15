@@ -13,6 +13,7 @@ import type {
 } from '../game/types';
 import { civilizationName, figureName, planetName, speciesName, starName } from './names';
 import { createRng, stableHash } from './rng';
+import { buildDeepTimeFoundation } from '../deeptime/foundation';
 
 const settingsSchema = z.object({
   seed: z.string().min(1),
@@ -318,12 +319,16 @@ export async function generateGalaxy(
   const systems = createSystems(settings);
   if (systems.length !== settings.systemCount) throw new Error(`Generation integrity error: ${systems.length}/${settings.systemCount} systems`);
   await emit('planets', 0.25, `Создано ${systems.length} звёздных систем`);
-  const civilizations = createCivilizations(settings, systems);
-  await emit('civilizations', 0.46, `Возникло ${civilizations.length} цивилизаций`);
+  const initialCivilizations = createCivilizations(settings, systems);
+  await emit('civilizations', 0.42, `Возникло ${initialCivilizations.length} разумных линий`);
+  const foundation = buildDeepTimeFoundation(settings, systems, initialCivilizations);
+  const civilizations = foundation.civilizations;
+  const deepTime = foundation.deepTime;
+  await emit('deep-time', 0.62, `Пройдены эпохи: ${deepTime.transitions.length} переходов, ${deepTime.statistics.extinctCivilizations} окончательных гибелей`);
   const figures = createFigures(settings, civilizations);
-  await emit('figures', 0.62, `Зафиксировано ${figures.length} исторических личностей`);
-  const history = createHistory(settings, systems, civilizations, figures);
-  await emit('history', 0.82, `Симулировано ${history.length} крупных событий`);
+  await emit('figures', 0.72, `Зафиксировано ${figures.length} исторических личностей`);
+  const history = foundation.history.length ? foundation.history : createHistory(settings, systems, civilizations, figures);
+  await emit('history', 0.86, `Сформирована причинная хроника из ${history.length} событий`);
   const artifacts = createArtifacts(settings, civilizations, figures);
   const startSystem = systems.find((system) => system.region === 'core' && system.danger === 'safe') ?? systems[0];
   if (!startSystem) throw new Error('Galaxy generation produced no systems');
@@ -347,6 +352,7 @@ export async function generateGalaxy(
     figures,
     history,
     artifacts,
+    deepTime,
     startSystemId: startSystem.id
   };
 }

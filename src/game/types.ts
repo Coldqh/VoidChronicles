@@ -1,4 +1,10 @@
 import type { PlayerKnowledgeState, SimulationState } from '../simulation/types';
+import type {
+  CivilizationDevelopmentState,
+  CivilizationTechnologyProfile,
+  CivilizationalEra,
+  DeepTimeState
+} from '../deeptime/types';
 
 export type DangerLevel = 'safe' | 'caution' | 'danger' | 'extreme';
 export type StarClass = 'M' | 'K' | 'G' | 'F' | 'A' | 'B' | 'O' | 'WHITE_DWARF' | 'NEUTRON' | 'BLACK_HOLE';
@@ -143,6 +149,11 @@ export interface Civilization {
   outsiderPolicy?: string;
   originMystery?: string;
   extinctionCause?: string;
+  era?: CivilizationalEra;
+  technology?: CivilizationTechnologyProfile;
+  development?: CivilizationDevelopmentState;
+  deepTimeCultureIds?: string[];
+  deepTimePolityIds?: string[];
 }
 
 export interface HistoricalFigure {
@@ -193,6 +204,7 @@ export interface Galaxy {
   figures: HistoricalFigure[];
   history: HistoricalEvent[];
   artifacts: Artifact[];
+  deepTime?: DeepTimeState;
   startSystemId: string;
 }
 

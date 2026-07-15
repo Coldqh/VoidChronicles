@@ -183,8 +183,9 @@ export function initializeLivingGalaxy(galaxy: { seed: string; systems: StarSyst
 } {
   const rng = createRng(`${galaxy.seed}:living-galaxy`);
   const livingCivilizations = galaxy.civilizations.filter((civilization) => civilization.status === 'living');
-  const factionCount = Math.max(6, Math.min(14, livingCivilizations.length + 5));
-  const factions = Array.from({ length: factionCount }, (_, index) => makeFaction(index, livingCivilizations[index % Math.max(1, livingCivilizations.length)], rng));
+  const spacefaringCivilizations = livingCivilizations.filter((civilization) => (civilization.development?.spaceAccess ?? 'interstellar') !== 'none');
+  const factionCount = Math.max(6, Math.min(14, spacefaringCivilizations.length + 5));
+  const factions = Array.from({ length: factionCount }, (_, index) => makeFaction(index, spacefaringCivilizations[index % Math.max(1, spacefaringCivilizations.length)], rng));
   factions.forEach((faction, index) => {
     const next = factions[(index + 1) % factions.length];
     const rival = factions[(index + Math.ceil(factions.length / 2)) % factions.length];
@@ -192,8 +193,9 @@ export function initializeLivingGalaxy(galaxy: { seed: string; systems: StarSyst
     if (rival && rival.id !== faction.id) faction.enemies = [rival.id];
   });
 
+  const spacefaringIds = new Set(spacefaringCivilizations.map((civilization) => civilization.id));
   const candidateSystems = galaxy.systems
-    .filter((system) => system.region === 'core' || system.civilizationIds.length > 0)
+    .filter((system) => system.region === 'core' || system.civilizationIds.some((id) => spacefaringIds.has(id)))
     .sort((a, b) => (a.region === 'core' ? -1 : 1) - (b.region === 'core' ? -1 : 1));
   const hubSystems = candidateSystems.slice(0, Math.max(5, Math.min(16, candidateSystems.length)));
   const hubs = hubSystems.map((system, index) => {
