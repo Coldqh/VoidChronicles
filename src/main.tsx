@@ -6,6 +6,7 @@ import { RuntimeErrorBoundary } from './components/RuntimeErrorBoundary';
 import { installGlobalDiagnostics } from './runtime/diagnostics';
 import { flushPendingSave } from './persistence/db';
 import './styles/mobileDenseScreens.css';
+import './styles/settlements.css';
 
 installGlobalDiagnostics();
 

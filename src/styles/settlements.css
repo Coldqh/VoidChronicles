@@ -1,0 +1,41 @@
+.settlement-stock-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 5px;
+  margin: 8px 0;
+}
+.settlement-stock-grid > div {
+  min-width: 0;
+  padding: 7px;
+  border: 1px solid rgba(255,255,255,.07);
+  border-radius: 7px;
+  background: rgba(255,255,255,.025);
+}
+.settlement-stock-grid span { display:block; color:#718892; font-size:.58rem; text-transform:uppercase; }
+.settlement-stock-grid b { display:block; margin-top:2px; font-size:.85rem; }
+.settlement-stock-grid .shortage { border-color:rgba(255,120,100,.35); background:rgba(255,80,70,.06); }
+.settlement-resource-row { display:flex; justify-content:space-between; gap:8px; padding:4px 0; border-top:1px solid rgba(255,255,255,.06); }
+.settlement-resource-row span { color:#8198a2; }
+.settlement-list .has-shortage { border-color:rgba(255,120,100,.25) !important; }
+.settlement-core-stats { grid-template-columns:repeat(4,minmax(0,1fr)) !important; }
+.desktop-settlement-list { display:grid; gap:4px; margin:6px 0 12px; }
+.desktop-settlement-list button { display:grid; gap:2px; padding:7px; text-align:left; }
+.desktop-settlement-list span { color:#718892; font-size:.64rem; }
+.world-feed-heading { display:block; margin-top:10px; }
+
+@media (max-width:700px) {
+  .world-mobile .mobile-segmented.three { grid-template-columns:repeat(3,minmax(0,1fr)) !important; }
+  .settlement-detail { gap:4px !important; }
+  .settlement-detail h2 { margin:1px 0 !important; font-size:.88rem !important; }
+  .settlement-detail .mobile-lead { margin:0 !important; font-size:.55rem !important; }
+  .settlement-core-stats { gap:2px !important; }
+  .settlement-core-stats span { padding:4px !important; font-size:.4rem !important; }
+  .settlement-core-stats b { font-size:.56rem !important; }
+  .settlement-stock-grid { gap:2px; margin:3px 0; }
+  .settlement-stock-grid > div { padding:4px; border-radius:5px; }
+  .settlement-stock-grid span { font-size:.34rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .settlement-stock-grid b { font-size:.5rem; }
+  .settlement-resource-row { padding:2px 0; font-size:.43rem; }
+  .settlement-detail .mobile-action-card { padding:5px !important; }
+  .settlement-detail .mobile-action-card p { margin:2px 0 0 !important; font-size:.48rem !important; }
+}

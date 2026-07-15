@@ -1,4 +1,5 @@
 import type { PlanetEcologyState } from '../ecology/types';
+
 export type SimulationEventKind =
   | 'demography'
   | 'migration'
@@ -12,8 +13,23 @@ export type SimulationEventKind =
   | 'ecology';
 
 export type SimulationEventVisibility = 'public' | 'local' | 'hidden';
-export type SimulationEntityType = 'system' | 'planet' | 'civilization' | 'faction' | 'hub' | 'artifact' | 'ecosystem' | 'species';
+export type SimulationEntityType =
+  | 'system'
+  | 'planet'
+  | 'civilization'
+  | 'faction'
+  | 'hub'
+  | 'artifact'
+  | 'ecosystem'
+  | 'species'
+  | 'settlement'
+  | 'populationGroup'
+  | 'tradeRoute';
 export type KnowledgeSource = 'direct' | 'scan' | 'contact' | 'news' | 'archive' | 'rumor';
+
+export type SettlementKind = 'city' | 'orbital' | 'mining' | 'research' | 'military' | 'trade' | 'illegal' | 'colony' | 'abandoned';
+export type SettlementResource = 'food' | 'water' | 'energy' | 'medicine' | 'parts' | 'weapons' | 'luxury' | 'rareMaterials';
+export type SettlementStockpile = Record<SettlementResource, number>;
 
 export interface WorldClock {
   /** Hours elapsed since the player campaign began. */
@@ -56,6 +72,58 @@ export interface SimulationFactionState {
   lastUpdatedHour: number;
 }
 
+export interface SettlementState {
+  id: string;
+  name: string;
+  kind: SettlementKind;
+  systemId: string;
+  planetId?: string;
+  hubId?: string;
+  civilizationId?: string;
+  ownerFactionId?: string;
+  population: number;
+  infrastructure: number;
+  security: number;
+  unrest: number;
+  housing: number;
+  health: number;
+  production: SettlementStockpile;
+  consumption: SettlementStockpile;
+  stocks: SettlementStockpile;
+  foundedHour: number;
+  abandoned: boolean;
+  lastUpdatedHour: number;
+}
+
+export interface PopulationGroupState {
+  id: string;
+  settlementId: string;
+  civilizationId?: string;
+  species: string;
+  culture: string;
+  socialClass: 'workers' | 'specialists' | 'security' | 'elite' | 'migrants';
+  profession: string;
+  population: number;
+  wealth: number;
+  health: number;
+  loyalty: number;
+  radicalization: number;
+  migrationDesire: number;
+}
+
+export interface TradeRouteState {
+  id: string;
+  originSettlementId: string;
+  destinationSettlementId: string;
+  pathSystemIds: string[];
+  cargo: SettlementResource[];
+  capacity: number;
+  traffic: number;
+  danger: number;
+  disrupted: boolean;
+  lastUpdatedHour: number;
+}
+
 export interface WorldEvent {
   id: string;
   atHour: number;
@@ -71,7 +139,15 @@ export interface WorldEvent {
   data?: Record<string, string | number | boolean>;
 }
 
-export type ScheduledEventKind = 'civilization-cycle' | 'faction-cycle' | 'system-cycle' | 'war-cycle' | 'ecology-cycle';
+export type ScheduledEventKind =
+  | 'civilization-cycle'
+  | 'faction-cycle'
+  | 'system-cycle'
+  | 'war-cycle'
+  | 'ecology-cycle'
+  | 'settlement-cycle'
+  | 'trade-cycle'
+  | 'migration-cycle';
 
 export interface ScheduledWorldEvent {
   id: string;
@@ -89,6 +165,9 @@ export interface SimulationState {
   civilizations: Record<string, SimulationCivilizationState>;
   factions: Record<string, SimulationFactionState>;
   ecosystems: Record<string, PlanetEcologyState>;
+  settlements: Record<string, SettlementState>;
+  populationGroups: Record<string, PopulationGroupState>;
+  tradeRoutes: Record<string, TradeRouteState>;
   scheduledEvents: ScheduledWorldEvent[];
   events: WorldEvent[];
   nextSequence: number;
@@ -114,3 +193,5 @@ export interface SimulationAdvanceResult {
   simulation: SimulationState;
   emittedEvents: WorldEvent[];
 }
+
+export type WorldEventDraft = Omit<WorldEvent, 'id' | 'atHour'>;

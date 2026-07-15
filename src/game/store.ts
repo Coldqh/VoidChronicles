@@ -434,6 +434,12 @@ function buildWorldAdvance(
   const knowledge = overrides.knowledge ?? state.knowledge;
   const currentSystemId = overrides.currentSystemId === undefined ? state.currentSystemId : overrides.currentSystemId;
   const advanced = advanceSimulation(simulation, { seed: galaxy.seed, galaxy, factions, hubs }, hours, reason);
+  const projectedHubs = hubs.map((hub) => {
+    const settlement = Object.values(advanced.simulation.settlements).find((entry) => entry.hubId === hub.id);
+    if (!settlement) return hub;
+    const safety = settlement.security < 25 ? 'danger' as const : settlement.security < 55 ? 'caution' as const : 'safe' as const;
+    return { ...hub, population: settlement.population, safety };
+  });
   const previousYear = worldYear(simulation.clock);
   const nextYear = worldYear(advanced.simulation.clock);
   let warFronts = overrides.warFronts ?? state.warFronts;
@@ -441,7 +447,7 @@ function buildWorldAdvance(
     warFronts = advanceWarFronts(`${galaxy.seed}:kernel`, warFronts, year);
   }
   const baseContracts = (overrides.contracts ?? state.contracts).map((contract) => contract.status === 'active' && nextYear > contract.deadlineYear ? { ...contract, status: 'expired' as const } : contract);
-  const contracts = projectContractsFromEvents({ events: advanced.emittedEvents, existing: baseContracts, hubs, year: nextYear });
+  const contracts = projectContractsFromEvents({ events: advanced.emittedEvents, existing: baseContracts, hubs: projectedHubs, year: nextYear });
   const news = projectNewsFromEvents(advanced.emittedEvents, knowledge, overrides.news ?? state.news, currentSystemId ?? undefined);
   const researchProjects = overrides.researchProjects ?? state.researchProjects;
   const worldThreads = projectWorldThreads({ simulation: advanced.simulation, warFronts, factions, contracts, research: researchProjects });
@@ -452,6 +458,7 @@ function buildWorldAdvance(
     emittedEvents: advanced.emittedEvents,
     patch: {
       simulation: advanced.simulation,
+      hubs: projectedHubs,
       galaxy: projectedGalaxy,
       gameYear: nextYear,
       contracts,

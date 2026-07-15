@@ -1,8 +1,13 @@
-import type { Civilization, Faction, Galaxy, Hub } from '../game/types';
 import { createRng } from '../generation/rng';
 import { initializeEcosystems } from '../ecology/generate';
 import { simulateEcologyCycle } from '../ecology/simulate';
 import { HOURS_PER_DAY, worldYear } from './clock';
+import type { SimulationContext } from './context';
+import { recomputeSystemFromSettlements, simulateSettlementCycle } from './economy';
+import { simulateMigrationCycle } from './migration';
+import { initialScheduledEvents, missingSettlementSchedule } from './scheduler';
+import { initializeSettlementLayer } from './settlements';
+import { simulateTradeRouteCycle } from './trade';
 import type {
   ScheduledWorldEvent,
   SimulationAdvanceResult,
@@ -10,95 +15,42 @@ import type {
   SimulationFactionState,
   SimulationState,
   SimulationSystemState,
-  WorldEvent
+  WorldEvent,
+  WorldEventDraft
 } from './types';
 
-interface SimulationContext {
-  seed: string;
-  galaxy: Galaxy;
-  factions: Faction[];
-  hubs: Hub[];
-}
+export type { SimulationContext } from './context';
 
 const clamp = (value: number, min = 0, max = 100) => Math.max(min, Math.min(max, value));
-const cycleId = (kind: ScheduledWorldEvent['kind'], entityId: string) => `${kind}:${entityId}`;
 
-function populationForCivilization(civilization: Civilization, galaxy: Galaxy, hubs: Hub[]): number {
-  const hubPopulation = hubs.filter((hub) => hub.civilizationId === civilization.id).reduce((sum, hub) => sum + hub.population, 0);
+function populationForCivilization(context: SimulationContext, civilizationId: string): number {
+  const civilization = context.galaxy.civilizations.find((entry) => entry.id === civilizationId);
+  if (!civilization) return 0;
+  const hubPopulation = context.hubs.filter((hub) => hub.civilizationId === civilization.id).reduce((sum, hub) => sum + hub.population, 0);
   const territorialBase = civilization.controlledSystems.length * (civilization.status === 'living' ? 1_800_000 : 80_000);
   const techMultiplier = 0.65 + civilization.techLevel * 0.12;
   return Math.max(0, Math.round((hubPopulation + territorialBase) * techMultiplier));
 }
 
-function systemPopulation(systemId: string, galaxy: Galaxy, hubs: Hub[], civilizations: Record<string, SimulationCivilizationState>): number {
-  const system = galaxy.systems.find((entry) => entry.id === systemId);
+function systemPopulation(systemId: string, context: SimulationContext, civilizations: Record<string, SimulationCivilizationState>): number {
+  const system = context.galaxy.systems.find((entry) => entry.id === systemId);
   if (!system) return 0;
-  const hubPopulation = hubs.filter((hub) => hub.systemId === systemId).reduce((sum, hub) => sum + hub.population, 0);
+  const hubPopulation = context.hubs.filter((hub) => hub.systemId === systemId).reduce((sum, hub) => sum + hub.population, 0);
   const civilizationPopulation = system.civilizationIds.reduce((sum, id) => {
     const state = civilizations[id];
-    const civ = galaxy.civilizations.find((entry) => entry.id === id);
+    const civ = context.galaxy.civilizations.find((entry) => entry.id === id);
     if (!state || !civ || civ.controlledSystems.length === 0) return sum;
     return sum + state.population / civ.controlledSystems.length;
   }, 0);
   return Math.max(hubPopulation, Math.round(civilizationPopulation));
 }
 
-function initialScheduledEvents(context: SimulationContext, ecologyPlanetIds: string[]): ScheduledWorldEvent[] {
-  const scheduled: ScheduledWorldEvent[] = [];
-  for (const civilization of context.galaxy.civilizations.filter((entry) => entry.status === 'living')) {
-    scheduled.push({
-      id: cycleId('civilization-cycle', civilization.id),
-      kind: 'civilization-cycle',
-      entityId: civilization.id,
-      dueHour: (18 + scheduled.length * 3) * HOURS_PER_DAY,
-      repeatHours: 90 * HOURS_PER_DAY,
-      seedKey: `${context.seed}:civilization-cycle:${civilization.id}`
-    });
-  }
-  for (const faction of context.factions) {
-    scheduled.push({
-      id: cycleId('faction-cycle', faction.id),
-      kind: 'faction-cycle',
-      entityId: faction.id,
-      dueHour: (10 + scheduled.length * 2) * HOURS_PER_DAY,
-      repeatHours: 60 * HOURS_PER_DAY,
-      seedKey: `${context.seed}:faction-cycle:${faction.id}`
-    });
-  }
-  const importantSystems = new Set<string>([
-    ...context.hubs.map((hub) => hub.systemId),
-    ...context.galaxy.civilizations.filter((entry) => entry.status === 'living').map((entry) => entry.homeSystemId)
-  ]);
-  for (const systemId of importantSystems) {
-    scheduled.push({
-      id: cycleId('system-cycle', systemId),
-      kind: 'system-cycle',
-      entityId: systemId,
-      dueHour: (7 + scheduled.length) * HOURS_PER_DAY,
-      repeatHours: 30 * HOURS_PER_DAY,
-      seedKey: `${context.seed}:system-cycle:${systemId}`
-    });
-  }
-  for (const planetId of ecologyPlanetIds) {
-    const planetIndex = context.galaxy.systems.flatMap((system) => system.planets).findIndex((planet) => planet.id === planetId);
-    scheduled.push({
-      id: cycleId('ecology-cycle', planetId),
-      kind: 'ecology-cycle',
-      entityId: planetId,
-      dueHour: (30 + Math.max(0, planetIndex % 120)) * HOURS_PER_DAY,
-      repeatHours: 360 * HOURS_PER_DAY,
-      seedKey: `${context.seed}:ecology-cycle:${planetId}`
-    });
-  }
-  return scheduled.sort((a, b) => a.dueHour - b.dueHour);
-}
-
-export function initializeSimulation(context: SimulationContext, absoluteHour = 0): SimulationState {
+function createBaseSimulation(context: SimulationContext, absoluteHour: number): Omit<SimulationState, 'scheduledEvents' | 'settlements' | 'populationGroups' | 'tradeRoutes'> {
   const civilizations: Record<string, SimulationCivilizationState> = {};
   for (const civilization of context.galaxy.civilizations) {
     civilizations[civilization.id] = {
       civilizationId: civilization.id,
-      population: populationForCivilization(civilization, context.galaxy, context.hubs),
+      population: populationForCivilization(context, civilization.id),
       stability: civilization.status === 'living' ? clamp(46 + civilization.techLevel * 4) : 0,
       economy: civilization.status === 'living' ? clamp(38 + civilization.techLevel * 5) : 0,
       military: civilization.status === 'living' ? clamp(24 + civilization.techLevel * 6) : 0,
@@ -112,7 +64,7 @@ export function initializeSimulation(context: SimulationContext, absoluteHour = 
 
   const systems: Record<string, SimulationSystemState> = {};
   for (const system of context.galaxy.systems) {
-    const population = systemPopulation(system.id, context.galaxy, context.hubs, civilizations);
+    const population = systemPopulation(system.id, context, civilizations);
     const hub = context.hubs.find((entry) => entry.systemId === system.id);
     systems[system.id] = {
       systemId: system.id,
@@ -139,24 +91,49 @@ export function initializeSimulation(context: SimulationContext, absoluteHour = 
     };
   }
 
-  const ecosystems = initializeEcosystems(context.galaxy, absoluteHour);
-
   return {
     version: 2,
     clock: { absoluteHour, epochYear: 0 },
     systems,
     civilizations,
     factions,
-    ecosystems,
-    scheduledEvents: initialScheduledEvents(context, Object.keys(ecosystems)).map((entry) => ({ ...entry, dueHour: entry.dueHour + absoluteHour })),
+    ecosystems: initializeEcosystems(context.galaxy, absoluteHour),
     events: [],
     nextSequence: 1,
     lastAdvanceReason: 'initialization'
   };
 }
 
+export function initializeSimulation(context: SimulationContext, absoluteHour = 0): SimulationState {
+  const base = createBaseSimulation(context, absoluteHour);
+  const layer = initializeSettlementLayer(context, base.ecosystems, absoluteHour);
+  const simulation: SimulationState = {
+    ...base,
+    ...layer,
+    scheduledEvents: initialScheduledEvents({
+      context,
+      ecologyPlanetIds: Object.keys(base.ecosystems),
+      settlementIds: Object.keys(layer.settlements),
+      tradeRouteIds: Object.keys(layer.tradeRoutes),
+      civilizationIds: context.galaxy.civilizations.filter((entry) => entry.status === 'living').map((entry) => entry.id),
+      absoluteHour
+    })
+  };
+  for (const systemId of Object.keys(simulation.systems)) recomputeSystemFromSettlements(simulation, systemId, absoluteHour);
+  return simulation;
+}
+
 function eventId(state: SimulationState, scheduled: ScheduledWorldEvent): string {
   return `world_${state.nextSequence}_${scheduled.kind}_${scheduled.entityId ?? 'global'}_${scheduled.dueHour}`;
+}
+
+function worldEvent(state: SimulationState, scheduled: ScheduledWorldEvent, draft: WorldEventDraft | null): WorldEvent | null {
+  return draft ? { ...draft, id: eventId(state, scheduled), atHour: scheduled.dueHour } : null;
+}
+
+function weightedAverage(values: Array<{ value: number; weight: number }>, fallback: number): number {
+  const weight = values.reduce((sum, entry) => sum + entry.weight, 0);
+  return weight > 0 ? values.reduce((sum, entry) => sum + entry.value * entry.weight, 0) / weight : fallback;
 }
 
 function resolveCivilizationCycle(state: SimulationState, event: ScheduledWorldEvent, context: SimulationContext): WorldEvent | null {
@@ -164,48 +141,46 @@ function resolveCivilizationCycle(state: SimulationState, event: ScheduledWorldE
   const current = id ? state.civilizations[id] : undefined;
   const civilization = id ? context.galaxy.civilizations.find((entry) => entry.id === id) : undefined;
   if (!id || !current || !civilization || !current.alive) return null;
-  const rng = createRng(`${event.seedKey}:${event.dueHour}`);
-  const populationDeltaRate = (current.stability - 45) / 20_000 + rng.int(-20, 26) / 100_000;
-  const populationDelta = Math.round(current.population * populationDeltaRate);
-  const stabilityDelta = rng.int(-5, 5) + (current.economy < 25 ? -3 : 0);
-  const economyDelta = rng.int(-4, 6) + (current.research > 65 ? 2 : 0);
-  const migrationPressure = clamp(current.expansionPressure + rng.int(-8, 12));
-  const population = Math.max(0, current.population + populationDelta);
-  state.civilizations[id] = {
+  const settlements = Object.values(state.settlements).filter((entry) => entry.civilizationId === id && !entry.abandoned);
+  const population = settlements.reduce((sum, entry) => sum + entry.population, 0);
+  const stabilityTarget = weightedAverage(settlements.map((entry) => ({ value: clamp(entry.security + entry.health - entry.unrest) / 2, weight: entry.population })), current.stability);
+  const economyTarget = weightedAverage(settlements.map((entry) => ({ value: (entry.infrastructure + state.systems[entry.systemId]!.supply) / 2, weight: entry.population })), current.economy);
+  const cohesionTarget = weightedAverage(settlements.map((entry) => ({ value: 100 - entry.unrest, weight: entry.population })), current.cohesion);
+  const housingStress = weightedAverage(settlements.map((entry) => ({ value: 100 - entry.housing + entry.unrest, weight: entry.population })), current.expansionPressure);
+  const next: SimulationCivilizationState = {
     ...current,
     population,
-    stability: clamp(current.stability + stabilityDelta),
-    economy: clamp(current.economy + economyDelta),
-    cohesion: clamp(current.cohesion + rng.int(-4, 4)),
-    expansionPressure: migrationPressure,
-    lastUpdatedHour: event.dueHour,
-    alive: population > 0
+    stability: clamp(current.stability + Math.round((stabilityTarget - current.stability) * 0.25)),
+    economy: clamp(current.economy + Math.round((economyTarget - current.economy) * 0.22)),
+    cohesion: clamp(current.cohesion + Math.round((cohesionTarget - current.cohesion) * 0.2)),
+    expansionPressure: clamp(current.expansionPressure + Math.round((housingStress - current.expansionPressure) * 0.18)),
+    alive: population > 0,
+    lastUpdatedHour: event.dueHour
   };
-
-  const severe = Math.abs(stabilityDelta) >= 5 || Math.abs(populationDeltaRate) > 0.002;
-  const title = stabilityDelta <= -4
-    ? `${civilization.name}: внутренний кризис`
-    : migrationPressure >= 72
-      ? `${civilization.name}: новая волна расселения`
-      : `${civilization.name}: демографический цикл`;
-  return {
-    id: eventId(state, event),
-    atHour: event.dueHour,
-    kind: migrationPressure >= 72 ? 'migration' : stabilityDelta <= -4 ? 'politics' : 'demography',
-    title,
-    summary: migrationPressure >= 72
-      ? `Население и частные экспедиции ищут новые маршруты за пределами текущих территорий.`
-      : stabilityDelta <= -4
-        ? `Стабильность снизилась до ${state.civilizations[id]!.stability}. Экономические и политические группы усиливают давление.`
-        : `Население изменилось на ${populationDelta.toLocaleString('ru-RU')}; экономика ${state.civilizations[id]!.economy}/100.`,
-    severity: severe ? 6 : 2,
-    visibility: severe ? 'public' : 'local',
-    systemIds: civilization.controlledSystems.slice(0, 4),
-    civilizationIds: [id],
-    factionIds: context.factions.filter((faction) => faction.civilizationId === id).map((faction) => faction.id),
-    tags: ['simulation', 'civilization'],
-    data: { populationDelta, stabilityDelta, economyDelta }
-  };
+  state.civilizations[id] = next;
+  if (!next.alive) return worldEvent(state, event, {
+    kind: 'disaster', title: `${civilization.name}: цивилизация прекратила существование`,
+    summary: 'Последние действующие поселения опустели. В галактике остались только инфраструктура, архивы и беженцы.',
+    severity: 10, visibility: 'public', systemIds: civilization.controlledSystems, civilizationIds: [id],
+    factionIds: context.factions.filter((entry) => entry.civilizationId === id).map((entry) => entry.id),
+    tags: ['simulation', 'civilization', 'extinction'], data: { population: 0 }
+  });
+  const stabilityDrop = current.stability - next.stability;
+  if (stabilityDrop >= 8 || next.stability <= 24) return worldEvent(state, event, {
+    kind: 'politics', title: `${civilization.name}: системный кризис`,
+    summary: `Стабильность ${next.stability}/100. Причина находится в состоянии реальных колоний, снабжения и населения.`,
+    severity: 7, visibility: 'public', systemIds: settlements.map((entry) => entry.systemId).slice(0, 8), civilizationIds: [id],
+    factionIds: context.factions.filter((entry) => entry.civilizationId === id).map((entry) => entry.id),
+    tags: ['simulation', 'civilization', 'causal'], data: { stability: next.stability, population }
+  });
+  if (next.expansionPressure >= 75 && current.expansionPressure < 75) return worldEvent(state, event, {
+    kind: 'migration', title: `${civilization.name}: давление на внешние рубежи`,
+    summary: 'Перенаселение, жильё и локальные кризисы толкают частные и государственные экспедиции к новым системам.',
+    severity: 5, visibility: 'local', systemIds: settlements.map((entry) => entry.systemId).slice(0, 6), civilizationIds: [id],
+    factionIds: context.factions.filter((entry) => entry.civilizationId === id).map((entry) => entry.id),
+    tags: ['simulation', 'civilization', 'expansion'], data: { expansionPressure: next.expansionPressure }
+  });
+  return null;
 }
 
 function resolveFactionCycle(state: SimulationState, event: ScheduledWorldEvent, context: SimulationContext): WorldEvent | null {
@@ -213,81 +188,65 @@ function resolveFactionCycle(state: SimulationState, event: ScheduledWorldEvent,
   const current = id ? state.factions[id] : undefined;
   const faction = id ? context.factions.find((entry) => entry.id === id) : undefined;
   if (!id || !current || !faction) return null;
-  const rng = createRng(`${event.seedKey}:${event.dueHour}`);
-  const wealthDelta = rng.int(-5, 7);
-  const tensionDelta = rng.int(-6, 9) + (faction.enemies.length ? 2 : -2);
-  const researchDelta = rng.int(-2, 4);
-  state.factions[id] = {
+  const settlements = Object.values(state.settlements).filter((entry) => entry.ownerFactionId === id && !entry.abandoned);
+  const routes = Object.values(state.tradeRoutes).filter((route) => {
+    const origin = state.settlements[route.originSettlementId];
+    const destination = state.settlements[route.destinationSettlementId];
+    return origin?.ownerFactionId === id || destination?.ownerFactionId === id;
+  });
+  const productive = settlements.length ? settlements.reduce((sum, entry) => sum + entry.infrastructure - entry.unrest * 0.5, 0) / settlements.length : current.wealth - 8;
+  const disruptedRoutes = routes.filter((entry) => entry.disrupted).length;
+  const averageUnrest = settlements.length ? settlements.reduce((sum, entry) => sum + entry.unrest, 0) / settlements.length : 40;
+  const wealthTarget = clamp(productive - disruptedRoutes * 5 + routes.length * 1.5);
+  const tensionTarget = clamp(averageUnrest * 0.6 + faction.enemies.length * 15 + disruptedRoutes * 8);
+  const next = {
     ...current,
-    wealth: clamp(current.wealth + wealthDelta),
-    research: clamp(current.research + researchDelta),
-    influence: clamp(current.influence + Math.round((wealthDelta + researchDelta) / 2)),
-    tension: clamp(current.tension + tensionDelta),
+    wealth: clamp(current.wealth + Math.round((wealthTarget - current.wealth) * 0.25)),
+    influence: clamp(current.influence + Math.round((wealthTarget - current.influence) * 0.12)),
+    tension: clamp(current.tension + Math.round((tensionTarget - current.tension) * 0.2)),
     lastUpdatedHour: event.dueHour
   };
-  const next = state.factions[id]!;
-  const kind = next.tension >= 75 ? 'conflict' : wealthDelta <= -4 ? 'shortage' : researchDelta >= 3 ? 'research' : 'economy';
-  const significant = kind !== 'economy' || Math.abs(wealthDelta) >= 5;
-  return {
-    id: eventId(state, event),
-    atHour: event.dueHour,
-    kind,
-    title: kind === 'conflict' ? `${faction.name}: мобилизация` : kind === 'shortage' ? `${faction.name}: нехватка ресурсов` : kind === 'research' ? `${faction.name}: исследовательский прорыв` : `${faction.name}: торговый цикл`,
-    summary: kind === 'conflict'
-      ? `Напряжение достигло ${next.tension}/100. Патрули и военные контракты становятся вероятнее.`
-      : kind === 'shortage'
-        ? `Богатство снизилось до ${next.wealth}/100. Спрос на поставки растёт.`
-        : kind === 'research'
-          ? `Исследовательский потенциал вырос до ${next.research}/100.`
-          : `Экономическое влияние изменилось до ${next.influence}/100.`,
-    severity: significant ? 5 : 1,
-    visibility: significant ? 'public' : 'local',
-    systemIds: context.galaxy.systems.filter((system) => system.factionId === id).slice(0, 5).map((system) => system.id),
-    civilizationIds: faction.civilizationId ? [faction.civilizationId] : [],
-    factionIds: [id],
-    tags: ['simulation', 'faction'],
-    data: { wealthDelta, tensionDelta, researchDelta }
-  };
+  state.factions[id] = next;
+  if (next.tension >= 78 && current.tension < 78) return worldEvent(state, event, {
+    kind: 'conflict', title: `${faction.name}: мобилизация`,
+    summary: `Напряжение выросло до ${next.tension}/100 из-за беспорядков, соперников и нарушенных маршрутов.`,
+    severity: 7, visibility: 'public', systemIds: settlements.map((entry) => entry.systemId).slice(0, 6),
+    civilizationIds: faction.civilizationId ? [faction.civilizationId] : [], factionIds: [id],
+    tags: ['simulation', 'faction', 'causal'], data: { tension: next.tension, disruptedRoutes }
+  });
+  if (current.wealth - next.wealth >= 8 || next.wealth <= 22) return worldEvent(state, event, {
+    kind: 'shortage', title: `${faction.name}: экономический спад`,
+    summary: `Богатство ${next.wealth}/100. Производство колоний и торговые маршруты не покрывают потери.`,
+    severity: 6, visibility: 'local', systemIds: settlements.map((entry) => entry.systemId).slice(0, 6),
+    civilizationIds: faction.civilizationId ? [faction.civilizationId] : [], factionIds: [id],
+    tags: ['simulation', 'faction', 'economy'], data: { wealth: next.wealth, settlements: settlements.length }
+  });
+  return null;
 }
 
 function resolveSystemCycle(state: SimulationState, event: ScheduledWorldEvent, context: SimulationContext): WorldEvent | null {
   const id = event.entityId;
-  const current = id ? state.systems[id] : undefined;
+  const previous = id ? state.systems[id] : undefined;
   const system = id ? context.galaxy.systems.find((entry) => entry.id === id) : undefined;
-  if (!id || !current || !system) return null;
-  const rng = createRng(`${event.seedKey}:${event.dueHour}`);
-  const supplyDelta = rng.int(-8, 8) + (current.security < 30 ? -4 : 0);
-  const prosperityDelta = rng.int(-5, 6) + (current.supply < 25 ? -4 : 0);
-  const migrationDelta = rng.int(-7, 9) + (current.prosperity < 30 ? 5 : -1);
-  state.systems[id] = {
-    ...current,
-    supply: clamp(current.supply + supplyDelta),
-    prosperity: clamp(current.prosperity + prosperityDelta),
-    migrationPressure: clamp(current.migrationPressure + migrationDelta),
-    tradePressure: clamp(current.tradePressure + (supplyDelta < 0 ? 5 : rng.int(-3, 3))),
-    lastUpdatedHour: event.dueHour
-  };
+  if (!id || !previous || !system) return null;
+  const before = { ...previous };
+  recomputeSystemFromSettlements(state, id, event.dueHour);
   const next = state.systems[id]!;
-  const kind = next.supply <= 22 ? 'shortage' : next.migrationPressure >= 72 ? 'migration' : 'economy';
-  if (kind === 'economy' && Math.abs(supplyDelta) < 7 && Math.abs(prosperityDelta) < 5) return null;
-  return {
-    id: eventId(state, event),
-    atHour: event.dueHour,
-    kind,
-    title: kind === 'shortage' ? `${system.name}: дефицит снабжения` : kind === 'migration' ? `${system.name}: рост миграции` : `${system.name}: изменение торговли`,
-    summary: kind === 'shortage'
-      ? `Уровень снабжения упал до ${next.supply}/100. Цены и контракты на доставку растут.`
-      : kind === 'migration'
-        ? `Миграционное давление достигло ${next.migrationPressure}/100.`
-        : `Процветание ${next.prosperity}/100, снабжение ${next.supply}/100.`,
-    severity: kind === 'economy' ? 2 : 6,
-    visibility: 'local',
-    systemIds: [id],
-    civilizationIds: system.civilizationIds,
-    factionIds: system.factionId ? [system.factionId] : [],
-    tags: ['simulation', 'system'],
-    data: { supplyDelta, prosperityDelta, migrationDelta }
-  };
+  if (next.supply <= 20 && before.supply > 20) return worldEvent(state, event, {
+    kind: 'shortage', title: `${system.name}: системный дефицит`,
+    summary: `Снабжение упало до ${next.supply}/100. Причина — реальные запасы и потребление местных поселений.`,
+    severity: 7, visibility: 'local', systemIds: [id], civilizationIds: system.civilizationIds,
+    factionIds: system.factionId ? [system.factionId] : [], tags: ['simulation', 'system', 'settlements'],
+    data: { supply: next.supply, population: next.population }
+  });
+  if (next.migrationPressure >= 75 && before.migrationPressure < 75) return worldEvent(state, event, {
+    kind: 'migration', title: `${system.name}: массовый отток населения`,
+    summary: `Миграционное давление достигло ${next.migrationPressure}/100.`,
+    severity: 6, visibility: 'local', systemIds: [id], civilizationIds: system.civilizationIds,
+    factionIds: system.factionId ? [system.factionId] : [], tags: ['simulation', 'system', 'migration'],
+    data: { migrationPressure: next.migrationPressure }
+  });
+  return null;
 }
 
 function resolveEcologyCycle(state: SimulationState, event: ScheduledWorldEvent, context: SimulationContext): WorldEvent | null {
@@ -299,38 +258,101 @@ function resolveEcologyCycle(state: SimulationState, event: ScheduledWorldEvent,
   if (!system || !planet) return null;
   const result = simulateEcologyCycle(current, event.seedKey, event.dueHour);
   state.ecosystems[planetId] = result.ecology;
+  const settlements = Object.values(state.settlements).filter((entry) => entry.planetId === planetId && !entry.abandoned);
+  for (const settlement of settlements) {
+    const contamination = result.ecology.contamination;
+    const biomassRatio = result.ecology.biomass / Math.max(1, current.biomass);
+    state.settlements[settlement.id] = {
+      ...settlement,
+      production: {
+        ...settlement.production,
+        food: Math.max(0, settlement.production.food * Math.max(0.45, biomassRatio)),
+        medicine: Math.max(0, settlement.production.medicine * Math.max(0.5, result.ecology.resources.medicinal / 50))
+      },
+      health: clamp(settlement.health - (contamination >= 70 ? 8 : contamination >= 45 ? 3 : 0)),
+      unrest: clamp(settlement.unrest + (contamination >= 70 ? 6 : 0)),
+      lastUpdatedHour: event.dueHour
+    };
+    recomputeSystemFromSettlements(state, settlement.systemId, event.dueHour);
+  }
   if (!result.event) return null;
-  return {
-    id: eventId(state, event), atHour: event.dueHour, kind: result.event.kind,
-    title: `${planet.name}: ${result.event.title}`, summary: result.event.summary,
-    severity: result.event.severity, visibility: result.event.visibility,
-    systemIds: [system.id], civilizationIds: planet.civilizationId ? [planet.civilizationId] : system.civilizationIds,
-    factionIds: system.factionId ? [system.factionId] : [], tags: result.event.tags,
-    data: { ...(result.event.data ?? {}), planetId }
-  };
+  return worldEvent(state, event, {
+    kind: result.event.kind,
+    title: `${planet.name}: ${result.event.title}`,
+    summary: settlements.length ? `${result.event.summary} Изменение затронуло ${settlements.length} поселений.` : result.event.summary,
+    severity: result.event.severity,
+    visibility: result.event.visibility,
+    systemIds: [system.id],
+    civilizationIds: planet.civilizationId ? [planet.civilizationId] : system.civilizationIds,
+    factionIds: system.factionId ? [system.factionId] : [],
+    tags: [...result.event.tags, 'settlement-impact'],
+    data: { ...(result.event.data ?? {}), planetId, affectedSettlements: settlements.length }
+  });
 }
 
-function processScheduledEvent(state: SimulationState, event: ScheduledWorldEvent, context: SimulationContext): WorldEvent | null {
-  if (event.kind === 'civilization-cycle') return resolveCivilizationCycle(state, event, context);
-  if (event.kind === 'faction-cycle') return resolveFactionCycle(state, event, context);
-  if (event.kind === 'system-cycle') return resolveSystemCycle(state, event, context);
-  if (event.kind === 'ecology-cycle') return resolveEcologyCycle(state, event, context);
-  return null;
+interface ProcessResult {
+  event: WorldEvent | null;
+  scheduledEvents: ScheduledWorldEvent[];
 }
 
-export function advanceSimulation(
-  input: SimulationState,
-  context: SimulationContext,
-  hours: number,
-  reason: string
-): SimulationAdvanceResult {
-  const targetHour = input.clock.absoluteHour + Math.max(0, Math.floor(hours));
-  const state: SimulationState = structuredClone(input);
+function processScheduledEvent(state: SimulationState, event: ScheduledWorldEvent, context: SimulationContext): ProcessResult {
+  if (event.kind === 'civilization-cycle') return { event: resolveCivilizationCycle(state, event, context), scheduledEvents: [] };
+  if (event.kind === 'faction-cycle') return { event: resolveFactionCycle(state, event, context), scheduledEvents: [] };
+  if (event.kind === 'system-cycle') return { event: resolveSystemCycle(state, event, context), scheduledEvents: [] };
+  if (event.kind === 'ecology-cycle') return { event: resolveEcologyCycle(state, event, context), scheduledEvents: [] };
+  if (event.kind === 'settlement-cycle') {
+    const result = event.entityId ? simulateSettlementCycle(state, event.entityId, context, event.dueHour) : { event: null, abandoned: false };
+    return { event: worldEvent(state, event, result.event), scheduledEvents: [] };
+  }
+  if (event.kind === 'trade-cycle') {
+    const result = event.entityId ? simulateTradeRouteCycle(state, event.entityId, context, event.dueHour) : { event: null, moved: 0 };
+    return { event: worldEvent(state, event, result.event), scheduledEvents: [] };
+  }
+  if (event.kind === 'migration-cycle') {
+    const result = event.entityId ? simulateMigrationCycle(state, event.entityId, context, event.dueHour) : { event: null, scheduledEvents: [] };
+    return { event: worldEvent(state, event, result.event), scheduledEvents: result.scheduledEvents };
+  }
+  return { event: null, scheduledEvents: [] };
+}
+
+function ensureSettlementSimulation(input: SimulationState, context: SimulationContext): SimulationState {
+  const hasSettlements = input.settlements && Object.keys(input.settlements).length > 0;
+  let state: SimulationState;
+  if (!hasSettlements) {
+    const layer = initializeSettlementLayer(context, input.ecosystems ?? {}, input.clock.absoluteHour);
+    state = { ...input, ...layer };
+  } else {
+    state = {
+      ...input,
+      settlements: input.settlements ?? {},
+      populationGroups: input.populationGroups ?? {},
+      tradeRoutes: input.tradeRoutes ?? {}
+    };
+  }
+  const missing = missingSettlementSchedule({
+    context,
+    settlementIds: Object.keys(state.settlements),
+    tradeRouteIds: Object.keys(state.tradeRoutes),
+    civilizationIds: context.galaxy.civilizations.filter((entry) => entry.status === 'living').map((entry) => entry.id),
+    existing: state.scheduledEvents,
+    absoluteHour: state.clock.absoluteHour
+  });
+  if (missing.length) state = { ...state, scheduledEvents: [...state.scheduledEvents, ...missing].sort((a, b) => a.dueHour - b.dueHour) };
+  return state;
+}
+
+export function advanceSimulation(input: SimulationState, context: SimulationContext, hours: number, reason: string): SimulationAdvanceResult {
+  const upgraded = ensureSettlementSimulation(input, context);
+  const targetHour = upgraded.clock.absoluteHour + Math.max(0, Math.floor(hours));
+  const state: SimulationState = structuredClone(upgraded);
   const emittedEvents: WorldEvent[] = [];
   state.lastAdvanceReason = reason;
 
   const queue = [...state.scheduledEvents].sort((a, b) => a.dueHour - b.dueHour);
+  const scheduledIds = new Set(queue.map((entry) => entry.id));
   const insertScheduled = (entry: ScheduledWorldEvent) => {
+    if (scheduledIds.has(entry.id)) return;
+    scheduledIds.add(entry.id);
     let low = 0;
     let high = queue.length;
     while (low < high) {
@@ -346,17 +368,21 @@ export function advanceSimulation(
     processed += 1;
     if (processed > 100_000) throw new Error('Simulation advance exceeded the safe event budget');
     const next = queue.shift()!;
-    const worldEvent = processScheduledEvent(state, next, context);
-    if (worldEvent) {
-      emittedEvents.push(worldEvent);
+    scheduledIds.delete(next.id);
+    const result = processScheduledEvent(state, next, context);
+    if (result.event) {
+      emittedEvents.push(result.event);
       state.nextSequence += 1;
     }
-    if (next.repeatHours) insertScheduled({ ...next, dueHour: next.dueHour + next.repeatHours });
+    for (const scheduled of result.scheduledEvents) insertScheduled(scheduled);
+    const settlementAbandoned = next.kind === 'settlement-cycle' && next.entityId && state.settlements[next.entityId]?.abandoned;
+    const routeMissing = next.kind === 'trade-cycle' && next.entityId && !state.tradeRoutes[next.entityId];
+    if (next.repeatHours && !settlementAbandoned && !routeMissing) insertScheduled({ ...next, dueHour: next.dueHour + next.repeatHours });
   }
 
   state.clock.absoluteHour = targetHour;
   state.events = [...emittedEvents].reverse().concat(state.events).slice(0, 1_000);
-  state.scheduledEvents = queue.slice(0, 10_000);
+  state.scheduledEvents = queue.slice(0, 25_000);
   return { simulation: state, emittedEvents: emittedEvents.slice(-500) };
 }
 
@@ -379,38 +405,35 @@ export function adjustSystemEconomy(
   return { ...input, systems: { ...input.systems, [systemId]: next } };
 }
 
-export function recordWorldEvent(
-  input: SimulationState,
-  event: Omit<WorldEvent, 'id' | 'atHour'> & { atHour?: number }
-): { simulation: SimulationState; event: WorldEvent } {
+export function recordWorldEvent(input: SimulationState, event: Omit<WorldEvent, 'id' | 'atHour'> & { atHour?: number }): { simulation: SimulationState; event: WorldEvent } {
   const atHour = event.atHour ?? input.clock.absoluteHour;
-  const created: WorldEvent = {
-    ...event,
-    id: `world_${input.nextSequence}_manual_${atHour}`,
-    atHour
-  };
+  const created: WorldEvent = { ...event, id: `world_${input.nextSequence}_manual_${atHour}`, atHour };
   return {
     event: created,
-    simulation: {
-      ...input,
-      nextSequence: input.nextSequence + 1,
-      events: [created, ...input.events].slice(0, 1_000)
-    }
+    simulation: { ...input, nextSequence: input.nextSequence + 1, events: [created, ...input.events].slice(0, 1_000) }
   };
 }
 
+type LegacySimulation = Omit<Partial<SimulationState>, 'version'> & { version?: 1 | 2 } & Pick<SimulationState, 'clock' | 'systems' | 'civilizations' | 'factions' | 'scheduledEvents' | 'events' | 'nextSequence' | 'lastAdvanceReason'>;
 
-export function upgradeSimulationEcosystems(input: SimulationState | (Omit<SimulationState, 'version' | 'ecosystems'> & { version: 1; ecosystems?: never }), context: SimulationContext): SimulationState {
-  if ((input as SimulationState).version === 2 && (input as SimulationState).ecosystems) return input as SimulationState;
-  const legacy = input as Omit<SimulationState, 'version' | 'ecosystems'>;
-  const ecosystems = initializeEcosystems(context.galaxy, legacy.clock.absoluteHour);
-  const existingIds = new Set(legacy.scheduledEvents.map((event) => event.id));
+export function upgradeSimulationEcosystems(input: LegacySimulation, context: SimulationContext): SimulationState {
+  const ecosystems = input.ecosystems ?? initializeEcosystems(context.galaxy, input.clock.absoluteHour);
+  const existingIds = new Set(input.scheduledEvents.map((event) => event.id));
   const ecologyEvents: ScheduledWorldEvent[] = Object.keys(ecosystems).map((planetId, index) => ({
-    id: cycleId('ecology-cycle', planetId), kind: 'ecology-cycle' as const, entityId: planetId,
-    dueHour: legacy.clock.absoluteHour + (30 + index % 120) * HOURS_PER_DAY,
+    id: `ecology-cycle:${planetId}`, kind: 'ecology-cycle' as const, entityId: planetId,
+    dueHour: input.clock.absoluteHour + (30 + index % 120) * HOURS_PER_DAY,
     repeatHours: 360 * HOURS_PER_DAY, seedKey: `${context.seed}:ecology-cycle:${planetId}`
   })).filter((event) => !existingIds.has(event.id));
-  return { ...legacy, version: 2, ecosystems, scheduledEvents: [...legacy.scheduledEvents, ...ecologyEvents].sort((a, b) => a.dueHour - b.dueHour) };
+  const base = {
+    ...input,
+    version: 2 as const,
+    ecosystems,
+    settlements: input.settlements ?? {},
+    populationGroups: input.populationGroups ?? {},
+    tradeRoutes: input.tradeRoutes ?? {},
+    scheduledEvents: [...input.scheduledEvents, ...ecologyEvents].sort((a, b) => a.dueHour - b.dueHour)
+  } as SimulationState;
+  return ensureSettlementSimulation(base, context);
 }
 
 export function adjustEcosystem(
@@ -418,7 +441,12 @@ export function adjustEcosystem(
   planetId: string,
   delta: Partial<Pick<import('../ecology/types').PlanetEcologyState, 'biomass' | 'biodiversity' | 'resilience' | 'contamination' | 'climateStability'>>
 ): SimulationState {
-  const current = input.ecosystems[planetId]; if (!current) return input; const next = { ...current };
-  for (const [key, value] of Object.entries(delta) as [keyof typeof delta, number][]) { if (value === undefined) continue; next[key] = clamp((next[key] as number) + value) as never; }
+  const current = input.ecosystems[planetId];
+  if (!current) return input;
+  const next = { ...current };
+  for (const [key, value] of Object.entries(delta) as [keyof typeof delta, number][]) {
+    if (value === undefined) continue;
+    next[key] = clamp((next[key] as number) + value) as never;
+  }
   return { ...input, ecosystems: { ...input.ecosystems, [planetId]: next } };
 }

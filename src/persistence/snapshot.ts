@@ -509,7 +509,7 @@ const scheduledEventV1Schema = z.object({
   repeatHours: finiteNumber.optional(), entityId: z.string().optional(), seedKey: z.string()
 });
 const scheduledEventV2Schema = z.object({
-  id: z.string(), kind: z.enum(['civilization-cycle','faction-cycle','system-cycle','war-cycle','ecology-cycle']), dueHour: finiteNumber,
+  id: z.string(), kind: z.enum(['civilization-cycle','faction-cycle','system-cycle','war-cycle','ecology-cycle','settlement-cycle','trade-cycle','migration-cycle']), dueHour: finiteNumber,
   repeatHours: finiteNumber.optional(), entityId: z.string().optional(), seedKey: z.string()
 });
 const simulationSystemSchema = z.object({
@@ -550,10 +550,37 @@ const simulationStateV1Schema = z.object({
   systems: z.record(z.string(), simulationSystemSchema), civilizations: z.record(z.string(), simulationCivilizationSchema), factions: z.record(z.string(), simulationFactionSchema),
   scheduledEvents: z.array(scheduledEventV1Schema), events: z.array(worldEventSchema), nextSequence: finiteNumber, lastAdvanceReason: z.string()
 });
+const settlementKindSchema = z.enum(['city','orbital','mining','research','military','trade','illegal','colony','abandoned']);
+const settlementResourceSchema = z.object({
+  food: finiteNumber, water: finiteNumber, energy: finiteNumber, medicine: finiteNumber,
+  parts: finiteNumber, weapons: finiteNumber, luxury: finiteNumber, rareMaterials: finiteNumber
+});
+const settlementStateSchema = z.object({
+  id: z.string(), name: z.string(), kind: settlementKindSchema, systemId: z.string(), planetId: z.string().optional(), hubId: z.string().optional(),
+  civilizationId: z.string().optional(), ownerFactionId: z.string().optional(), population: finiteNumber, infrastructure: finiteNumber,
+  security: finiteNumber, unrest: finiteNumber, housing: finiteNumber, health: finiteNumber,
+  production: settlementResourceSchema, consumption: settlementResourceSchema, stocks: settlementResourceSchema,
+  foundedHour: finiteNumber, abandoned: z.boolean(), lastUpdatedHour: finiteNumber
+});
+const populationGroupStateSchema = z.object({
+  id: z.string(), settlementId: z.string(), civilizationId: z.string().optional(), species: z.string(), culture: z.string(),
+  socialClass: z.enum(['workers','specialists','security','elite','migrants']), profession: z.string(), population: finiteNumber,
+  wealth: finiteNumber, health: finiteNumber, loyalty: finiteNumber, radicalization: finiteNumber, migrationDesire: finiteNumber
+});
+const tradeRouteStateSchema = z.object({
+  id: z.string(), originSettlementId: z.string(), destinationSettlementId: z.string(), pathSystemIds: z.array(z.string()),
+  cargo: z.array(z.enum(['food','water','energy','medicine','parts','weapons','luxury','rareMaterials'])), capacity: finiteNumber,
+  traffic: finiteNumber, danger: finiteNumber, disrupted: z.boolean(), lastUpdatedHour: finiteNumber
+});
+
 const simulationStateV2Schema = z.object({
   version: z.literal(2), clock: z.object({ absoluteHour: finiteNumber, epochYear: finiteNumber }),
   systems: z.record(z.string(), simulationSystemSchema), civilizations: z.record(z.string(), simulationCivilizationSchema), factions: z.record(z.string(), simulationFactionSchema),
-  ecosystems: z.record(z.string(), planetEcologySchema), scheduledEvents: z.array(scheduledEventV2Schema), events: z.array(worldEventSchema),
+  ecosystems: z.record(z.string(), planetEcologySchema),
+  settlements: z.record(z.string(), settlementStateSchema).default({}),
+  populationGroups: z.record(z.string(), populationGroupStateSchema).default({}),
+  tradeRoutes: z.record(z.string(), tradeRouteStateSchema).default({}),
+  scheduledEvents: z.array(scheduledEventV2Schema), events: z.array(worldEventSchema),
   nextSequence: finiteNumber, lastAdvanceReason: z.string()
 });
 const knowledgeRecordSchema = z.object({
@@ -725,7 +752,10 @@ function normalizeSnapshot(snapshot: SnapshotCurrent): SnapshotCurrent {
     ...civilizationLayer.hubs.map((entry) => entry.id),
     ...civilizationLayer.galaxy.artifacts.map((entry) => entry.id),
     ...Object.keys(snapshot.simulation.ecosystems),
-    ...Object.values(snapshot.simulation.ecosystems).flatMap((entry) => entry.species.map((species) => species.id))
+    ...Object.values(snapshot.simulation.ecosystems).flatMap((entry) => entry.species.map((species) => species.id)),
+    ...Object.keys(snapshot.simulation.settlements),
+    ...Object.keys(snapshot.simulation.populationGroups),
+    ...Object.keys(snapshot.simulation.tradeRoutes)
   ]);
   const knowledge = {
     ...snapshot.knowledge,
@@ -932,7 +962,7 @@ export function parseSnapshot(input: unknown, options: ParseSnapshotOptions = {}
       saveMeta: { ...migrated.saveMeta, appVersion: APP_VERSION, checksum: '00000000' }
     };
   }
-  if (migrated.simulation?.version !== 2 || !migrated.simulation?.ecosystems) {
+  if (migrated.simulation?.version !== 2 || !migrated.simulation?.ecosystems || Object.keys(migrated.simulation?.settlements ?? {}).length === 0) {
     migrated.simulation = upgradeSimulationEcosystems(migrated.simulation, {
       seed: migrated.galaxy.seed,
       galaxy: migrated.galaxy,
