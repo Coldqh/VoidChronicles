@@ -1,10 +1,51 @@
 # Void Chronicles
 
-**Current version: v0.24.0 — Living Figures, Heritage & Planets**
+**Current version: v0.27.0 — Chronicle, World Gameplay & Consequences**
 
 Procedural single-player space exploration roguelike and autonomous galaxy-history simulator built with React, TypeScript and Canvas.
 
 The captain is a participant, not the center of the universe. Species, settlements, states, economies, cultures, social classes, ecosystems and wars continue to exist and change without player involvement.
+
+## v0.27.0 Chronicle, World Gameplay & Consequences
+
+This release combines roadmap versions v0.25, v0.26 and v0.27. It turns the autonomous simulation into a readable history and makes player work arise from real conditions in that history.
+
+### Chronicle 2.0
+
+- Deep Time history and live simulation events are shown in one chronological record;
+- the Chronicle can be filtered by period, domain, system, civilization, faction, entity and player involvement;
+- causes and consequences can be traversed in both directions;
+- created, changed and destroyed entities are attached to readable events;
+- two dates can be compared by population, crises, wars, ecological damage and historical activity;
+- hidden service snapshots remain excluded from the public record;
+- the post-death observer advances the same Chronicle instead of a separate summary feed.
+
+### World-generated gameplay
+
+- contracts are derived from actual shortages, migration, wars, ecological crises, disasters, political failures, discoveries and endangered heritage;
+- every request records the source event, affected systems and the concrete condition that created it;
+- tasks describe both the expected success effect and the cost of failure;
+- available work includes relief deliveries, evacuations, route security, mediation, containment, investigation, ecological restoration and heritage recovery;
+- generated contract identifiers remain compatible with existing saves and contract handling.
+
+### Player consequences
+
+- completed, failed and expired world-generated contracts now alter the real simulation;
+- successful relief restores stocks, health and order;
+- evacuation transfers population and population groups;
+- route security repairs trade traffic, while failure increases disruption;
+- ecological work changes contamination, biodiversity and resilience;
+- heritage recovery changes artifact and archive state;
+- mediation can reduce war intensity and exhaustion;
+- sabotage, abandonment and failure can worsen shortages, unrest, ecological damage and faction tension;
+- every intervention becomes a causal `player-world-consequence` event in the Chronicle;
+- reconciliation is idempotent, so loading or projecting the world twice cannot apply the same result twice.
+
+### Compatibility
+
+- `SAVE_SCHEMA_VERSION` remains 13;
+- no save migration is required;
+- the release retains the v0.24.1 living-history priority fix for era transitions and regressions.
 
 ## v0.24.0 Living Figures, Heritage & Planets
 

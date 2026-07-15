@@ -1,0 +1,48 @@
+Void Chronicles v0.27.0 — Chronicle, World Gameplay & Consequences
+
+Combined release for roadmap versions v0.25, v0.26 and v0.27.
+
+New files:
+- src/simulation/chronicle.ts
+- src/simulation/worldGameplay.ts
+- src/simulation/playerConsequences.ts
+- src/tests/chronicleGameplayConsequences.test.ts
+
+Changed files:
+- src/simulation/projections.ts
+- src/screens/LegacyScreen.tsx
+- src/screens/WorldScreen.tsx
+- src/version.ts
+- README.md
+
+v0.25 Chronicle 2.0:
+- merges Deep Time and live events into one readable history;
+- filters by date, domain, location, civilization, faction, entity and player involvement;
+- traverses causal chains in both directions;
+- compares two historical periods;
+- excludes hidden event-sourced snapshots from the readable Chronicle.
+
+v0.26 World-generated gameplay:
+- derives concrete needs from shortages, migration, war, ecology, disasters, politics, research, discovery and heritage crises;
+- converts those needs into compatible contracts with explicit success and failure consequences;
+- exposes current requests in Living World and Chronicle interfaces.
+
+v0.27 Player consequences:
+- applies completed, failed and expired world-generated contracts to real simulation state;
+- changes settlements, population, routes, systems, ecosystems, heritage, wars and factions;
+- records every intervention as a causal player-world-consequence event;
+- reconciliation is idempotent and cannot apply one contract result twice.
+
+Compatibility:
+- SAVE_SCHEMA_VERSION remains 13;
+- no persistence migration is required;
+- includes the v0.24.1 era-transition/regression priority fix;
+
+Validation performed:
+- strict TypeScript validation of simulation modules;
+- strict JSX/type validation of Chronicle and Living World screens;
+- living-history transition and regression priority regression check;
+- 26 deterministic tests covering causal history, states, wars, economy, culture, society, figures, institutions, heritage, planets, Chronicle, generated gameplay and player consequences;
+- ZIP structure, overlay and SHA-256 verification.
+
+Run `npm run check` after applying the patch to validate the complete repository and production build.
