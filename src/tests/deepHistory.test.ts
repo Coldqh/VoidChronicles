@@ -53,7 +53,7 @@ describe('deep history generator', () => {
       expect(war.startYear).toBeLessThanOrEqual(war.endYear);
       expect(war.attackerPolityIds.length).toBeGreaterThan(0);
       expect(war.defenderPolityIds.length).toBeGreaterThan(0);
-      expect(events.some((event) => event.kind === 'war' && event.id.includes(war.id.slice(-7)))).toBe(true);
+      expect(events.some((event) => event.kind === 'war' && event.id === `deep_event_war_${war.id}`)).toBe(true);
     }
   });
 

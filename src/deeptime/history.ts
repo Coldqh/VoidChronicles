@@ -518,7 +518,7 @@ function createWar(
   };
 
   const events: DeepTimeEvent[] = [{
-    id: eventId('deep_event_war', war.id),
+    id: `deep_event_war_${war.id}`,
     year: startYear,
     kind: 'war',
     title: war.name,
