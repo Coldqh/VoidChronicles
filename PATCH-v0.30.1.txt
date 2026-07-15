@@ -1,0 +1,10 @@
+Void Chronicles v0.30.1 — Offline Runtime Test Hotfix
+
+Исправлено:
+- offlineRuntime.test.ts больше не импортирует node:fs.
+- Исходники vite.config.ts и main.tsx читаются через Vite ?raw.
+- Не требуется @types/node и не меняется production-код.
+
+Установка:
+1. Распаковать архив поверх C:\VoidChronicles с заменой файла.
+2. Выполнить npm run check.
