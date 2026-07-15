@@ -92,7 +92,7 @@ function createBaseSimulation(context: SimulationContext, absoluteHour: number):
   }
 
   return {
-    version: 2,
+    version: 3,
     clock: { absoluteHour, epochYear: 0 },
     systems,
     civilizations,
@@ -414,7 +414,7 @@ export function recordWorldEvent(input: SimulationState, event: Omit<WorldEvent,
   };
 }
 
-type LegacySimulation = Omit<Partial<SimulationState>, 'version'> & { version?: 1 | 2 } & Pick<SimulationState, 'clock' | 'systems' | 'civilizations' | 'factions' | 'scheduledEvents' | 'events' | 'nextSequence' | 'lastAdvanceReason'>;
+type LegacySimulation = Omit<Partial<SimulationState>, 'version'> & { version?: 1 | 2 | 3 } & Pick<SimulationState, 'clock' | 'systems' | 'civilizations' | 'factions' | 'scheduledEvents' | 'events' | 'nextSequence' | 'lastAdvanceReason'>;
 
 export function upgradeSimulationEcosystems(input: LegacySimulation, context: SimulationContext): SimulationState {
   const ecosystems = input.ecosystems ?? initializeEcosystems(context.galaxy, input.clock.absoluteHour);
@@ -426,7 +426,7 @@ export function upgradeSimulationEcosystems(input: LegacySimulation, context: Si
   })).filter((event) => !existingIds.has(event.id));
   const base = {
     ...input,
-    version: 2 as const,
+    version: 3 as const,
     ecosystems,
     settlements: input.settlements ?? {},
     populationGroups: input.populationGroups ?? {},
@@ -435,6 +435,8 @@ export function upgradeSimulationEcosystems(input: LegacySimulation, context: Si
   } as SimulationState;
   return ensureSettlementSimulation(base, context);
 }
+
+export const upgradeSimulationPersistence = upgradeSimulationEcosystems;
 
 export function adjustEcosystem(
   input: SimulationState,

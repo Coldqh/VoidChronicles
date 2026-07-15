@@ -172,7 +172,7 @@ describe('snapshot validation and migration', () => {
     };
     const migrated = parseSnapshot(v10, { verifyChecksum: false });
     expect(migrated.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
-    expect(migrated.simulation.version).toBe(2);
+    expect(migrated.simulation.version).toBe(3);
     expect(migrated.simulation.clock.absoluteHour).toBeGreaterThanOrEqual(0);
     expect(migrated.knowledge.version).toBe(1);
     expect(Object.keys(migrated.simulation.systems)).toHaveLength(migrated.galaxy.systems.length);
@@ -194,7 +194,7 @@ describe('snapshot validation and migration', () => {
     };
     const migrated = parseSnapshot(v11, { verifyChecksum: false });
     expect(migrated.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
-    expect(migrated.simulation.version).toBe(2);
+    expect(migrated.simulation.version).toBe(3);
     expect(Object.keys(migrated.simulation.ecosystems).length).toBeGreaterThan(0);
     expect(migrated.simulation.scheduledEvents.some((entry) => entry.kind === 'ecology-cycle')).toBe(true);
   });

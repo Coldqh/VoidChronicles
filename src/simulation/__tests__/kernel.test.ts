@@ -54,6 +54,6 @@ describe('simulation kernel', () => {
     expect(result.simulation.clock.absoluteHour).toBe(2160);
     expect(result.simulation.clock.epochYear).toBe(0);
     expect(result.simulation.lastAdvanceReason).toBe('kernel-test');
-    expect(result.simulation.version).toBe(2);
+    expect(result.simulation.version).toBe(3);
   });
 });

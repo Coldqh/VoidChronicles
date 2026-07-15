@@ -7,7 +7,8 @@ import { initializeWorldThreads } from '../world/storyThreads';
 import { initializeNarrative } from '../narrative/encounters';
 import { createShipSystems, initializeWarFronts, normalizeShipSystems } from '../world/warfare';
 import { createInitialLegacy } from '../world/legacy';
-import { initializeSimulation, upgradeSimulationEcosystems } from '../simulation/kernel';
+import { initializeSimulation, upgradeSimulationPersistence } from '../simulation/kernel';
+import { repairSimulationPersistence } from '../simulation/integrity';
 import { createKnowledgeFromLegacy, projectKnowledgeToGalaxy } from '../simulation/knowledge';
 import { projectWorldThreads } from '../simulation/projections';
 import { worldYear } from '../simulation/clock';
@@ -583,8 +584,15 @@ const simulationStateV2Schema = z.object({
   scheduledEvents: z.array(scheduledEventV2Schema), events: z.array(worldEventSchema),
   nextSequence: finiteNumber, lastAdvanceReason: z.string()
 });
+const simulationStateV3Schema = simulationStateV2Schema.extend({
+  version: z.literal(3),
+  settlements: z.record(z.string(), settlementStateSchema),
+  populationGroups: z.record(z.string(), populationGroupStateSchema),
+  tradeRoutes: z.record(z.string(), tradeRouteStateSchema),
+  scheduledEvents: z.array(scheduledEventV2Schema)
+});
 const knowledgeRecordSchema = z.object({
-  entityId: z.string(), entityType: z.enum(['system','planet','civilization','faction','hub','artifact','ecosystem','species']), confidence: finiteNumber,
+  entityId: z.string(), entityType: z.enum(['system','planet','civilization','faction','hub','artifact','ecosystem','species','settlement','populationGroup','tradeRoute']), confidence: finiteNumber,
   discoveredAtHour: finiteNumber, lastConfirmedAtHour: finiteNumber, source: z.enum(['direct','scan','contact','news','archive','rumor']), knownFields: z.array(z.string())
 });
 const playerKnowledgeSchema = z.object({ version: z.literal(1), records: z.record(z.string(), knowledgeRecordSchema) });
@@ -645,6 +653,7 @@ const v9PayloadSchema = v8PayloadSchema.extend({
 const v10PayloadSchema = v9PayloadSchema.extend({ legacy: legacyStateSchema });
 const v11PayloadSchema = v10PayloadSchema.extend({ simulation: simulationStateV1Schema, knowledge: playerKnowledgeSchema });
 const v12PayloadSchema = v10PayloadSchema.extend({ simulation: simulationStateV2Schema, knowledge: playerKnowledgeSchema });
+const v13PayloadSchema = v10PayloadSchema.extend({ simulation: simulationStateV3Schema, knowledge: playerKnowledgeSchema });
 
 const saveMetadataSchema = z.object({
   savedAt: z.string().datetime(),
@@ -666,8 +675,9 @@ const snapshotV9Schema = v9PayloadSchema.extend({ schemaVersion: z.literal(9), s
 const snapshotV10Schema = v10PayloadSchema.extend({ schemaVersion: z.literal(10), saveMeta: saveMetadataSchema });
 const snapshotV11Schema = v11PayloadSchema.extend({ schemaVersion: z.literal(11), saveMeta: saveMetadataSchema });
 const snapshotV12Schema = v12PayloadSchema.extend({ schemaVersion: z.literal(12), saveMeta: saveMetadataSchema });
+const snapshotV13Schema = v13PayloadSchema.extend({ schemaVersion: z.literal(13), saveMeta: saveMetadataSchema });
 
-type SnapshotCurrent = z.infer<typeof snapshotV12Schema>;
+type SnapshotCurrent = z.infer<typeof snapshotV13Schema>;
 
 function hashText(value: string): string {
   let hash = 0x811c9dc5;
@@ -744,6 +754,14 @@ function normalizeSnapshot(snapshot: SnapshotCurrent): SnapshotCurrent {
   }));
 
   const civilizationLayer = initializeCivilizationLayer(enrichGalaxyCivilizations(snapshot.galaxy as GameStateSnapshot['galaxy']), snapshot.hubs as GameStateSnapshot['hubs']);
+  snapshot = {
+    ...snapshot,
+    simulation: repairSimulationPersistence(snapshot.simulation, {
+      galaxy: civilizationLayer.galaxy,
+      factions: snapshot.factions,
+      hubs: civilizationLayer.hubs
+    })
+  };
   const validEntityIds = new Set<string>([
     ...systemIds,
     ...planetIds,
@@ -919,7 +937,7 @@ export function parseSnapshot(input: unknown, options: ParseSnapshotOptions = {}
     migrated = { ...previous, schemaVersion: CURRENT_SCHEMA_VERSION, saveMeta: { ...previous.saveMeta, appVersion: APP_VERSION, reason: 'migration-v10', checksum: '00000000' } };
   } else if (header.schemaVersion === 11) {
     const previous = snapshotV11Schema.parse(input);
-    const simulation = upgradeSimulationEcosystems(previous.simulation as any, {
+    const simulation = upgradeSimulationPersistence(previous.simulation as any, {
       seed: previous.galaxy.seed,
       galaxy: previous.galaxy as GameStateSnapshot['galaxy'],
       factions: previous.factions as GameStateSnapshot['factions'],
@@ -931,8 +949,22 @@ export function parseSnapshot(input: unknown, options: ParseSnapshotOptions = {}
       schemaVersion: CURRENT_SCHEMA_VERSION,
       saveMeta: { ...previous.saveMeta, appVersion: APP_VERSION, reason: 'migration-v11-ecology', checksum: '00000000' }
     };
+  } else if (header.schemaVersion === 12) {
+    const previous = snapshotV12Schema.parse(input);
+    const simulation = upgradeSimulationPersistence(previous.simulation as any, {
+      seed: previous.galaxy.seed,
+      galaxy: previous.galaxy as GameStateSnapshot['galaxy'],
+      factions: previous.factions as GameStateSnapshot['factions'],
+      hubs: previous.hubs as GameStateSnapshot['hubs']
+    });
+    migrated = {
+      ...previous,
+      simulation,
+      schemaVersion: CURRENT_SCHEMA_VERSION,
+      saveMeta: { ...previous.saveMeta, appVersion: APP_VERSION, reason: 'migration-v12-persistence-v3', checksum: '00000000' }
+    };
   } else if (header.schemaVersion === CURRENT_SCHEMA_VERSION) {
-    migrated = snapshotV12Schema.parse(input);
+    migrated = snapshotV13Schema.parse(input);
     if (options.verifyChecksum !== false) {
       const expected = computeSnapshotChecksum(migrated);
       if (migrated.saveMeta.checksum !== expected) {
@@ -962,8 +994,8 @@ export function parseSnapshot(input: unknown, options: ParseSnapshotOptions = {}
       saveMeta: { ...migrated.saveMeta, appVersion: APP_VERSION, checksum: '00000000' }
     };
   }
-  if (migrated.simulation?.version !== 2 || !migrated.simulation?.ecosystems || Object.keys(migrated.simulation?.settlements ?? {}).length === 0) {
-    migrated.simulation = upgradeSimulationEcosystems(migrated.simulation, {
+  if (migrated.simulation?.version !== 3 || !migrated.simulation?.ecosystems || Object.keys(migrated.simulation?.settlements ?? {}).length === 0) {
+    migrated.simulation = upgradeSimulationPersistence(migrated.simulation, {
       seed: migrated.galaxy.seed,
       galaxy: migrated.galaxy,
       factions: migrated.factions,
@@ -972,7 +1004,7 @@ export function parseSnapshot(input: unknown, options: ParseSnapshotOptions = {}
     migrated.schemaVersion = CURRENT_SCHEMA_VERSION;
     migrated.saveMeta = { ...migrated.saveMeta, appVersion: APP_VERSION, checksum: '00000000' };
   }
-  const normalized = normalizeSnapshot(snapshotV12Schema.parse(migrated));
+  const normalized = normalizeSnapshot(snapshotV13Schema.parse(migrated));
   normalized.saveMeta.checksum = computeSnapshotChecksum(normalized);
   return normalized as GameStateSnapshot;
 }

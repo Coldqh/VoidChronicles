@@ -159,7 +159,7 @@ export interface ScheduledWorldEvent {
 }
 
 export interface SimulationState {
-  version: 2;
+  version: 3;
   clock: WorldClock;
   systems: Record<string, SimulationSystemState>;
   civilizations: Record<string, SimulationCivilizationState>;
