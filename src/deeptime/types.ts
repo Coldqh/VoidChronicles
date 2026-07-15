@@ -135,6 +135,11 @@ export type DeepTimeEventKind =
   | 'era-transition'
   | 'state-formation'
   | 'state-collapse'
+  | 'settlement-founded'
+  | 'settlement-destroyed'
+  | 'first-contact'
+  | 'technology-transfer'
+  | 'trade'
   | 'war'
   | 'migration'
   | 'discovery'
@@ -152,7 +157,96 @@ export interface DeepTimeEvent {
   civilizationIds: string[];
   polityIds: string[];
   systemIds: string[];
+  settlementIds?: string[];
+  figureIds?: string[];
+  artifactIds?: string[];
   tags: string[];
+}
+
+export type DeepHistoricalSettlementKind =
+  | 'camp'
+  | 'village'
+  | 'town'
+  | 'city'
+  | 'capital'
+  | 'fortress'
+  | 'port'
+  | 'industrial-city'
+  | 'metropolis'
+  | 'orbital-habitat'
+  | 'planetary-colony'
+  | 'stellar-colony';
+
+export interface DeepHistoricalSettlement {
+  id: string;
+  civilizationId: string;
+  polityId?: string;
+  name: string;
+  kind: DeepHistoricalSettlementKind;
+  systemId: string;
+  planetId?: string;
+  foundedYear: number;
+  endedYear?: number;
+  status: 'active' | 'abandoned' | 'ruined' | 'conquered';
+  populationPeak: number;
+  populationAtEnd: number;
+  cultureIds: string[];
+  foundingCause: string;
+  endCause?: string;
+}
+
+export interface DeepTimeWar {
+  id: string;
+  name: string;
+  startYear: number;
+  endYear: number;
+  attackerPolityIds: string[];
+  defenderPolityIds: string[];
+  civilizationIds: string[];
+  systemIds: string[];
+  cause: string;
+  outcome: string;
+  casualties: number;
+  settlementIds: string[];
+  endedPolityIds: string[];
+}
+
+export interface DeepTimeMigration {
+  id: string;
+  civilizationId: string;
+  year: number;
+  sourceSettlementId?: string;
+  destinationSettlementId?: string;
+  population: number;
+  cause: string;
+  cultureIds: string[];
+  createdCultureId?: string;
+}
+
+export interface DeepTechnologyDiscovery {
+  id: string;
+  civilizationId: string;
+  polityId?: string;
+  settlementId?: string;
+  field: DeepTechnologyField;
+  year: number;
+  name: string;
+  method: 'independent' | 'trade' | 'war' | 'recovery';
+  sourceCivilizationId?: string;
+  impact: number;
+}
+
+export interface DeepTimeRuin {
+  id: string;
+  settlementId: string;
+  civilizationId: string;
+  systemId: string;
+  planetId?: string;
+  createdYear: number;
+  cause: string;
+  integrity: number;
+  remains: string[];
+  artifactIds: string[];
 }
 
 export interface DeepTimeStatistics {
@@ -165,6 +259,13 @@ export interface DeepTimeStatistics {
   transitions: number;
   regressions: number;
   events: number;
+  settlements?: number;
+  wars?: number;
+  migrations?: number;
+  discoveries?: number;
+  ruins?: number;
+  figures?: number;
+  artifacts?: number;
 }
 
 export interface DeepTimeState {
@@ -177,5 +278,10 @@ export interface DeepTimeState {
   civilizations: Record<string, CivilizationDevelopmentState>;
   transitions: EraTransition[];
   events: DeepTimeEvent[];
+  historicalSettlements?: DeepHistoricalSettlement[];
+  wars?: DeepTimeWar[];
+  migrations?: DeepTimeMigration[];
+  discoveries?: DeepTechnologyDiscovery[];
+  ruins?: DeepTimeRuin[];
   statistics: DeepTimeStatistics;
 }

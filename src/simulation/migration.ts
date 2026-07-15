@@ -133,7 +133,8 @@ export function simulateMigrationCycle(
       return bHabitability - aHabitability;
     });
 
-  if (civilizationState.expansionPressure >= 68 && origin.population >= 25_000 && candidates.length && rng.chance(0.42)) {
+  const canColonizeStars = civilization.development?.spaceAccess === 'interstellar' || civilization.development?.spaceAccess === 'ftl';
+  if (canColonizeStars && civilizationState.expansionPressure >= 68 && origin.population >= 25_000 && candidates.length && rng.chance(0.42)) {
     const target = candidates[0]!;
     const created = createFrontierColony({
       civilizationId,

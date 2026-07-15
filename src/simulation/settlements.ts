@@ -297,7 +297,7 @@ export function initializeSettlementLayer(
     for (const group of populationGroupsForSettlement(settlement, context)) populationGroups[group.id] = group;
   }
 
-  for (const civilization of context.galaxy.civilizations.filter((entry) => entry.status === 'living')) {
+  for (const civilization of context.galaxy.civilizations.filter((entry) => entry.status === 'living' && (entry.development?.spaceAccess ?? 'interstellar') !== 'none')) {
     const faction = context.factions.find((entry) => entry.civilizationId === civilization.id);
     const systems = civilization.controlledSystems
       .map((id) => context.galaxy.systems.find((entry) => entry.id === id))

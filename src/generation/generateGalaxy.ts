@@ -14,6 +14,8 @@ import type {
 import { civilizationName, figureName, planetName, speciesName, starName } from './names';
 import { createRng, stableHash } from './rng';
 import { buildDeepTimeFoundation } from '../deeptime/foundation';
+import { createCivilizationSeeds } from '../deeptime/seeds';
+import { generateDeepHistory } from '../deeptime/history';
 
 const settingsSchema = z.object({
   seed: z.string().min(1),
@@ -319,17 +321,19 @@ export async function generateGalaxy(
   const systems = createSystems(settings);
   if (systems.length !== settings.systemCount) throw new Error(`Generation integrity error: ${systems.length}/${settings.systemCount} systems`);
   await emit('planets', 0.25, `Создано ${systems.length} звёздных систем`);
-  const initialCivilizations = createCivilizations(settings, systems);
+  const initialCivilizations = createCivilizationSeeds(settings, systems);
   await emit('civilizations', 0.42, `Возникло ${initialCivilizations.length} разумных линий`);
   const foundation = buildDeepTimeFoundation(settings, systems, initialCivilizations);
   const civilizations = foundation.civilizations;
-  const deepTime = foundation.deepTime;
-  await emit('deep-time', 0.62, `Пройдены эпохи: ${deepTime.transitions.length} переходов, ${deepTime.statistics.extinctCivilizations} окончательных гибелей`);
-  const figures = createFigures(settings, civilizations);
-  await emit('figures', 0.72, `Зафиксировано ${figures.length} исторических личностей`);
-  const history = foundation.history.length ? foundation.history : createHistory(settings, systems, civilizations, figures);
-  await emit('history', 0.86, `Сформирована причинная хроника из ${history.length} событий`);
-  const artifacts = createArtifacts(settings, civilizations, figures);
+  await emit('deep-time', 0.56, `Пройдены эпохи: ${foundation.deepTime.transitions.length} переходов, ${foundation.deepTime.statistics.extinctCivilizations} окончательных гибелей`);
+  const generatedHistory = generateDeepHistory(settings, systems, civilizations, foundation.deepTime);
+  const deepTime = generatedHistory.deepTime;
+  const figures = generatedHistory.figures;
+  const history = generatedHistory.history;
+  const artifacts = generatedHistory.artifacts;
+  await emit('deep-history', 0.76, `История: ${deepTime.historicalSettlements?.length ?? 0} поселений, ${deepTime.wars?.length ?? 0} войн, ${deepTime.ruins?.length ?? 0} руин`);
+  await emit('figures', 0.84, `Из реальных событий выделено ${figures.length} исторических личностей`);
+  await emit('history', 0.91, `Сформирована причинная хроника из ${history.length} событий и ${artifacts.length} артефактов`);
   const startSystem = systems.find((system) => system.region === 'core' && system.danger === 'safe') ?? systems[0];
   if (!startSystem) throw new Error('Galaxy generation produced no systems');
   startSystem.known = true;

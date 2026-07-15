@@ -110,18 +110,54 @@ const eraTransitionSchema = z.object({
 });
 const deepTimeEventSchema = z.object({
   id: z.string(), year: finiteNumber,
-  kind: z.enum(['biological-origin','sapience','era-transition','state-formation','state-collapse','war','migration','discovery','regression','collapse','extinction']),
+  kind: z.enum(['biological-origin','sapience','era-transition','state-formation','state-collapse','settlement-founded','settlement-destroyed','first-contact','technology-transfer','trade','war','migration','discovery','regression','collapse','extinction']),
   title: z.string(), summary: z.string(), severity: finiteNumber, civilizationIds: z.array(z.string()),
-  polityIds: z.array(z.string()), systemIds: z.array(z.string()), tags: z.array(z.string())
+  polityIds: z.array(z.string()), systemIds: z.array(z.string()), settlementIds: z.array(z.string()).optional(),
+  figureIds: z.array(z.string()).optional(), artifactIds: z.array(z.string()).optional(), tags: z.array(z.string())
 });
+const deepHistoricalSettlementSchema = z.object({
+  id: z.string(), civilizationId: z.string(), polityId: z.string().optional(), name: z.string(),
+  kind: z.enum(['camp','village','town','city','capital','fortress','port','industrial-city','metropolis','orbital-habitat','planetary-colony','stellar-colony']),
+  systemId: z.string(), planetId: z.string().optional(), foundedYear: finiteNumber, endedYear: finiteNumber.optional(),
+  status: z.enum(['active','abandoned','ruined','conquered']), populationPeak: finiteNumber, populationAtEnd: finiteNumber,
+  cultureIds: z.array(z.string()), foundingCause: z.string(), endCause: z.string().optional()
+});
+const deepTimeWarSchema = z.object({
+  id: z.string(), name: z.string(), startYear: finiteNumber, endYear: finiteNumber,
+  attackerPolityIds: z.array(z.string()), defenderPolityIds: z.array(z.string()),
+  civilizationIds: z.array(z.string()), systemIds: z.array(z.string()), cause: z.string(), outcome: z.string(),
+  casualties: finiteNumber, settlementIds: z.array(z.string()), endedPolityIds: z.array(z.string())
+});
+const deepTimeMigrationSchema = z.object({
+  id: z.string(), civilizationId: z.string(), year: finiteNumber,
+  sourceSettlementId: z.string().optional(), destinationSettlementId: z.string().optional(),
+  population: finiteNumber, cause: z.string(), cultureIds: z.array(z.string()), createdCultureId: z.string().optional()
+});
+const deepTechnologyDiscoverySchema = z.object({
+  id: z.string(), civilizationId: z.string(), polityId: z.string().optional(), settlementId: z.string().optional(),
+  field: z.enum(['subsistence','agriculture','materials','writing','governance','medicine','navigation','military','industry','energy','computing','biology','spaceflight','ftl']),
+  year: finiteNumber, name: z.string(), method: z.enum(['independent','trade','war','recovery']),
+  sourceCivilizationId: z.string().optional(), impact: finiteNumber
+});
+const deepTimeRuinSchema = z.object({
+  id: z.string(), settlementId: z.string(), civilizationId: z.string(), systemId: z.string(),
+  planetId: z.string().optional(), createdYear: finiteNumber, cause: z.string(), integrity: finiteNumber,
+  remains: z.array(z.string()), artifactIds: z.array(z.string())
+});
+
 const deepTimeStateSchema = z.object({
   version: z.literal(1), startYear: finiteNumber, endYear: finiteNumber,
   species: z.array(deepTimeSpeciesSchema), cultures: z.array(deepTimeCultureSchema), polities: z.array(deepTimePolitySchema),
   civilizations: z.record(z.string(), civilizationDevelopmentSchema), transitions: z.array(eraTransitionSchema), events: z.array(deepTimeEventSchema),
+  historicalSettlements: z.array(deepHistoricalSettlementSchema).optional(), wars: z.array(deepTimeWarSchema).optional(),
+  migrations: z.array(deepTimeMigrationSchema).optional(), discoveries: z.array(deepTechnologyDiscoverySchema).optional(),
+  ruins: z.array(deepTimeRuinSchema).optional(),
   statistics: z.object({
     generatedCivilizations: finiteNumber, livingCivilizations: finiteNumber, extinctCivilizations: finiteNumber,
     hiddenCivilizations: finiteNumber, preSpaceCivilizations: finiteNumber, spacefaringCivilizations: finiteNumber,
-    transitions: finiteNumber, regressions: finiteNumber, events: finiteNumber
+    transitions: finiteNumber, regressions: finiteNumber, events: finiteNumber,
+    settlements: finiteNumber.optional(), wars: finiteNumber.optional(), migrations: finiteNumber.optional(),
+    discoveries: finiteNumber.optional(), ruins: finiteNumber.optional(), figures: finiteNumber.optional(), artifacts: finiteNumber.optional()
   })
 });
 
@@ -134,6 +170,7 @@ const civilizationSchema = z.object({
   ideology: z.string(),
   homeSystemId: z.string(),
   controlledSystems: z.array(z.string()),
+  expansionCandidateSystemIds: z.array(z.string()).optional(),
   foundedYear: finiteNumber,
   endedYear: finiteNumber.optional(),
   traits: z.array(z.string()),

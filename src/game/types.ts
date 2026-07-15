@@ -137,6 +137,7 @@ export interface Civilization {
   ideology: string;
   homeSystemId: string;
   controlledSystems: string[];
+  expansionCandidateSystemIds?: string[];
   foundedYear: number;
   endedYear?: number;
   traits: string[];

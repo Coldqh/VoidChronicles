@@ -171,7 +171,7 @@ function mergeTechnology(
 }
 
 function territoryForEra(civilization: Civilization, era: CivilizationalEra): string[] {
-  const available = unique([civilization.homeSystemId, ...civilization.controlledSystems]);
+  const available = unique([civilization.homeSystemId, ...(civilization.expansionCandidateSystemIds ?? civilization.controlledSystems)]);
   if (eraIndex(era) < eraIndex('interstellar')) return [civilization.homeSystemId];
   if (era === 'interstellar') return available.slice(0, Math.max(2, Math.min(4, available.length)));
   return available;
