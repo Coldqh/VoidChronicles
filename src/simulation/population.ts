@@ -1,6 +1,7 @@
 import type { Civilization } from '../game/types';
 import { createRng } from '../generation/rng';
 import type { SimulationContext } from './context';
+import { socialConflictCooldownYears } from './stability';
 import { cultureSummaryForCivilization } from './culture';
 import { economyForCivilization } from './economy';
 import type {
@@ -210,7 +211,7 @@ function writeSocietySnapshot(
     ...state.events.filter(
       (entry) => !(entry.tags.includes(STATE_TAG) && entry.data?.societyCivilizationId === society.civilizationId)
     )
-  ].slice(0, 1_000);
+  ].slice(0, 8_500);
 }
 
 function shortagePressure(settlement: SettlementState): number {
@@ -465,7 +466,7 @@ export function simulatePopulationCycle(
     society.classTension >= 88 &&
     society.radicalization >= 72 &&
     society.loyalty <= 32 &&
-    !recentPublicEvent(state, civilization.id, 'social-revolt', atHour, 3)
+    !recentPublicEvent(state, civilization.id, 'social-revolt', atHour, socialConflictCooldownYears('social-revolt'))
   ) {
     damageProduction(state, civilization.id, 0.68, atHour);
     return {
@@ -489,7 +490,7 @@ export function simulatePopulationCycle(
 
   if (
     (society.classTension >= 72 || society.radicalization >= 68) &&
-    !recentPublicEvent(state, civilization.id, 'urban-riots', atHour, 2)
+    !recentPublicEvent(state, civilization.id, 'urban-riots', atHour, socialConflictCooldownYears('urban-riots'))
   ) {
     damageProduction(state, civilization.id, 0.82, atHour);
     return {
@@ -514,8 +515,8 @@ export function simulatePopulationCycle(
   if (
     society.unemployment >= 20 &&
     society.classTension >= 55 &&
-    rng.chance(0.55) &&
-    !recentPublicEvent(state, civilization.id, 'general-strike', atHour, 2)
+    rng.chance(0.4) &&
+    !recentPublicEvent(state, civilization.id, 'general-strike', atHour, socialConflictCooldownYears('general-strike'))
   ) {
     damageProduction(state, civilization.id, 0.9, atHour);
     return {
@@ -541,7 +542,7 @@ export function simulatePopulationCycle(
     previous.classTension >= 60 &&
     society.classTension <= 48 &&
     society.loyalty >= 55 &&
-    !recentPublicEvent(state, civilization.id, 'social-reform', atHour, 4)
+    !recentPublicEvent(state, civilization.id, 'social-reform', atHour, socialConflictCooldownYears('social-reform'))
   ) {
     for (const group of groupsForCivilization(state, civilization.id)) {
       if (group.socialClass === 'workers' || group.socialClass === 'migrants') {
@@ -571,7 +572,7 @@ export function simulatePopulationCycle(
 
   if (
     society.deathRate - society.birthRate >= 8 &&
-    !recentPublicEvent(state, civilization.id, 'demographic-decline', atHour, 4)
+    !recentPublicEvent(state, civilization.id, 'demographic-decline', atHour, socialConflictCooldownYears('demographic-decline'))
   ) {
     return {
       kind: 'demography',

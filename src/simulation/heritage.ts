@@ -329,7 +329,7 @@ function writeArtifactSnapshot(state: SimulationState, artifact: LiveArtifactSta
   };
   state.events = [event, ...state.events.filter(
     (entry) => !(entry.tags.includes(ARTIFACT_STATE_TAG) && entry.data?.heritageArtifactId === artifact.id)
-  )].slice(0, 1_000);
+  )].slice(0, 8_500);
 }
 
 function writeArchiveSnapshot(state: SimulationState, archive: LiveArchiveState, atHour: number): void {
@@ -364,7 +364,7 @@ function writeArchiveSnapshot(state: SimulationState, archive: LiveArchiveState,
   };
   state.events = [event, ...state.events.filter(
     (entry) => !(entry.tags.includes(ARCHIVE_STATE_TAG) && entry.data?.archiveId === archive.id)
-  )].slice(0, 1_000);
+  )].slice(0, 8_500);
 }
 
 function writeRuinSnapshot(state: SimulationState, ruin: LiveRuinState, atHour: number): void {
@@ -399,7 +399,7 @@ function writeRuinSnapshot(state: SimulationState, ruin: LiveRuinState, atHour: 
   };
   state.events = [event, ...state.events.filter(
     (entry) => !(entry.tags.includes(RUIN_STATE_TAG) && entry.data?.livingRuinId === ruin.id)
-  )].slice(0, 1_000);
+  )].slice(0, 8_500);
 }
 
 function recentEvent(state: SimulationState, civilizationId: string, tag: string, atHour: number, years: number): boolean {

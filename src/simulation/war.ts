@@ -13,6 +13,7 @@ import {
   type LivePolityState
 } from './polities';
 import type { SimulationState, WorldEvent, WorldEventDraft } from './types';
+import { MIN_WAR_UPDATE_HOURS } from './stability';
 
 const HOURS_PER_DAY = 24;
 const HOURS_PER_YEAR = 365 * HOURS_PER_DAY;
@@ -230,7 +231,7 @@ export function writeWarSnapshot(
     ...state.events.filter(
       (event) => !(event.tags.includes(STATE_TAG) && event.data?.warId === war.id)
     )
-  ].slice(0, 1_000);
+  ].slice(0, 8_500);
 }
 
 function systemsBorder(
@@ -683,7 +684,10 @@ export function simulateLivingWarCycle(
   const active = wars.find(
     (war) => war.status === 'active' && war.civilizationIds[0] === civilization.id
   );
-  if (active) return updateWar(state, active, context, atHour);
+  if (active) {
+    if (atHour - active.lastUpdatedHour < MIN_WAR_UPDATE_HOURS) return null;
+    return updateWar(state, active, context, atHour);
+  }
 
   const allPolities = livePolities(state, context).filter(
     (polity) => polity.status === 'active' && polity.territorySystemIds.length > 0

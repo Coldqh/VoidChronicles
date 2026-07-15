@@ -208,7 +208,7 @@ function writeImpactSnapshot(
   };
   state.events = [event, ...state.events.filter(
     (entry) => !(entry.tags.includes(STATE_TAG) && entry.data?.impactPlanetId === impact.planetId)
-  )].slice(0, 1_000);
+  )].slice(0, 8_500);
 }
 
 function applyImpact(

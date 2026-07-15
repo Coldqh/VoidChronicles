@@ -360,7 +360,7 @@ function writeCultureSnapshot(
     ...state.events.filter(
       (event) => !(event.tags.includes(STATE_TAG) && event.data?.cultureId === culture.id)
     )
-  ].slice(0, 1_000);
+  ].slice(0, 8_500);
 }
 
 function recentPublicEvent(

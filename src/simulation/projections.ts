@@ -3,6 +3,7 @@ import type { PlayerKnowledgeState, SimulationState, WorldEvent } from './types'
 import { knowsEntity } from './knowledge';
 import { worldYear } from './clock';
 import { reconcileWorldContractConsequences } from './playerConsequences';
+import { maintainSimulationStability } from './stability';
 import {
   contractFromWorldNeed,
   sourceEventIdForContract,
@@ -54,6 +55,7 @@ export function projectWorldThreads(args: {
   research: ResearchProject[];
 }): WorldThread[] {
   const { simulation, warFronts, factions, contracts, research } = args;
+  maintainSimulationStability(simulation);
   reconcileWorldContractConsequences(simulation, contracts, factions);
   const year = worldYear(simulation.clock);
   const threads: WorldThread[] = [];

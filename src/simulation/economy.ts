@@ -374,7 +374,7 @@ function writeEconomySnapshot(
     ...state.events.filter(
       (entry) => !(entry.tags.includes(STATE_TAG) && entry.data?.economyCivilizationId === economy.civilizationId)
     )
-  ].slice(0, 1_000);
+  ].slice(0, 8_500);
 }
 
 function updateSettlementProduction(

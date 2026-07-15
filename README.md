@@ -1,10 +1,60 @@
 # Void Chronicles
 
-**Current version: v0.27.0 — Chronicle, World Gameplay & Consequences**
+**Current version: v0.28.0 — Simulation Stability**
 
 Procedural single-player space exploration roguelike and autonomous galaxy-history simulator built with React, TypeScript and Canvas.
 
 The captain is a participant, not the center of the universe. Species, settlements, states, economies, cultures, social classes, ecosystems and wars continue to exist and change without player involvement.
+
+## v0.28.0 Simulation Stability
+
+This release hardens the autonomous world for long campaigns and large galaxies without changing save schema 13.
+
+### Central history retention
+
+- the simulation no longer destroys all history after the thousandth event;
+- one centralized maintenance policy replaces local event truncation;
+- the live event graph keeps up to 8,000 useful records with an 8,500-event working buffer;
+- current polity, war, economy, culture, society, figure, institution, artifact, archive, ruin and planetary snapshots are compacted to the latest state per entity;
+- era transitions, regressions, collapses, occupations, peace treaties and player consequences are protected from routine cleanup;
+- causal dependencies are retained when their result remains in history;
+- duplicate event identifiers and broken cause/result references are repaired deterministically.
+
+### State integrity
+
+- invalid, negative and non-finite simulation values are normalized;
+- orphaned population groups, settlements and trade routes are removed or repaired;
+- population groups are reconciled with their settlement totals;
+- invalid ecosystem species, biome, predator, prey and pathogen references are cleaned;
+- scheduled events are deduplicated and capped at 25,000 entries;
+- event sequence numbers are repaired after old or damaged saves are loaded.
+
+### Runaway-process control
+
+- active wars cannot remain unresolved for centuries;
+- exhausted, idle and overlong wars receive one deterministic stability resolution;
+- the same war cannot update more than once every 30 days;
+- revolts, riots, strikes, reforms and demographic decline use centralized cooldowns;
+- repeated social events are compacted without deleting causally referenced events.
+
+### Long-run validation
+
+- deterministic maintenance tests cover 100, 1,000 and 10,000 simulated years;
+- a valid 1,500-system state remains intact;
+- event and schedule limits remain bounded;
+- repeated maintenance is idempotent;
+- the kernel retains important history beyond 1,000 events;
+- `SAVE_SCHEMA_VERSION` remains 13 and no save migration is required.
+
+### Applying the kernel integration
+
+The archive includes an idempotent installer because `kernel.ts` must replace three legacy 1,000-event truncation points. Run it once after extracting the patch:
+
+```bash
+node APPLY-v0.28.mjs
+```
+
+Running the installer again is safe and reports that the kernel is already updated.
 
 ## v0.27.0 Chronicle, World Gameplay & Consequences
 

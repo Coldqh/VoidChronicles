@@ -1,0 +1,74 @@
+Void Chronicles v0.28.0 — Simulation Stability
+
+Purpose
+-------
+Hardens the autonomous simulation for long campaigns, damaged legacy states and large galaxies.
+
+Core changes
+------------
+- Replaces the old 1,000-event truncation with centralized bounded retention.
+- Keeps the latest event-sourced state snapshot for every live entity.
+- Preserves era transitions, regressions, collapses, wars, peace, occupations and player consequences.
+- Repairs duplicate event ids and bidirectional causal links.
+- Normalizes NaN, infinity, negative populations/resources and out-of-range 0–100 metrics.
+- Removes or repairs orphaned settlements, population groups and trade routes.
+- Reconciles settlement population with population-group totals.
+- Deduplicates and caps the scheduled queue at 25,000 records.
+- Repairs nextSequence after imported or old saves.
+- Resolves wars that are exhausted, idle for 20 years or active for more than 120 years.
+- Limits war updates to once per 30 days.
+- Adds centralized cooldowns and compaction for revolts, riots, strikes, reforms and demographic decline.
+
+Kernel integration
+------------------
+After extracting the archive over the repository, run:
+
+  node APPLY-v0.28.mjs
+
+The installer patches the current src/simulation/kernel.ts in place. It is idempotent and safe to run more than once.
+
+Compatibility
+-------------
+- Base release: v0.27.0.
+- APP_VERSION: 0.28.0.
+- APP_CODENAME: SIMULATION_STABILITY.
+- SAVE_SCHEMA_VERSION remains 13.
+- No save migration is required.
+
+Validation
+----------
+- Strict TypeScript validation of all changed simulation modules.
+- Strict JSX/type validation of Chronicle and Living World integration.
+- Existing v0.18, v0.21, v0.24 and v0.27 deterministic suites.
+- Living-history transition regression: medieval -> gunpowder.
+- Living-history collapse regression: atomic -> modern.
+- Nine new stability scenarios.
+- Kernel history retention beyond 1,000 events.
+- Histories representing 100, 1,000 and 10,000 simulated years.
+- Valid 1,500-system world state.
+- ZIP extraction and byte-for-byte verification.
+
+Files
+-----
+New:
+- APPLY-v0.28.mjs
+- src/simulation/stability.ts
+- src/tests/simulationStability.test.ts
+- src/tests/kernelStability.test.ts
+
+Changed:
+- README.md
+- src/version.ts
+- src/simulation/projections.ts
+- src/simulation/population.ts
+- src/simulation/war.ts
+- src/simulation/polities.ts
+- src/simulation/economy.ts
+- src/simulation/culture.ts
+- src/simulation/figures.ts
+- src/simulation/heritage.ts
+- src/simulation/planetaryConsequences.ts
+- src/simulation/playerConsequences.ts
+
+Patched by installer:
+- src/simulation/kernel.ts

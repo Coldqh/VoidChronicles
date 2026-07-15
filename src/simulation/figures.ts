@@ -406,7 +406,7 @@ function writeFigureSnapshot(state: SimulationState, figure: LiveHistoricalFigur
     ...state.events.filter(
       (entry) => !(entry.tags.includes(FIGURE_STATE_TAG) && entry.data?.figureId === figure.id)
     )
-  ].slice(0, 1_000);
+  ].slice(0, 8_500);
 }
 
 function writeInstitutionSnapshot(
@@ -452,7 +452,7 @@ function writeInstitutionSnapshot(
         entry.data?.institutionId === institution.id
       )
     )
-  ].slice(0, 1_000);
+  ].slice(0, 8_500);
 }
 
 function recentEvent(

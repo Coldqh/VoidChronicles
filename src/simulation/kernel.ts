@@ -8,6 +8,11 @@ import { recomputeSystemFromSettlements, simulateSettlementCycle } from './econo
 import { simulateMigrationCycle } from './migration';
 import { initialScheduledEvents, missingSettlementSchedule } from './scheduler';
 import { simulateTradeRouteCycle } from './trade';
+import {
+  maintainSimulationStability,
+  SIMULATION_EVENT_BUFFER_LIMIT,
+  SIMULATION_SCHEDULE_LIMIT
+} from './stability';
 import type {
   ScheduledWorldEvent,
   SimulationAdvanceResult,
@@ -664,7 +669,9 @@ export function advanceSimulation(
     if (result.event) {
       emittedEvents.push(result.event);
       state.events.unshift(result.event);
-      if (state.events.length > 1_000) state.events.length = 1_000;
+      if (state.events.length > SIMULATION_EVENT_BUFFER_LIMIT) {
+        maintainSimulationStability(state);
+      }
       state.nextSequence += 1;
     }
     for (const scheduled of result.scheduledEvents) insertScheduled(scheduled);
@@ -695,8 +702,8 @@ export function advanceSimulation(
   }
 
   state.clock.absoluteHour = targetHour;
-  state.events = state.events.slice(0, 1_000);
-  state.scheduledEvents = queue.slice(0, 25_000);
+  state.scheduledEvents = queue.slice(0, SIMULATION_SCHEDULE_LIMIT);
+  maintainSimulationStability(state);
   return { simulation: state, emittedEvents: emittedEvents.slice(-500) };
 }
 
@@ -734,14 +741,13 @@ export function recordWorldEvent(
     id: `world_${input.nextSequence}_manual_${atHour}`,
     atHour
   };
-  return {
-    event: created,
-    simulation: {
-      ...input,
-      nextSequence: input.nextSequence + 1,
-      events: [created, ...input.events].slice(0, 1_000)
-    }
+  const simulation: SimulationState = {
+    ...input,
+    nextSequence: input.nextSequence + 1,
+    events: [created, ...input.events]
   };
+  maintainSimulationStability(simulation);
+  return { event: created, simulation };
 }
 
 type LegacySimulation = Omit<Partial<SimulationState>, 'version'> & {

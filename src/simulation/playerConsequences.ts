@@ -216,7 +216,7 @@ function heritageSnapshot(
       tags: ['simulation', 'living-history', 'living-artifact-state', 'state-snapshot'],
       data
     };
-    state.events = [snapshot, ...state.events.filter((event) => !(event.tags.includes('living-artifact-state') && event.data?.heritageArtifactId === artifactId))].slice(0, 1_000);
+    state.events = [snapshot, ...state.events.filter((event) => !(event.tags.includes('living-artifact-state') && event.data?.heritageArtifactId === artifactId))].slice(0, 8_500);
     changed.push(artifactId);
   }
 
@@ -247,7 +247,7 @@ function heritageSnapshot(
       tags: ['simulation', 'living-history', 'living-archive-state', 'state-snapshot'],
       data
     };
-    state.events = [snapshot, ...state.events.filter((event) => !(event.tags.includes('living-archive-state') && event.data?.archiveId === archiveId))].slice(0, 1_000);
+    state.events = [snapshot, ...state.events.filter((event) => !(event.tags.includes('living-archive-state') && event.data?.archiveId === archiveId))].slice(0, 8_500);
     changed.push(archiveId);
   }
   return changed;
@@ -425,7 +425,7 @@ export function applyPlayerWorldAction(
     prospectiveEventId: eventId
   });
   const event: WorldEvent = { ...causal, id: eventId, atHour };
-  state.events = [event, ...state.events].slice(0, 1_000);
+  state.events = [event, ...state.events].slice(0, 8_500);
   state.nextSequence += 1;
   state.lastAdvanceReason = `player-world-action:${action.kind}`;
   return { event, changedEntityIds: changed };
