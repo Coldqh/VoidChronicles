@@ -247,11 +247,13 @@ export function generateScanScene(
   year: number,
   planetName?: string
 ): StoryScene | null {
-  const rng = createRng(`${seed}:scan-scene:${systemId}:${planetName ?? 'system'}:${year}`);
-  if (!rng.chance(planetName ? .68 : .52)) return null;
+  // Ответ на сканирование — редкое событие, а не обычная реакция интерфейса.
+  // Год убран из ID: одна и та же цель не создаёт одинаковую сцену повторно.
+  const rng = createRng(`${seed}:rare-scan-scene:${systemId}:${planetName ?? 'system'}`);
+  if (!rng.chance(planetName ? 0.06 : 0.025)) return null;
   const title = planetName ? `Ответ на сканирование ${planetName}` : `Неожиданный ответ из системы ${systemName}`;
   return {
-    id: `scene_scan_${systemId}_${planetName ?? 'system'}_${year}`.replace(/\s+/g, '_'),
+    id: `scene_scan_${systemId}_${planetName ?? 'system'}`.replace(/\s+/g, '_'),
     category: 'mystery',
     status: 'available',
     title,
