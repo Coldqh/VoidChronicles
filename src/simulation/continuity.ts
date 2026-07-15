@@ -165,12 +165,7 @@ function buildSettlement(params: {
 
 function activeHistoricalSettlements(context: SimulationContext): DeepHistoricalSettlement[] {
   return (context.galaxy.deepTime?.historicalSettlements ?? []).filter(
-    (settlement) =>
-      settlement.status === 'active' &&
-      settlement.endedYear === undefined &&
-      context.galaxy.civilizations.some(
-        (civilization) => civilization.id === settlement.civilizationId && civilization.status === 'living'
-      )
+    (settlement) => settlement.status === 'active' && settlement.endedYear === undefined
   );
 }
 
