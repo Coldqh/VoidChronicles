@@ -1,0 +1,18 @@
+Void Chronicles v0.31.3 — Missing Ecology Integrity Module Hotfix
+
+Исправлено:
+- Возвращён отсутствующий файл src/ecology/integrity.ts.
+- Восстановлен общий normalizeEcologyState для kernel, snapshot и
+  planetaryConsequences.
+- Все экологические метрики, ресурсы, биомы, виды и патогены округляются
+  и очищаются в одном месте.
+- Версия приложения поднята до 0.31.3.
+
+Причина:
+Код v0.31 импортировал ../ecology/integrity, но файл отсутствовал в рабочем
+дереве, из-за чего TypeScript останавливал сборку.
+
+Установка:
+1. Распаковать ZIP в C:\VoidChronicles с сохранением структуры папок.
+2. Выполнить: node APPLY-v0.31.3.mjs
+3. Выполнить: npm run check
