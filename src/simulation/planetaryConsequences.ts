@@ -1,6 +1,7 @@
 import type { Civilization } from '../game/types';
 import { createRng } from '../generation/rng';
 import type { PlanetEcologyState } from '../ecology/types';
+import { normalizeEcologyState } from '../ecology/integrity';
 import type { SimulationContext } from './context';
 import { cultureSummaryForCivilization } from './culture';
 import { economyForCivilization } from './economy';
@@ -248,7 +249,7 @@ function applyImpact(
     ...pathogen,
     active: pathogen.active || (impact.diseaseSpillover >= 70 && index === 0 && rng.chance(0.3))
   }));
-  return {
+  return normalizeEcologyState({
     ...ecology,
     contamination: clamp(ecology.contamination + contaminationDelta),
     biomass: Math.max(0, ecology.biomass * (1 + biomassDelta / 1_000)),
@@ -268,7 +269,7 @@ function applyImpact(
     invasiveSpeciesIds,
     pathogens,
     lastUpdatedHour: atHour
-  };
+  });
 }
 
 function recentEvent(state: SimulationState, civilizationId: string, tag: string, atHour: number, years: number): boolean {
@@ -303,7 +304,7 @@ export function simulatePlanetaryConsequencesCycle(
       entry.planets.some((planet) => planet.id === impact.planetId)
     );
     if (!ecology || !system) continue;
-    const nextEcology = applyImpact(ecology, impact, rng, atHour);
+    const nextEcology = normalizeEcologyState(applyImpact(ecology, impact, rng, atHour));
     state.ecosystems[impact.planetId] = nextEcology;
     writeImpactSnapshot(state, impact, system.id, atHour);
     updated.push({ impact, ecology: nextEcology, systemId: system.id });
