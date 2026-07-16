@@ -94,7 +94,6 @@ export function ContactsScreen({ chrome }: { chrome?: ReactNode }) {
               className={civilization?.id === entry.civilization.id ? 'active' : ''}
               onClick={() => {
                 setSelectedId(entry.civilization.id);
-                setProfileCivilizationId(entry.civilization.id);
                 setNotice('');
               }}
             >
