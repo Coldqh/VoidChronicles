@@ -111,6 +111,66 @@ export interface OperationState {
   completedYear?: number;
   log: string[];
 }
+export type GalacticRouteKind = 'standard' | 'trade' | 'military' | 'smuggler' | 'ancient' | 'quarantine';
+export type RoutePreference = 'fast' | 'safe' | 'economical' | 'covert';
+export type GalacticSectorKind = 'core' | 'inner' | 'rim' | 'void';
+export interface GalacticSector {
+  id: string;
+  name: string;
+  kind: GalacticSectorKind;
+  systemIds: string[];
+  controllingCivilizationId?: string;
+  danger: number;
+  contested: boolean;
+  traits: string[];
+}
+export interface GalacticRouteLeg {
+  id: string;
+  fromSystemId: string;
+  toSystemId: string;
+  kind: GalacticRouteKind;
+  distance: number;
+  fuelCost: number;
+  hours: number;
+  risk: number;
+  access: 'open' | 'restricted' | 'blocked';
+  controllingCivilizationId?: string;
+  controllingFactionId?: string;
+  tradeRouteId?: string;
+  warFrontId?: string;
+  restriction?: string;
+  label: string;
+}
+export interface GalacticRoutePlan {
+  id: string;
+  preference: RoutePreference;
+  destinationSystemId: string;
+  systemIds: string[];
+  legs: GalacticRouteLeg[];
+  currentLegIndex: number;
+  totalFuel: number;
+  totalHours: number;
+  totalRisk: number;
+  foodCost: number;
+  oxygenCost: number;
+  warnings: string[];
+  createdYear: number;
+  status: 'active' | 'completed' | 'abandoned';
+}
+export interface RouteHistoryEntry {
+  id: string;
+  fromSystemId: string;
+  toSystemId: string;
+  year: number;
+  routeKind: GalacticRouteKind;
+  risk: number;
+  incident?: string;
+}
+export interface NavigationState {
+  activePlan?: GalacticRoutePlan;
+  history: RouteHistoryEntry[];
+  knownSectorIds: string[];
+}
 
 export interface GalaxySettings {
   seed: string;
@@ -1114,5 +1174,6 @@ export interface GameStateSnapshot {
   storyScenes: StoryScene[];
   pendingConsequences: PendingConsequence[];
   objectives: PlayerObjective[];
+  navigation: NavigationState;
   tutorial: TutorialState;
 }

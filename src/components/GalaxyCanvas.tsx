@@ -1,5 +1,5 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
-import type { StarSystem } from '../game/types';
+import type { GalacticRouteKind, StarSystem } from '../game/types';
 
 interface Props {
   systems: StarSystem[];
@@ -7,6 +7,7 @@ interface Props {
   selectedSystemId: string | null;
   jumpRange: number;
   livingCivilizationIds?: string[];
+  routeVisuals?: Array<{ fromSystemId: string; toSystemId: string; kind: GalacticRouteKind; planned: boolean }>;
   onSelect(id: string): void;
 }
 
@@ -23,7 +24,7 @@ export interface GalaxyCanvasHandle {
 const clampZoom = (value: number) => Math.max(0.32, Math.min(4.8, value));
 
 export const GalaxyCanvas = forwardRef<GalaxyCanvasHandle, Props>(function GalaxyCanvas(
-  { systems, currentSystemId, selectedSystemId, jumpRange, livingCivilizationIds = [], onSelect },
+  { systems, currentSystemId, selectedSystemId, jumpRange, livingCivilizationIds = [], routeVisuals = [], onSelect },
   ref
 ) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -37,6 +38,7 @@ export const GalaxyCanvas = forwardRef<GalaxyCanvasHandle, Props>(function Galax
   const current = systemIndex.get(currentSystemId);
   const knownSystems = useMemo(() => systems.filter((system) => system.known), [systems]);
   const livingCivilizations = useMemo(() => new Set(livingCivilizationIds), [livingCivilizationIds]);
+  const routeVisualIndex = useMemo(() => new Map(routeVisuals.map((visual) => [visual.fromSystemId < visual.toSystemId ? `${visual.fromSystemId}::${visual.toSystemId}` : `${visual.toSystemId}::${visual.fromSystemId}`, visual])), [routeVisuals]);
 
   const fitSystems = useCallback((targets: StarSystem[], padding = 72, minimumZoom = 0.32, maximumZoom = 4.8) => {
     const canvas = canvasRef.current;
@@ -161,7 +163,6 @@ export const GalaxyCanvas = forwardRef<GalaxyCanvasHandle, Props>(function Galax
       ctx.fill();
     }
 
-    ctx.strokeStyle = 'rgba(89, 142, 166, .18)';
     for (const system of systems) {
       if (!system.known) continue;
       const a = toScreen(system, width, height);
@@ -170,7 +171,21 @@ export const GalaxyCanvas = forwardRef<GalaxyCanvasHandle, Props>(function Galax
         if (!neighbor?.known || neighbor.id < system.id) continue;
         const b = toScreen(neighbor, width, height);
         if ((a.x < -50 && b.x < -50) || (a.x > width + 50 && b.x > width + 50) || (a.y < -50 && b.y < -50) || (a.y > height + 50 && b.y > height + 50)) continue;
+        const key = system.id < neighbor.id ? `${system.id}::${neighbor.id}` : `${neighbor.id}::${system.id}`;
+        const visual = routeVisualIndex.get(key);
+        ctx.save();
+        ctx.lineWidth = visual?.planned ? 3 : visual ? 1.35 : 1;
+        ctx.strokeStyle = visual?.planned ? 'rgba(91, 224, 255, .95)'
+          : visual?.kind === 'military' ? 'rgba(255, 91, 99, .48)'
+            : visual?.kind === 'trade' ? 'rgba(91, 218, 153, .42)'
+              : visual?.kind === 'smuggler' ? 'rgba(182, 117, 255, .42)'
+                : visual?.kind === 'ancient' ? 'rgba(229, 203, 114, .48)'
+                  : visual?.kind === 'quarantine' ? 'rgba(255, 165, 83, .52)'
+                    : 'rgba(89, 142, 166, .18)';
+        if (visual?.kind === 'smuggler' || visual?.kind === 'quarantine') ctx.setLineDash([5, 5]);
+        if (visual?.planned) { ctx.shadowBlur = 10; ctx.shadowColor = '#5be0ff'; }
         ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+        ctx.restore();
       }
     }
 
@@ -204,7 +219,7 @@ export const GalaxyCanvas = forwardRef<GalaxyCanvasHandle, Props>(function Galax
         ctx.fillText(system.name, point.x + 9, point.y - 8);
       }
     }
-  }, [current, currentSystemId, jumpRange, livingCivilizations, selectedSystemId, systemIndex, systems, toScreen, view]);
+  }, [current, currentSystemId, jumpRange, livingCivilizations, routeVisualIndex, selectedSystemId, systemIndex, systems, toScreen, view]);
 
   useEffect(() => {
     const frame = window.requestAnimationFrame(draw);

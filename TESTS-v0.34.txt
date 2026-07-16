@@ -1,0 +1,34 @@
+Void Chronicles v0.34.0 — выполненные проверки
+
+1. npm run check в изолированном строгом проекте новых модулей:
+   - TypeScript strict: PASS
+   - Vitest: 5/5 PASS
+   - Vite production build: PASS
+
+2. Интеграция установщика:
+   - APPLY-v0.34.mjs: PASS
+   - повторный APPLY-v0.34.mjs: PASS
+   - удаление старого GalaxyScreen: PASS
+   - подключение нового GalaxyScreen: PASS
+   - внедрение routeVisuals в GalaxyCanvas: PASS
+   - внедрение NavigationState в types/store/snapshot: PASS
+   - замена travelTo на динамический маршрут: PASS
+
+3. Интеграционные raw-source тесты:
+   - interfaceV34.test.ts: 3/3 PASS
+   - navigationPersistence.test.ts: 2/2 PASS
+
+4. Синтаксическая TypeScript/TSX-проверка пропатченных файлов:
+   - App.tsx: PASS
+   - GalaxyCanvas.tsx: PASS
+   - store.ts: PASS
+   - types.ts: PASS
+   - snapshot.ts: PASS
+
+Покрытые сценарии:
+- детерминированные сектора и торговые коридоры;
+- обход полностью перекрытого военного маршрута;
+- целые оценки топлива, времени и припасов;
+- продолжение и завершение сохранённого маршрута;
+- детерминированные происшествия;
+- сохранение navigation в действующей схеме сейва.

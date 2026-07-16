@@ -16,6 +16,7 @@ import type {
   Galaxy,
   GameLogEntry,
   GameStateSnapshot,
+  GalacticRoutePlan,
   Hub,
   Hypothesis,
   LegacyState,
@@ -23,6 +24,7 @@ import type {
   LocalNpc,
   MarketGood,
   NewsItem,
+  NavigationState,
   OperationApproach,
   PointOfInterest,
   PlayerObjective,
@@ -75,6 +77,7 @@ import { createKnowledgeFromLegacy, emptyKnowledge, projectKnowledgeToGalaxy, re
 import { projectContractsFromEvents, projectNewsFromEvents, projectWorldThreads } from '../simulation/projections';
 import { applyCaptainCareer, createOperationObjective, projectOperationRequests, resolveOperationStep } from '../operations/runtime';
 import { advanceShipLife, createShipLifeState, normalizeShipLife, repairCompartment as repairShipCompartment, resolveCrewIssue as resolveShipCrewIssue, resolvePersonalArc, restCrew as restShipCrew } from '../ship/life';
+import { advanceNavigationPlan, buildGalacticGeography, createNavigationState, normalizeNavigationState, resolveRouteIncident, routeBetween } from '../navigation/geography';
 
 export type MainScreen = 'menu' | 'command' | 'continuity' | 'chronicle' | 'galaxy' | 'system' | 'hub' | 'contracts' | 'factions' | 'civilizations' | 'crew' | 'archive' | 'laboratory' | 'world' | 'operations' | 'ship' | 'settings';
 export type HydrationStatus = 'idle' | 'loading' | 'ready' | 'error';
@@ -121,6 +124,7 @@ interface GameStore {
   pursuits: PursuitRecord[];
   warFronts: WarFront[];
   legacy: LegacyState;
+  navigation: NavigationState;
   generationActive: boolean;
   hydrationStatus: HydrationStatus;
   saveAvailable: boolean;
@@ -151,6 +155,8 @@ interface GameStore {
   advanceChronicle(years: number): Promise<void>;
   createBackup(): Promise<boolean>;
   selectSystem(id: string | null): void;
+  setNavigationPlan(plan: GalacticRoutePlan): void;
+  clearNavigationPlan(): void;
   travelTo(systemId: string): Promise<{ ok: boolean; message: string; encounter?: 'shipContact' }>;
   assignCombatStation(systemId: ShipSystemId, crewId: string | null): Promise<void>;
   respondToShipContact(action: 'communicate' | 'documents' | 'bribe' | 'hideCargo' | 'help' | 'attack' | 'escape' | 'surrender'): Promise<{ ok: boolean; message: string }>;
@@ -535,6 +541,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   pursuits: [],
   warFronts: [],
   legacy: emptyLegacyState(),
+  navigation: createNavigationState(),
   generationActive: false,
   hydrationStatus: 'idle',
   saveAvailable: false,
@@ -701,6 +708,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
           pursuits: safe.pursuits,
           warFronts: safe.warFronts,
           legacy: safe.legacy,
+          navigation: normalizeNavigationState(safe.navigation),
           saveMeta: safe.saveMeta ?? null,
           hydrationStatus: 'ready',
           saveAvailable: true,
@@ -785,6 +793,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
         activeShipEncounter: null,
         pursuits: [],
         warFronts,
+        navigation: createNavigationState(),
         legacy: createInitialLegacy(captain, ship, 0, start.id),
         logs: [],
         hydrationStatus: 'ready',
@@ -815,7 +824,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
         set({
           screen: 'menu', galaxy: null, captain: null, ship: null, currentSystemId: null,
           selectedSystemId: null, gameYear: 0, simulation: null, knowledge: { version: 1, records: {} }, discoveries: [], logs: [], scanReports: [],
-          pointsOfInterest: [], evidence: [], hypotheses: [], artifactKnowledge: [], crew: [], crewCandidates: [], factions: [], hubs: [], contracts: [], news: [], locationStates: [], currentHubId: null, localNpcs: [], civilizationContacts: [], archaeologyChains: [], researchProjects: [], technologyBlueprints: [], equipmentInventory: [], worldThreads: [], storyScenes: [], activeStorySceneId: null, pendingConsequences: [], objectives: [], tutorial: { enabled: false, active: false, currentStep: 0, completed: true }, activeShipEncounter: null, pursuits: [], warFronts: [], legacy: emptyLegacyState(),
+          pointsOfInterest: [], evidence: [], hypotheses: [], artifactKnowledge: [], crew: [], crewCandidates: [], factions: [], hubs: [], contracts: [], news: [], locationStates: [], currentHubId: null, localNpcs: [], civilizationContacts: [], archaeologyChains: [], researchProjects: [], technologyBlueprints: [], equipmentInventory: [], worldThreads: [], storyScenes: [], activeStorySceneId: null, pendingConsequences: [], objectives: [], tutorial: { enabled: false, active: false, currentStep: 0, completed: true }, activeShipEncounter: null, pursuits: [], warFronts: [], navigation: createNavigationState(), legacy: emptyLegacyState(),
           hydrationStatus: 'ready', saveAvailable: false, saveError: null,
           saveStatus: 'idle', saveMeta: null, backupCount: 0, recoveryNotice: null
         });
@@ -939,6 +948,15 @@ export const useGameStore = create<GameStore>((set, get) => ({
     }, false);
   },
   selectSystem(selectedSystemId) { set({ selectedSystemId }); },
+  setNavigationPlan(plan) {
+    set({ navigation: { ...normalizeNavigationState(get().navigation), activePlan: { ...plan, status: 'active', currentLegIndex: 0 } } });
+    void persist(set, get, 'navigation-plan');
+  },
+  clearNavigationPlan() {
+    const navigation = normalizeNavigationState(get().navigation);
+    set({ navigation: { ...navigation, activePlan: navigation.activePlan ? { ...navigation.activePlan, status: 'abandoned' } : undefined } });
+    void persist(set, get, 'navigation-clear');
+  },
   async travelTo(systemId) {
     return runExclusive('travel', set, get, async () => {
       const state = get();
@@ -949,21 +967,36 @@ export const useGameStore = create<GameStore>((set, get) => ({
       const target = galaxy.systems.find((system) => system.id === systemId);
       if (!current || !target) return { ok: false, message: 'Система не найдена' };
       if (!current.neighbors.includes(target.id)) return { ok: false, message: 'Нет прямого маршрута' };
-      const jumpDistance = distance(current, target);
-      if (jumpDistance > ship.jumpRange) return { ok: false, message: 'Маршрут за пределами дальности двигателя' };
+      const geography = buildGalacticGeography({ galaxy, simulation: state.simulation, warFronts: state.warFronts, factions: state.factions, contacts: state.civilizationContacts });
+      const route = routeBetween(geography, current.id, target.id);
+      if (!route) return { ok: false, message: 'Навигационный коридор не подтверждён' };
+      if (route.distance > ship.jumpRange) return { ok: false, message: 'Маршрут за пределами дальности двигателя' };
+      if (route.access === 'blocked') return { ok: false, message: route.restriction ?? 'Маршрут перекрыт' };
       const engine = ship.systems.find((entry) => entry.id === 'engine');
       if (engine?.disabled) return { ok: false, message: 'Двигатель отключён' };
-      const fuelCost = Math.max(7, Math.ceil(jumpDistance / 14));
+      const fuelCost = route.fuelCost;
       if (ship.fuel < fuelCost) return { ok: false, message: `Нужно ${fuelCost} топлива` };
       if (ship.hull <= 0) return { ok: false, message: 'Корабль не способен к прыжку' };
 
-      const arrivalHour = state.simulation.clock.absoluteHour + travelHours(jumpDistance);
+      const arrivalHour = state.simulation.clock.absoluteHour + route.hours;
       let knowledge = revealKnowledge(state.knowledge, 'system', target.id, ['identity', 'coordinates', 'star', 'routes', 'visited'], arrivalHour, 'direct', 92);
       for (const neighborId of target.neighbors) knowledge = revealKnowledge(knowledge, 'system', neighborId, ['identity', 'coordinates'], arrivalHour, 'scan', 42);
       const updatedShip = { ...ship, systems: normalizeShipSystems(ship.systems), fuel: ship.fuel - fuelCost };
-      const advanced = buildWorldAdvance(state, travelHours(jumpDistance), `travel:${current.id}:${target.id}`, { galaxy, knowledge, currentSystemId: target.id });
+      const advanced = buildWorldAdvance(state, route.hours, `travel:${current.id}:${target.id}:${route.kind}`, { galaxy, knowledge, currentSystemId: target.id });
       const nextYear = advanced.patch.gameYear ?? state.gameYear;
       const warFronts = advanced.patch.warFronts ?? state.warFronts;
+      const incident = resolveRouteIncident({ seed: galaxy.seed, route, ship: updatedShip, serial: state.navigation.history.length + state.logs.length });
+      const advancedShip = (advanced.patch.ship as Ship | undefined) ?? updatedShip;
+      const nextShip = {
+        ...advancedShip,
+        fuel: updatedShip.fuel,
+        systems: updatedShip.systems,
+        hull: Math.max(1, advancedShip.hull - incident.hullDamage),
+        statuses: incident.kind === 'anomaly' || incident.kind === 'debris' ? Array.from(new Set([...advancedShip.statuses, incident.title.toLowerCase()])) : advancedShip.statuses
+      };
+      const advancedCrew = (advanced.patch.crew as CrewMember[] | undefined) ?? state.crew;
+      const nextCrew = incident.stress > 0 ? advancedCrew.map((member) => member.status === 'active' ? { ...member, stress: Math.max(0, Math.min(100, Math.round((member.stress ?? 0) + incident.stress))) } : member) : advancedCrew;
+      const nextCaptain = state.captain && incident.reputation ? { ...state.captain, reputation: state.captain.reputation + incident.reputation } : state.captain;
       let activeShipEncounter = createTravelEncounter({
         seed: galaxy.seed,
         system: target,
@@ -973,23 +1006,27 @@ export const useGameStore = create<GameStore>((set, get) => ({
         year: nextYear,
         serial: state.logs.length + state.storyScenes.length + (advanced.patch.simulation?.nextSequence ?? 0)
       });
-      if (activeShipEncounter) activeShipEncounter = { ...activeShipEncounter, stationAssignments: buildStationAssignments(state.crew) };
+      if (activeShipEncounter) activeShipEncounter = { ...activeShipEncounter, stationAssignments: buildStationAssignments(nextCrew) };
       const encounter = activeShipEncounter ? 'shipContact' as const : undefined;
       const targetFaction = state.factions.find((entry) => entry.id === target.factionId);
       const hasCivilianHub = state.hubs.some((hub) => hub.systemId === target.id && hub.safety !== 'danger');
-      const logs = [makeLog(nextYear, 'Прыжок завершён', `${current.name} → ${target.name}. Потрачено ${fuelCost} топлива.`, 'info'), ...((advanced.patch.logs as GameLogEntry[] | undefined) ?? state.logs)];
+      const logs = [makeLog(nextYear, 'Прыжок завершён', `${current.name} → ${target.name}. ${route.label}, топливо -${fuelCost}, риск ${route.risk}.`, route.access === 'restricted' ? 'warning' : 'info'), ...((advanced.patch.logs as GameLogEntry[] | undefined) ?? state.logs)];
+      if (incident.kind !== 'quiet') logs.unshift(makeLog(nextYear, incident.title, incident.summary, incident.hullDamage > 0 || incident.kind === 'blockade' ? 'warning' : 'info'));
       if (activeShipEncounter) logs.unshift(makeLog(nextYear, 'Корабельный контакт', `${activeShipEncounter.contact.name}: ${activeShipEncounter.contact.demand}`, activeShipEncounter.contact.hostile ? 'danger' : 'warning'));
       else if (targetFaction?.disposition === 'friendly' || hasCivilianHub) logs.unshift(makeLog(nextYear, 'Гражданский контроль', 'Диспетчер передал коридор движения и список открытых портов.', 'good'));
       const generatedScene = activeShipEncounter ? null : generateTravelScene(galaxy.seed, current.id, target.id, target.name, nextYear, state.hubs, state.factions);
-      const storyScenes = [
-        ...(generatedScene ? [generatedScene] : []),
-        ...((advanced.patch.storyScenes as StoryScene[] | undefined) ?? state.storyScenes)
-      ].slice(0, 160);
+      const storyScenes = [...(generatedScene ? [generatedScene] : []), ...((advanced.patch.storyScenes as StoryScene[] | undefined) ?? state.storyScenes)].slice(0, 160);
       const pursuits = state.pursuits.map((entry) => entry.status === 'active' && (entry.knownIdentity || entry.knownTransponder) ? { ...entry, lastKnownSystemId: target.id, lastUpdateYear: nextYear } : entry);
+      const targetSector = geography.sectors.find((entry) => entry.systemIds.includes(target.id));
+      const navigation = advanceNavigationPlan({ navigation: state.navigation, fromSystemId: current.id, arrivedSystemId: target.id, year: nextYear, route, incident });
+      if (targetSector && !navigation.knownSectorIds.includes(targetSector.id)) navigation.knownSectorIds.push(targetSector.id);
       set({
         ...advanced.patch,
         knowledge,
-        ship: advanced.patch.ship ? { ...(advanced.patch.ship as Ship), fuel: updatedShip.fuel, systems: updatedShip.systems } : updatedShip,
+        ship: nextShip,
+        crew: nextCrew,
+        captain: nextCaptain,
+        navigation,
         currentSystemId: target.id,
         selectedSystemId: target.id,
         currentHubId: null,
@@ -1000,7 +1037,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
         pursuits
       });
       await persist(set, get, activeShipEncounter ? 'travel-contact' : 'travel');
-      return { ok: true, message: activeShipEncounter ? 'Перелёт завершён. Обнаружен корабельный контакт.' : 'Перелёт завершён', encounter };
+      return { ok: true, message: activeShipEncounter ? 'Перелёт завершён. Обнаружен корабельный контакт.' : incident.kind === 'quiet' ? 'Перелёт завершён' : `Перелёт завершён: ${incident.title}`, encounter };
     }, { ok: false, message: 'Другое действие ещё выполняется' });
   },
   async assignCombatStation(systemId, crewId) {
@@ -2732,6 +2769,7 @@ async advanceOperation(objectiveId, approach) {
         pursuits: safe.pursuits,
         warFronts: safe.warFronts,
         legacy: safe.legacy,
+        navigation: normalizeNavigationState(safe.navigation),
         saveMeta: safe.saveMeta ?? null,
         hydrationStatus: 'ready',
         saveAvailable: true,
@@ -2745,7 +2783,7 @@ async advanceOperation(objectiveId, approach) {
   getSnapshot() {
     const {
       galaxy, captain, ship, currentSystemId, gameYear, simulation, knowledge, discoveries, logs, saveMeta,
-      scanReports, pointsOfInterest, evidence, hypotheses, artifactKnowledge, crew, crewCandidates, factions, hubs, contracts, news, locationStates, currentHubId, localNpcs, civilizationContacts, archaeologyChains, researchProjects, technologyBlueprints, equipmentInventory, worldThreads, storyScenes, pendingConsequences, objectives, tutorial, activeShipEncounter, pursuits, warFronts, legacy
+      scanReports, pointsOfInterest, evidence, hypotheses, artifactKnowledge, crew, crewCandidates, factions, hubs, contracts, news, locationStates, currentHubId, localNpcs, civilizationContacts, archaeologyChains, researchProjects, technologyBlueprints, equipmentInventory, worldThreads, storyScenes, pendingConsequences, objectives, navigation, tutorial, activeShipEncounter, pursuits, warFronts, legacy
     } = get();
     if (!galaxy || !captain || !ship || !currentSystemId || !simulation) return null;
     return {
@@ -2783,6 +2821,7 @@ async advanceOperation(objectiveId, approach) {
       storyScenes,
       pendingConsequences,
       objectives,
+      navigation,
       tutorial,
       activeShipEncounter,
       pursuits,

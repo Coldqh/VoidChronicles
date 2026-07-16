@@ -1,5 +1,4 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
-import { GalaxyCanvas, type GalaxyCanvasHandle } from './components/GalaxyCanvas';
 import { ExpeditionModal } from './components/ExpeditionModal';
 import { ShipCombatModal } from './components/ShipCombatModal';
 import { TutorialOverlay } from './components/TutorialOverlay';
@@ -27,6 +26,7 @@ const LaboratoryScreen = lazy(() => import('./screens/LaboratoryScreen').then((m
 const WorldScreen = lazy(() => import('./screens/WorldScreen').then((module) => ({ default: module.WorldScreen })));
 const OperationsScreen = lazy(() => import('./screens/OperationsScreen').then((module) => ({ default: module.OperationsScreen })));
 const ContactsScreen = lazy(() => import('./screens/ContactsScreen').then((module) => ({ default: module.ContactsScreen })));
+const GalaxyScreenV34 = lazy(() => import('./screens/GalaxyScreen').then((module) => ({ default: module.GalaxyScreen })));
 const CrewScreenV33 = lazy(() => import('./screens/CrewScreen').then((module) => ({ default: module.CrewScreen })));
 const ShipScreenV33 = lazy(() => import('./screens/ShipScreen').then((module) => ({ default: module.ShipScreen })));
 import { ChronicleScreen, ContinuityScreen } from './screens/LegacyScreen';
@@ -37,6 +37,7 @@ import './styles/playerOperationsV32.css';
 import './styles/interfaceV31.css';
 import './styles/civilizationProfiles.css';
 import './styles/shipCrewLife.css';
+import './styles/galacticGeography.css';
 
 const defaultSettings: GalaxySettings = {
   seed: 'VOID-CHRONICLES-005',
@@ -304,40 +305,6 @@ function CommandDeckScreen() {
   </main></div>;
 }
 
-function GalaxyScreen() {
-  const store = useGameStore();
-  const compact = useCompactLayout();
-  const mapRef = useRef<GalaxyCanvasHandle | null>(null);
-  const [notice, setNotice] = useState('');
-  const [sheetOpen, setSheetOpen] = useState(false);
-  if (!store.galaxy || !store.ship || !store.currentSystemId) return null;
-  const current = store.galaxy.systems.find((system) => system.id === store.currentSystemId);
-  const selected = store.galaxy.systems.find((system) => system.id === store.selectedSystemId) ?? current;
-  if (!current || !selected) return null;
-  const jumpDistance = Math.hypot(selected.coordinates.x - current.coordinates.x, selected.coordinates.y - current.coordinates.y);
-  const canTravel = selected.id !== current.id && current.neighbors.includes(selected.id) && jumpDistance <= store.ship.jumpRange;
-  const faction = selected.visited || selected.scanned ? store.factions.find((entry) => entry.id === selected.factionId) : undefined;
-  const selectSystem = (id: string) => { store.selectSystem(id); setSheetOpen(true); };
-  const travel = async () => { const result = await store.travelTo(selected.id); setNotice(result.message); };
-
-  if (compact) {
-    const knownCount = store.galaxy.systems.filter((entry) => entry.known).length;
-    return <div className="game-shell"><AppChrome/><main className="mobile-map-screen galaxy-mobile-map">
-      <section className="mobile-map-canvas"><GalaxyCanvas ref={mapRef} systems={store.galaxy.systems} currentSystemId={current.id} selectedSystemId={selected.id} jumpRange={store.ship.jumpRange} livingCivilizationIds={store.galaxy.civilizations.filter((civilization) => civilization.status === 'living').map((civilization) => civilization.id)} onSelect={selectSystem}/></section>
-      <div className="mobile-map-status">КАТАЛОГ <b>{knownCount}</b> / {store.galaxy.systems.length}</div>
-      <div className="mobile-map-controls"><button aria-label="Локальный сектор" onClick={() => mapRef.current?.center()}>◎</button><button aria-label="Обзор галактики" onClick={() => mapRef.current?.overview()}>▦</button><button aria-label="Уменьшить масштаб" onClick={() => mapRef.current?.zoomOut()}>−</button><button aria-label="Увеличить масштаб" onClick={() => mapRef.current?.zoomIn()}>+</button></div>
-      {notice && <button className="mobile-toast" onClick={() => setNotice('')}>{notice}</button>}
-      {sheetOpen && <><button className="mobile-window-scrim" aria-label="Закрыть окно маршрута" onClick={() => setSheetOpen(false)}/><aside className="mobile-map-window" role="dialog" aria-label={`Маршрут: ${selected.name}`}>
-        <header className="mobile-window-header"><div><span>{selected.id === current.id ? 'ТЕКУЩАЯ СИСТЕМА' : 'ВЫБРАННЫЙ МАРШРУТ'}</span><h2>{selected.name}</h2></div><button aria-label="Закрыть" onClick={() => setSheetOpen(false)}>×</button></header>
-        <div className="mobile-window-body"><div className="compact-stat"><span>Дистанция</span><b>{Math.round(jumpDistance)}</b></div><p>{selected.visited || selected.scanned ? `${selected.region} · угроза ${selected.danger}` : 'Неизученный навигационный узел'}</p>{faction && <small>{faction.name} · {faction.disposition}</small>}</div>
-        {selected.id === current.id ? <button className="primary-button mobile-window-cta" onClick={() => store.setScreen('system')}>Открыть систему</button> : <button className="primary-button mobile-window-cta" disabled={!canTravel || Boolean(store.busyAction)} onClick={() => void travel()}>Прыжок · {Math.max(7, Math.ceil(jumpDistance / 14))} топлива</button>}
-      </aside></>}
-    </main></div>;
-  }
-
-  return <div className="game-shell"><AppChrome/><main className="map-screen galaxy-screen-separated"><section className="galaxy-map-full"><GalaxyCanvas ref={mapRef} systems={store.galaxy.systems} currentSystemId={current.id} selectedSystemId={selected.id} jumpRange={store.ship.jumpRange} livingCivilizationIds={store.galaxy.civilizations.filter((civilization) => civilization.status === 'living').map((civilization) => civilization.id)} onSelect={store.selectSystem}/>{notice && <button className="notice" onClick={() => setNotice('')}>{notice}</button>}</section><aside className="galaxy-route-panel"><span className="eyebrow">МЕЖЗВЁЗДНАЯ НАВИГАЦИЯ</span><h1>{selected.name}</h1><p>{selected.visited || selected.scanned ? `${selected.region} · угроза ${selected.danger}` : 'Неизученный навигационный узел'}</p>{faction && <div className={`faction-strip disposition-${faction.disposition}`}><b>{faction.name}</b><span>{faction.disposition} · репутация {faction.reputation}</span></div>}<div className="stat-row"><span>Дистанция</span><b>{Math.round(jumpDistance)}</b></div><div className="stat-row"><span>Хабы</span><b>{selected.visited || selected.scanned ? store.hubs.filter((hub) => hub.systemId === selected.id && hub.visited).length : '?'}</b></div><div className="stat-row"><span>Разумные сигналы</span><b>{selected.scanned ? selected.civilizationIds.length : '?'}</b></div>{selected.id === current.id ? <button className="primary-button" onClick={() => store.setScreen('system')}>Открыть карту системы</button> : <button className="primary-button" disabled={!canTravel || Boolean(store.busyAction)} onClick={() => void travel()}>Прыжок · {Math.max(7, Math.ceil(jumpDistance / 14))} топлива</button>}{!current.neighbors.includes(selected.id) && selected.id !== current.id && <p className="warning-text">Нет прямого маршрута.</p>}</aside></main></div>;
-}
-
 function artifactForPoint(point: PointOfInterest, artifacts: Artifact[]) {
   return (point.artifactIds ?? [])
     .map((id) => artifacts.find((entry) => entry.id === id))
@@ -480,7 +447,7 @@ export default function App() {
   else if (screen === 'chronicle') content = <ChronicleScreen chrome={galaxy && useGameStore.getState().legacy.mode !== 'chronicle' ? <AppChrome/> : undefined}/>;
   else if (!galaxy || screen === 'menu') content = <MainMenu/>;
   else if (screen === 'command') content = <CommandDeckScreen/>;
-  else if (screen === 'galaxy') content = <GalaxyScreen/>;
+  else if (screen === 'galaxy') content = <GalaxyScreenV34 chrome={<AppChrome/>}/>;
   else if (screen === 'system') content = <SystemScreen/>;
   else if (screen === 'hub') content = <HubScreen/>;
   else if (screen === 'contracts') content = <ContractsScreen/>;

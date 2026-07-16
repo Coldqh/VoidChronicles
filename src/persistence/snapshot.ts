@@ -14,6 +14,7 @@ import { projectWorldThreads } from '../simulation/projections';
 import { worldYear } from '../simulation/clock';
 import { normalizeEcologyState } from '../ecology/integrity';
 import { createShipLifeState } from '../ship/life';
+import { createNavigationState, normalizeNavigationState } from '../navigation/geography';
 
 export const CURRENT_SCHEMA_VERSION = SAVE_SCHEMA_VERSION;
 export { APP_VERSION };
@@ -589,6 +590,25 @@ const operationStateSchema = z.object({
   targetSystemId: z.string(), stages: z.array(operationStageSchema), currentStageIndex: finiteNumber, quality: finiteNumber, attempts: finiteNumber,
   outcome: z.enum(['failed','partial','successful','exceptional']).optional(), completedYear: finiteNumber.optional(), log: z.array(z.string())
 });
+const galacticRouteKindSchema = z.enum(['standard','trade','military','smuggler','ancient','quarantine']);
+const routePreferenceSchema = z.enum(['fast','safe','economical','covert']);
+const galacticRouteLegSchema = z.object({
+  id: z.string(), fromSystemId: z.string(), toSystemId: z.string(), kind: galacticRouteKindSchema,
+  distance: finiteNumber, fuelCost: finiteNumber, hours: finiteNumber, risk: finiteNumber,
+  access: z.enum(['open','restricted','blocked']), controllingCivilizationId: z.string().optional(), controllingFactionId: z.string().optional(),
+  tradeRouteId: z.string().optional(), warFrontId: z.string().optional(), restriction: z.string().optional(), label: z.string()
+});
+const galacticRoutePlanSchema = z.object({
+  id: z.string(), preference: routePreferenceSchema, destinationSystemId: z.string(), systemIds: z.array(z.string()),
+  legs: z.array(galacticRouteLegSchema), currentLegIndex: finiteNumber, totalFuel: finiteNumber, totalHours: finiteNumber,
+  totalRisk: finiteNumber, foodCost: finiteNumber, oxygenCost: finiteNumber, warnings: z.array(z.string()), createdYear: finiteNumber,
+  status: z.enum(['active','completed','abandoned'])
+});
+const navigationStateSchema = z.object({
+  activePlan: galacticRoutePlanSchema.optional(),
+  history: z.array(z.object({ id: z.string(), fromSystemId: z.string(), toSystemId: z.string(), year: finiteNumber, routeKind: galacticRouteKindSchema, risk: finiteNumber, incident: z.string().optional() })),
+  knownSectorIds: z.array(z.string())
+});
 
 const storyChoiceEffectSchema = z.object({
   credits: finiteNumber.optional(), reputation: finiteNumber.optional(), factionId: z.string().optional(), factionReputation: finiteNumber.optional(),
@@ -809,7 +829,7 @@ const v9PayloadSchema = v8PayloadSchema.extend({
 const v10PayloadSchema = v9PayloadSchema.extend({ legacy: legacyStateSchema });
 const v11PayloadSchema = v10PayloadSchema.extend({ simulation: simulationStateV1Schema, knowledge: playerKnowledgeSchema });
 const v12PayloadSchema = v10PayloadSchema.extend({ simulation: simulationStateV2Schema, knowledge: playerKnowledgeSchema });
-const v13PayloadSchema = v10PayloadSchema.extend({ simulation: simulationStateV3Schema, knowledge: playerKnowledgeSchema });
+const v13PayloadSchema = v10PayloadSchema.extend({ simulation: simulationStateV3Schema, knowledge: playerKnowledgeSchema, navigation: navigationStateSchema.default(createNavigationState()) });
 
 const saveMetadataSchema = z.object({
   savedAt: z.string().datetime(),
@@ -979,6 +999,7 @@ function normalizeSnapshot(snapshot: SnapshotCurrent): SnapshotCurrent {
     storyScenes: snapshot.storyScenes.filter((scene) => systemIds.has(scene.systemId)).slice(0, 160),
     pendingConsequences: snapshot.pendingConsequences.slice(0, 300),
     objectives: snapshot.objectives.filter((objective) => !objective.systemId || systemIds.has(objective.systemId)).slice(0, 250),
+    navigation: normalizeNavigationState(snapshot.navigation),
     tutorial: { ...snapshot.tutorial, currentStep: Math.max(0, Math.min(7, Math.floor(snapshot.tutorial.currentStep))) },
     activeShipEncounter: snapshot.activeShipEncounter && systemIds.has(snapshot.activeShipEncounter.contact.systemId) ? snapshot.activeShipEncounter : null,
     pursuits: snapshot.pursuits.filter((entry) => systemIds.has(entry.lastKnownSystemId)).slice(0, 100),
