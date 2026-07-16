@@ -22,6 +22,7 @@ import { APP_CODENAME, APP_VERSION, BUILD_TIME, SAVE_SCHEMA_VERSION } from './ve
 import { generateMarket } from './world/livingGalaxy';
 import { useCompactLayout } from './hooks/useCompactLayout';
 import { formatInteger } from './ui/format';
+import { contactStageLabel } from './world/civilizations';
 const LaboratoryScreen = lazy(() => import('./screens/LaboratoryScreen').then((module) => ({ default: module.LaboratoryScreen })));
 const WorldScreen = lazy(() => import('./screens/WorldScreen').then((module) => ({ default: module.WorldScreen })));
 const OperationsScreen = lazy(() => import('./screens/OperationsScreen').then((module) => ({ default: module.OperationsScreen })));

@@ -102,6 +102,7 @@ async function makeSnapshot(): Promise<GameStateSnapshot> {
     storyScenes: [],
     pendingConsequences: [],
     objectives: [],
+    navigation: { history: [], knownSectorIds: [] },
     tutorial: { enabled: false, active: false, currentStep: 0, completed: true },
     activeShipEncounter: null,
     pursuits: [],

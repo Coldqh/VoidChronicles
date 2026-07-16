@@ -49,7 +49,7 @@ async function makeLegacySnapshot(): Promise<GameStateSnapshot> {
     crew: [],
     crewCandidates: [],
     factions: [], hubs: [], contracts: [], news: [], locationStates: [], currentHubId: null,
-    localNpcs: [], civilizationContacts: [], archaeologyChains: [], researchProjects: [], technologyBlueprints: [], equipmentInventory: [], worldThreads: [], storyScenes: [], pendingConsequences: [], objectives: [], tutorial: { enabled: false, active: false, currentStep: 0, completed: true }, activeShipEncounter: null, pursuits: [], warFronts: [], legacy: { mode: 'active', campaignEnded: false, currentCaptainRecordId: '', captains: [], successionCandidates: [], lostExpeditions: [], memorials: [], chronicle: [], observerYear: 0 }
+    localNpcs: [], civilizationContacts: [], archaeologyChains: [], researchProjects: [], technologyBlueprints: [], equipmentInventory: [], worldThreads: [], storyScenes: [], pendingConsequences: [], objectives: [], navigation: { history: [], knownSectorIds: [] }, tutorial: { enabled: false, active: false, currentStep: 0, completed: true }, activeShipEncounter: null, pursuits: [], warFronts: [], legacy: { mode: 'active', campaignEnded: false, currentCaptainRecordId: '', captains: [], successionCandidates: [], lostExpeditions: [], memorials: [], chronicle: [], observerYear: 0 }
   };
 }
 

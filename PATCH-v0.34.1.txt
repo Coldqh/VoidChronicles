@@ -1,0 +1,11 @@
+Void Chronicles v0.34.1 — Navigation Compatibility Hotfix
+
+Исправлено:
+- восстановлен импорт contactStageLabel в src/App.tsx;
+- snapshot.test.ts получил обязательное состояние navigation;
+- simulationPersistence.test.ts получил обязательное состояние navigation;
+- добавлен регрессионный тест v0341Compatibility.test.ts;
+- версия поднята до 0.34.1.
+
+Схема сохранения не меняется: SAVE_SCHEMA_VERSION остаётся 13.
+Старые сохранения по-прежнему получают navigation через Zod default.
