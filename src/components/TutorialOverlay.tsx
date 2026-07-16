@@ -2,14 +2,14 @@ import { useEffect, useState } from 'react';
 import type { TutorialState } from '../game/types';
 
 const steps = [
-  { target: 'open-system', title: 'Открой карту системы', text: 'На мостике оставлено только главное. Перейди к локальной карте — там начинается разведка.' },
-  { target: 'system-scan', title: 'Просканируй систему', text: 'Сейчас у тебя нет данных. Системный скан откроет орбиты и ближайшие маршруты.' },
-  { target: 'tutorial-planet', title: 'Выбери отмеченную планету', text: 'К-1 «Эхо» создана как безопасная первая цель. Нажми на неё на орбитальной карте.' },
-  { target: 'detail-scan', title: 'Проведи детальный скан', text: 'Он превратит неизвестный объект в конкретную точку высадки и покажет примерный риск.' },
-  { target: 'open-expedition', title: 'Открой найденный сигнал', text: 'После скана появилась конкретная точка. Открой её карточку и начни подготовку.' },
-  { target: 'launch-expedition', title: 'Подтверди снаряжение', text: 'Проверь вес, защиту и инструменты. Затем начни высадку.' },
-  { target: 'collect-data', title: 'Добудь данные', text: 'На карте найди терминал или образец. Маркеры размещаются по-разному в каждой локации.' },
-  { target: 'evacuate', title: 'Эвакуируйся', text: 'Верни данные на корабль. Локация запомнит убитых врагов, открытые участки и забранные объекты.' }
+  { target: 'open-system', title: 'Прими первый приказ', text: 'Открой локальную систему. Корабль вышел в новый сектор без подтверждённой картины вокруг.' },
+  { target: 'system-scan', title: 'Сними слепую зону', text: 'Системный скан покажет орбиты, поселения и слабый сигнал, который диспетчеры не считают важным.' },
+  { target: 'tutorial-planet', title: 'Выбери К-1 «Эхо»', text: 'На орбите отмечен безопасный каменный объект. Повторяющийся импульс идёт с его поверхности.' },
+  { target: 'detail-scan', title: 'Уточни источник', text: 'Проведи детальный анализ. До высадки нужно понять среду, риск и точку происхождения сигнала.' },
+  { target: 'open-expedition', title: 'Открой найденный сигнал', text: 'Скан выделил конкретную локацию. Проверь задачу и реши, что брать с собой.' },
+  { target: 'launch-expedition', title: 'Подготовь первый выход', text: 'Проверь вес, защиту и инструменты. Цель рейса — вернуться с подтверждёнными данными.' },
+  { target: 'collect-data', title: 'Добудь доказательство', text: 'Найди терминал, запись или образец. Локация запомнит каждый открытый участок и использованный объект.' },
+  { target: 'evacuate', title: 'Вернись на корабль', text: 'Эвакуируйся с данными. После возвращения первая запись войдёт в Архив и начнёт историю капитана.' }
 ] as const;
 
 interface TutorialOverlayProps {
@@ -56,9 +56,9 @@ export function TutorialOverlay({ tutorial, onSkip }: TutorialOverlayProps) {
   const cardStyle = { left, top, width: cardWidth };
 
   return <div className="tutorial-guide" aria-live="polite">
-    {rect && <div className="tutorial-spotlight" style={{ left: rect.left - 8, top: rect.top - 8, width: rect.width + 16, height: rect.height + 16 }}/>} 
+    {rect && <div className="tutorial-spotlight" style={{ left: rect.left - 8, top: rect.top - 8, width: rect.width + 16, height: rect.height + 16 }}/>}
     <section className="tutorial-task-card" style={cardStyle}>
-      <header><span>ПЕРВЫЙ МАРШРУТ · {index + 1}/{steps.length}</span><button onClick={onSkip}>Отключить</button></header>
+      <header><span>ПЕРВЫЙ РЕЙС · {index + 1}/{steps.length}</span><button onClick={onSkip}>Отключить</button></header>
       <h2>{step.title}</h2>
       <p>{step.text}</p>
       <div className="tutorial-task-progress">{steps.map((_, i) => <i key={i} className={i <= index ? 'active' : ''}/>)}</div>

@@ -2,6 +2,9 @@ import type { ReactNode } from 'react';
 import { useGameStore } from '../game/store';
 import { formatInteger } from '../ui/format';
 import { crewReadiness } from '../ship/life';
+import { buildCaptainJourney, type JourneyAction } from '../journey/captainJourney';
+import { CaptainJournalV36 } from './CaptainJournalV36';
+import '../styles/journeyV36.css';
 
 export function CommandDeckV35({ chrome }: { chrome?: ReactNode }) {
   const store = useGameStore();
@@ -9,8 +12,6 @@ export function CommandDeckV35({ chrome }: { chrome?: ReactNode }) {
   const current = galaxy?.systems.find((system) => system.id === store.currentSystemId);
   if (!galaxy || !current || !store.ship || !store.captain) return null;
 
-  const activeScenes = store.storyScenes.filter((scene) => scene.status === 'available');
-  const activeObjectives = store.objectives.filter((objective) => objective.status === 'active' && objective.kind !== 'tutorial');
   const currentPoints = store.pointsOfInterest.filter((entry) => entry.systemId === current.id && entry.status !== 'resolved');
   const knownHubs = current.scanned ? store.hubs.filter((hub) => hub.systemId === current.id) : [];
   const urgentThread = [...store.worldThreads].filter((thread) => thread.status === 'active' || thread.status === 'escalating').sort((a, b) => b.urgency - a.urgency)[0];
@@ -20,20 +21,29 @@ export function CommandDeckV35({ chrome }: { chrome?: ReactNode }) {
   const openIssues = store.ship.life?.issues.filter((issue) => issue.status === 'open') ?? [];
   const readiness = store.crew.length ? Math.round(store.crew.reduce((sum, member) => sum + crewReadiness(member), 0) / store.crew.length) : 100;
   const contactCount = store.civilizationContacts.filter((entry) => entry.stage !== 'unknown').length;
-  const tutorialActive = store.tutorial.active && !store.tutorial.completed;
 
-  const primary = tutorialActive
-    ? { eyebrow: 'ПЕРВЫЙ ПРИКАЗ', title: 'Запусти сканирование системы', text: 'Корабль ждёт первого подтверждённого приказа капитана.', label: 'Открыть локальную систему', action: () => store.setScreen('system'), tone: 'signal' }
-    : activeScenes[0]
-      ? { eyebrow: 'ВХОДЯЩИЙ СИГНАЛ', title: activeScenes[0].title, text: activeScenes[0].summary, label: 'Открыть сообщение', action: () => store.openStoryScene(activeScenes[0]!.id), tone: 'danger' }
-      : !current.scanned
-        ? { eyebrow: 'НЕИЗВЕСТНАЯ СИСТЕМА', title: 'Сенсоры ждут приказа', text: 'Орбиты, поселения и сигналы скрыты до первого системного скана.', label: 'Начать сканирование', action: () => store.setScreen('system'), tone: 'signal' }
-        : activeObjectives[0]
-          ? { eyebrow: 'АКТИВНАЯ ОПЕРАЦИЯ', title: activeObjectives[0].title, text: activeObjectives[0].description, label: 'Открыть операции', action: () => store.setScreen('operations'), tone: 'warning' }
-          : currentPoints[0]
-            ? { eyebrow: 'НОВАЯ ЦЕЛЬ', title: currentPoints[0].name, text: currentPoints[0].publicSummary, label: 'Открыть систему', action: () => store.setScreen('system'), tone: 'signal' }
-            : { eyebrow: 'СЛЕДУЮЩИЙ ХОД', title: activeRoute ? `Продолжить путь к ${nextSystem?.name ?? 'цели'}` : 'Выбрать новый маршрут', text: activeRoute ? `Этап ${activeRoute.currentLegIndex + 1} из ${activeRoute.legs.length}.` : 'Галактика продолжает меняться. Реши, куда вмешаться дальше.', label: 'Открыть карту', action: () => store.setScreen('galaxy'), tone: 'calm' };
+  const journey = buildCaptainJourney({
+    tutorial: store.tutorial,
+    captain: store.captain,
+    ship: store.ship,
+    currentSystem: current,
+    storyScenes: store.storyScenes,
+    objectives: store.objectives,
+    worldThreads: store.worldThreads,
+    researchProjects: store.researchProjects,
+    archaeologyChains: store.archaeologyChains,
+    navigation: store.navigation,
+    discoveries: store.discoveries,
+    logs: store.logs,
+    openShipIssues: openIssues.length
+  });
 
+  const runJourneyAction = (action: JourneyAction) => {
+    if (action.kind === 'scene') store.openStoryScene(action.sceneId);
+    else store.setScreen(action.screen);
+  };
+
+  const primary = journey.focus;
   const life = store.ship.life;
   const criticalSupply = Math.min(life?.supplies.food ?? 100, life?.supplies.oxygen ?? 100);
 
@@ -52,7 +62,7 @@ export function CommandDeckV35({ chrome }: { chrome?: ReactNode }) {
       <article className={`v35-primary-decision tone-${primary.tone}`}>
         <div className="v35-decision-beacon"><i/><span/></div>
         <div><span className="eyebrow">{primary.eyebrow}</span><h2>{primary.title}</h2><p>{primary.text}</p></div>
-        <button className="v35-cta" onClick={primary.action}>{primary.label}<i>→</i></button>
+        <button data-tutorial={store.tutorial.currentStep === 0 && store.tutorial.active ? 'open-system' : undefined} className="v35-cta" onClick={() => runJourneyAction(primary.action)}>{primary.label}<i>→</i></button>
       </article>
 
       <section className="v35-command-panels">
@@ -72,6 +82,8 @@ export function CommandDeckV35({ chrome }: { chrome?: ReactNode }) {
           <div className="v35-mini-bars"><i style={{ width: `${store.ship.hull}%` }}/><i style={{ width: `${criticalSupply}%` }}/></div>
         </button>
       </section>
+
+      <CaptainJournalV36 journey={journey} onAction={runJourneyAction}/>
 
       <section className="v35-command-lower">
         <article className="v35-crew-watch">

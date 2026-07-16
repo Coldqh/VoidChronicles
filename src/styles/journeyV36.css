@@ -1,0 +1,58 @@
+.v36-captain-journal {
+  position: relative;
+  z-index: 3;
+  margin-top: 18px;
+  border: 1px solid rgba(109, 196, 226, .2);
+  background: linear-gradient(135deg, rgba(7, 18, 27, .93), rgba(4, 10, 17, .96));
+  box-shadow: inset 0 1px rgba(255, 255, 255, .035), 0 24px 70px rgba(0, 0, 0, .28);
+}
+.v36-journal-header { display: flex; align-items: end; justify-content: space-between; gap: 24px; padding: 18px 20px; border-bottom: 1px solid rgba(109, 196, 226, .15); }
+.v36-journal-header h2 { margin: 3px 0 0; font-size: clamp(22px, 2.7vw, 36px); }
+.v36-voyage-progress { display: grid; grid-template-columns: auto auto; gap: 5px 14px; min-width: min(360px, 42vw); color: #7894a0; font-size: 10px; letter-spacing: .1em; }
+.v36-voyage-progress b { justify-self: end; color: #e9f8fc; font-size: 18px; }
+.v36-voyage-progress i, .v36-career-track { grid-column: 1 / -1; display: block; height: 4px; overflow: hidden; background: rgba(255, 255, 255, .06); }
+.v36-voyage-progress em, .v36-career-track em { display: block; height: 100%; background: linear-gradient(90deg, #3fb9dc, #94e8ff); box-shadow: 0 0 18px rgba(74, 205, 242, .5); }
+.v36-journal-grid { display: grid; grid-template-columns: minmax(280px, 1.1fr) minmax(300px, 1.2fr) minmax(260px, .9fr) minmax(260px, .9fr); }
+.v36-journal-grid > article { min-width: 0; padding: 20px; border-right: 1px solid rgba(109, 196, 226, .11); }
+.v36-journal-grid > article:last-child { border-right: 0; }
+.v36-journal-grid h3 { margin: 8px 0; font-size: 21px; }
+.v36-journal-grid p { margin: 0 0 14px; color: #8fa5ae; line-height: 1.55; }
+.v36-orders .v35-cta { width: 100%; justify-content: space-between; }
+.v36-voyage-chain > div { margin-top: 10px; }
+.v36-voyage-chain > div > div { display: grid; grid-template-columns: 30px 1fr; gap: 10px; padding: 8px 0; border-top: 1px solid rgba(109, 196, 226, .08); }
+.v36-voyage-chain i { display: grid; place-items: center; width: 27px; height: 27px; border: 1px solid rgba(111, 193, 220, .24); color: #63818d; font-style: normal; font-size: 11px; }
+.v36-voyage-chain b, .v36-voyage-chain small { display: block; }
+.v36-voyage-chain small { margin-top: 2px; color: #748b95; line-height: 1.35; }
+.v36-voyage-chain .status-active { background: linear-gradient(90deg, rgba(61, 176, 215, .1), transparent); }
+.v36-voyage-chain .status-active i { border-color: rgba(91, 216, 255, .55); color: #8fe8ff; box-shadow: 0 0 16px rgba(68, 196, 234, .22); }
+.v36-voyage-chain .status-completed i { border-color: rgba(91, 220, 170, .42); color: #8ce5bd; }
+.v36-voyage-chain .status-locked { opacity: .48; }
+.v36-career-numbers { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin: 16px 0 12px; }
+.v36-career-numbers span { padding: 9px; background: rgba(255, 255, 255, .025); }
+.v36-career-numbers small, .v36-career-numbers b { display: block; }
+.v36-career-numbers small { color: #69838e; font-size: 8px; letter-spacing: .09em; }
+.v36-career-numbers b { margin-top: 4px; font-size: 18px; }
+.v36-career-track { width: 100%; }
+.v36-campaign-watch > small { display: block; margin-bottom: 12px; color: #5ecbe8; font-size: 9px; letter-spacing: .11em; }
+.v36-campaign-watch button { width: 100%; }
+.v36-consequence-strip { display: grid; grid-template-columns: 190px 1fr; gap: 16px; align-items: start; padding: 14px 20px; border-top: 1px solid rgba(109, 196, 226, .12); }
+.v36-consequence-strip > span { color: #6e8994; font-size: 10px; letter-spacing: .12em; }
+.v36-consequence-strip > div { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.v36-consequence-strip p { min-width: 0; margin: 0; padding-left: 10px; border-left: 2px solid rgba(89, 204, 238, .24); }
+.v36-consequence-strip small, .v36-consequence-strip b { display: block; }
+.v36-consequence-strip small { color: #65cce8; font-size: 9px; letter-spacing: .08em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.v36-consequence-strip b { margin-top: 3px; color: #92a7af; font-size: 11px; font-weight: 500; line-height: 1.35; }
+@media (max-width: 1250px) {
+  .v36-journal-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .v36-journal-grid > article:nth-child(2) { border-right: 0; }
+  .v36-journal-grid > article:nth-child(-n + 2) { border-bottom: 1px solid rgba(109, 196, 226, .11); }
+}
+@media (max-width: 720px) {
+  .v36-captain-journal { margin: 12px 0 0; }
+  .v36-journal-header { align-items: stretch; flex-direction: column; }
+  .v36-voyage-progress { min-width: 0; }
+  .v36-journal-grid { grid-template-columns: 1fr; }
+  .v36-journal-grid > article { border-right: 0; border-bottom: 1px solid rgba(109, 196, 226, .11); }
+  .v36-consequence-strip { grid-template-columns: 1fr; }
+  .v36-consequence-strip > div { grid-template-columns: 1fr; }
+}
