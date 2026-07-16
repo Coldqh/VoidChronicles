@@ -25,6 +25,9 @@ import { formatInteger } from './ui/format';
 import { contactStageLabel } from './world/civilizations';
 import { ExperienceChrome } from './components/ExperienceChrome';
 import { CommandDeckV35 } from './screens/CommandDeckV35';
+import { ArchiveWorkspaceV352 } from './screens/ArchiveWorkspaceV352';
+import { SystemWorkspaceV352 } from './screens/SystemWorkspaceV352';
+import { normalizeMainScreenRoute } from './routing/routes';
 const LaboratoryScreen = lazy(() => import('./screens/LaboratoryScreen').then((module) => ({ default: module.LaboratoryScreen })));
 const WorldScreen = lazy(() => import('./screens/WorldScreen').then((module) => ({ default: module.WorldScreen })));
 const OperationsScreen = lazy(() => import('./screens/OperationsScreen').then((module) => ({ default: module.OperationsScreen })));
@@ -321,11 +324,14 @@ function SettingsScreen() {
 const BootScreen = () => <main className="boot-screen"><div className="boot-mark"><img src={BRAND_MARK} alt="Void Chronicles"/></div><span className="eyebrow">VOID CHRONICLES · v{APP_VERSION}</span><p>Проверка локального архива…</p></main>;
 
 export default function App() {
-  const screen = useGameStore((state) => state.screen);
+  const rawScreen = useGameStore((state) => state.screen);
+  const screen = normalizeMainScreenRoute(rawScreen);
   const galaxy = useGameStore((state) => state.galaxy);
   const hydration = useGameStore((state) => state.hydrationStatus);
   const hydrate = useGameStore((state) => state.hydrateFromStorage);
+  const setScreen = useGameStore((state) => state.setScreen);
   useEffect(() => { void hydrate(); }, [hydrate]);
+  useEffect(() => { if (rawScreen !== screen) setScreen(screen); }, [rawScreen, screen, setScreen]);
   if (hydration === 'idle' || hydration === 'loading') return <BootScreen/>;
   let content;
   if (screen === 'settings') content = <SettingsScreen/>;
@@ -334,13 +340,13 @@ export default function App() {
   else if (!galaxy || screen === 'menu') content = <MainMenu/>;
   else if (screen === 'command') content = <CommandDeckScreen/>;
   else if (screen === 'galaxy') content = <GalaxyScreenV34 chrome={<AppChrome/>}/>;
-  else if (screen === 'system') content = <SystemScreen/>;
+  else if (screen === 'system') content = <div className="game-shell"><AppChrome/><SystemWorkspaceV352/></div>;
   else if (screen === 'hub') content = <HubScreen/>;
-  else if (screen === 'contracts') content = <ContractsScreen/>;
+  else if (screen === 'contracts') content = <OperationsScreen chrome={<AppChrome/>}/>;
   else if (screen === 'factions') content = <FactionsScreen/>;
   else if (screen === 'civilizations') content = <ContactsScreen chrome={<AppChrome/>}/>;
   else if (screen === 'crew') content = <CrewScreenV33 chrome={<AppChrome/>}/>;
-  else if (screen === 'archive') content = <ArchiveScreen/>;
+  else if (screen === 'archive') content = <div className="game-shell"><AppChrome/><ArchiveWorkspaceV352/></div>;
   else if (screen === 'laboratory') content = <LaboratoryScreen chrome={<AppChrome/>}/>;
   else if (screen === 'world') content = <WorldScreen chrome={<AppChrome/>}/>;
   else if (screen === 'operations') content = <OperationsScreen chrome={<AppChrome/>}/>;

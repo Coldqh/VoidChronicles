@@ -1,8 +1,24 @@
 # Void Chronicles
 
-**Current version: v0.30.0 — Lorebound Expeditions & True Offline**
+**Current version: v0.35.3 — Routing Stable**
 
 Procedural single-player space exploration roguelike and autonomous galaxy-history simulator built with React, TypeScript and Canvas.
+
+## v0.35.3 Routing Stable
+
+- `App.tsx` is again the single owner of gameplay routes;
+- System and Archive workspaces no longer render from inside the persistent chrome;
+- the CSS layer no longer hides duplicate legacy screens;
+- legacy `contracts` routes normalize into the unified Operations center;
+- HUD and navigation no longer mutate gameplay routing;
+- routing has a direct unit test;
+- package and application versions are synchronized;
+- `SAVE_SCHEMA_VERSION` remains 13.
+
+## v0.35.2 Unified Operations
+
+- contracts, requests and active operations share one command center;
+- System, Archive and Laboratory use selection-and-dossier workspaces.
 
 ## v0.30.0 Lorebound Expeditions & True Offline
 

@@ -3,8 +3,6 @@ import { useGameStore, type MainScreen } from '../game/store';
 import { useCompactLayout } from '../hooks/useCompactLayout';
 import { APP_VERSION } from '../version';
 import { formatInteger } from '../ui/format';
-import { ArchiveWorkspaceV352 } from '../screens/ArchiveWorkspaceV352';
-import { SystemWorkspaceV352 } from '../screens/SystemWorkspaceV352';
 import '../styles/interfaceV352.css';
 
 const BRAND_MARK = `${import.meta.env.BASE_URL}brand/void-chronicles-mark.webp`;
@@ -66,29 +64,12 @@ export function ExperienceChrome() {
     return () => document.documentElement.classList.remove('v35-nav-open');
   }, [open]);
 
-  useEffect(() => {
-    const root = document.documentElement;
-    root.classList.toggle('v352-screen-archive', store.screen === 'archive');
-    root.classList.toggle('v352-screen-system', store.screen === 'system');
-    if (store.screen === 'contracts') store.setScreen('operations');
-    return () => {
-      root.classList.remove('v352-screen-archive');
-      root.classList.remove('v352-screen-system');
-    };
-  }, [store.screen, store.setScreen]);
-
   if (!store.captain || !store.ship) return null;
 
   const navigate = (screen: MainScreen) => {
     store.setScreen(screen);
     setOpen(false);
   };
-
-  const workspace = store.screen === 'archive'
-    ? <ArchiveWorkspaceV352/>
-    : store.screen === 'system'
-      ? <SystemWorkspaceV352/>
-      : null;
 
   const hud = <header className="v35-hud">
     <button className="v35-hud-menu" aria-label="Открыть все разделы" onClick={() => setOpen((value) => !value)}>
@@ -141,7 +122,6 @@ export function ExperienceChrome() {
       <button className={open ? 'active' : ''} onClick={() => setOpen((value) => !value)}><i>•••</i><span>Ещё</span>{shipIssueCount > 0 && <em>{shipIssueCount}</em>}</button>
     </nav>
     {allMenu}
-    {workspace}
   </>;
 
   return <>
@@ -156,6 +136,5 @@ export function ExperienceChrome() {
       <button className="v35-rail-more" onClick={() => setOpen(true)}><i>⌘</i><span>Все</span></button>
     </aside>
     {allMenu}
-    {workspace}
   </>;
 }
