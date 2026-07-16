@@ -15,6 +15,7 @@ import type {
   WorldThread
 } from '../game/types';
 import { createRng, stableHash } from '../generation/rng';
+import { crewReadiness } from '../ship/life';
 
 const contactRank: Record<CivilizationContact['stage'], number> = {
   unknown: 0,
@@ -243,11 +244,12 @@ function crewBonus(category: OperationCategory, crew: CrewMember[]): number {
       : category === 'containment' ? ['biologist', 'doctor', 'engineer']
         : category === 'recovery' || category === 'investigation' ? ['archaeologist', 'scientist']
           : ['doctor', 'engineer', 'pilot'];
-  return crew.some((member) => member.status === 'active' && desired.includes(member.primaryRole))
-    ? 0.14
-    : crew.some((member) => member.status === 'active' && member.secondaryRole && desired.includes(member.secondaryRole))
-      ? 0.08
-      : 0;
+  const primary = crew.find((member) => member.status === 'active' && desired.includes(member.primaryRole));
+  const secondary = primary ? undefined : crew.find((member) => member.status === 'active' && member.secondaryRole && desired.includes(member.secondaryRole));
+  const specialist = primary ?? secondary;
+  if (!specialist) return 0;
+  const readiness = crewReadiness(specialist) / 100;
+  return (primary ? 0.14 : 0.08) * Math.max(0.25, readiness);
 }
 
 function skillFor(category: OperationCategory, captain: Captain): number {

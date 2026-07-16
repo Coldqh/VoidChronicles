@@ -4,12 +4,10 @@ import { ExpeditionModal } from './components/ExpeditionModal';
 import { ShipCombatModal } from './components/ShipCombatModal';
 import { TutorialOverlay } from './components/TutorialOverlay';
 import { SystemMap } from './components/SystemMap';
-import { roleLabel } from './crew/generateCrew';
 import { normalizeGalaxySettings, type GenerationProgress } from './generation/generateGalaxy';
 import { generateGalaxyInWorker } from './generation/generateInWorker';
 import type {
   Artifact,
-  Civilization,
   Contract,
   GalaxySettings,
   Hypothesis,
@@ -22,7 +20,6 @@ import { useGameStore, type MainScreen } from './game/store';
 import { exportSnapshot, readSnapshotFile } from './persistence/db';
 import { forceApplicationUpdate } from './runtime/update';
 import { APP_CODENAME, APP_VERSION, BUILD_TIME, SAVE_SCHEMA_VERSION } from './version';
-import { contactStageLabel } from './world/civilizations';
 import { generateMarket } from './world/livingGalaxy';
 import { useCompactLayout } from './hooks/useCompactLayout';
 import { formatInteger } from './ui/format';
@@ -30,6 +27,8 @@ const LaboratoryScreen = lazy(() => import('./screens/LaboratoryScreen').then((m
 const WorldScreen = lazy(() => import('./screens/WorldScreen').then((module) => ({ default: module.WorldScreen })));
 const OperationsScreen = lazy(() => import('./screens/OperationsScreen').then((module) => ({ default: module.OperationsScreen })));
 const ContactsScreen = lazy(() => import('./screens/ContactsScreen').then((module) => ({ default: module.ContactsScreen })));
+const CrewScreenV33 = lazy(() => import('./screens/CrewScreen').then((module) => ({ default: module.CrewScreen })));
+const ShipScreenV33 = lazy(() => import('./screens/ShipScreen').then((module) => ({ default: module.ShipScreen })));
 import { ChronicleScreen, ContinuityScreen } from './screens/LegacyScreen';
 import './styles/app.css';
 import './styles/adaptive.css';
@@ -37,6 +36,7 @@ import './styles/mobileGameplay.css';
 import './styles/playerOperationsV32.css';
 import './styles/interfaceV31.css';
 import './styles/civilizationProfiles.css';
+import './styles/shipCrewLife.css';
 
 const defaultSettings: GalaxySettings = {
   seed: 'VOID-CHRONICLES-005',
@@ -434,80 +434,6 @@ function FactionsScreen() {
   return <div className="game-shell"><AppChrome/><main className="scroll-screen factions-screen"><header><div><span className="eyebrow">ПОЛИТИЧЕСКАЯ КАРТА</span><h1>Известные фракции</h1><p>Досье появляется после реального контакта, стыковки или контракта.</p></div></header><section className="faction-grid">{visible.length ? visible.map((faction) => <article className={`faction-card disposition-${faction.disposition}`} key={faction.id}><span className="eyebrow">{faction.kind} · {faction.disposition}</span><h2>{faction.name}</h2><div className="stat-row"><span>Репутация</span><b>{faction.reputation}</b></div><div className="tags">{faction.laws.map((law) => <span key={law}>{law}</span>)}</div>{faction.memories.length > 0 && <details><summary>Память отношений</summary>{faction.memories.slice(0,4).map((memory) => <p key={memory.id}>{memory.text}</p>)}</details>}</article>) : <article className="empty-panel"><b>Контактов нет</b><p>Посети хаб, прими контракт или установи связь с местной властью.</p></article>}</section></main></div>;
 }
 
-function CivilizationsScreen() {
-  const store = useGameStore();
-  const compact = useCompactLayout();
-  const allCivilizations = store.galaxy?.civilizations ?? [];
-  const knownCivilizationIds = new Set(store.civilizationContacts.filter((entry) => entry.stage !== 'unknown').map((entry) => entry.civilizationId));
-  store.archaeologyChains.filter((chain) => chain.stages.some((stage) => stage.status !== 'locked')).forEach((chain) => knownCivilizationIds.add(chain.civilizationId));
-  const civilizations = allCivilizations.filter((entry) => knownCivilizationIds.has(entry.id));
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [query, setQuery] = useState('');
-  const visible = civilizations.filter((civilization) => `${civilization.name} ${civilization.speciesName}`.toLowerCase().includes(query.toLowerCase()));
-  const selected = civilizations.find((civilization) => civilization.id === selectedId) ?? (!compact ? visible[0] : undefined);
-  const contact = selected ? store.civilizationContacts.find((entry) => entry.civilizationId === selected.id) : undefined;
-  const chains = selected ? store.archaeologyChains.filter((chain) => chain.civilizationId === selected.id) : [];
-  const currentSystem = store.galaxy?.systems.find((system) => system.id === store.currentSystemId);
-  const contactAvailable = selected && selected.status !== 'dead' && Boolean(currentSystem?.civilizationIds.includes(selected.id) || currentSystem?.planets.some((planet) => planet.civilizationId === selected.id));
-
-  if (compact) {
-    return <div className="game-shell"><AppChrome/><main className="mobile-data-screen civilizations-mobile">
-      {selected ? <MobileCivilizationDetail civilization={selected} contact={contact} chains={chains} contactAvailable={Boolean(contactAvailable)} onBack={() => setSelectedId(null)} onContact={() => void store.attemptFirstContact(selected.id)}/> : <>
-        <header className="mobile-screen-header"><div><span className="eyebrow">КСЕНОЛОГИЧЕСКИЙ АРХИВ</span><h1>Цивилизации</h1></div><b>{civilizations.length}</b></header>
-        <input className="mobile-search" placeholder="Поиск" value={query} onChange={(event) => setQuery(event.target.value)}/>
-        <section className="mobile-list">{visible.length ? visible.map((civilization) => <button className="mobile-list-row" key={civilization.id} onClick={() => setSelectedId(civilization.id)}><span>{civilization.status} · tech {civilization.techLevel}</span><b>{civilization.name}</b><small>{civilization.speciesName} · {civilization.ideology}</small></button>) : <div className="mobile-empty"><b>Данных нет</b><p>Нужен контакт или археологическая улика.</p></div>}</section>
-      </>}
-    </main></div>;
-  }
-
-  return <div className="game-shell"><AppChrome/><main className="civilizations-screen"><aside className="civilization-index"><header><span className="eyebrow">КСЕНОЛОГИЧЕСКИЙ АРХИВ</span><h1>Цивилизации</h1><input placeholder="Поиск" value={query} onChange={(event) => setQuery(event.target.value)}/></header><div>{visible.map((civilization) => <button key={civilization.id} className={selected?.id === civilization.id ? 'active' : ''} onClick={() => setSelectedId(civilization.id)}><b>{civilization.name}</b><span>{civilization.status} · tech {civilization.techLevel}</span></button>)}</div></aside><section className="civilization-detail">{selected ? <CivilizationDetail civilization={selected} contact={contact} chains={chains} contactAvailable={Boolean(contactAvailable)} onContact={() => void store.attemptFirstContact(selected.id)}/> : <p>Нет данных.</p>}</section></main></div>;
-}
-
-function MobileCivilizationDetail({ civilization, contact, chains, contactAvailable, onBack, onContact }: { civilization: Civilization; contact?: ReturnType<typeof useGameStore.getState>['civilizationContacts'][number]; chains: ReturnType<typeof useGameStore.getState>['archaeologyChains']; contactAvailable: boolean; onBack(): void; onContact(): void }) {
-  const store = useGameStore();
-  const liveThread = store.worldThreads.find((thread) => thread.civilizationIds.includes(civilization.id));
-  const hubs = store.hubs.filter((hub) => hub.civilizationId === civilization.id);
-  const factions = store.factions.filter((faction) => faction.civilizationId === civilization.id);
-  return <section className="mobile-detail-view civilization-mobile-detail">
-    <button className="mobile-back" onClick={onBack}>← Все цивилизации</button>
-    <span className="eyebrow">{civilization.status.toUpperCase()} · TECH {civilization.techLevel}</span><h2>{civilization.name}</h2><p className="mobile-lead">{civilization.speciesName} · {civilization.ideology}</p>
-    {civilization.status !== 'dead' && <article className="mobile-action-card"><b>{contact ? contactStageLabel(contact.stage) : 'Нет канала связи'}</b><p>Язык {contact?.languageLevel ?? 0}/5 · доверие {contact?.trust ?? 0}</p><button className="primary-button" disabled={!contactAvailable} onClick={onContact}>Попытка контакта</button></article>}
-    {liveThread && <button className="mobile-link-card" onClick={() => store.setScreen('world')}><span>СЕЙЧАС</span><b>{liveThread.title}</b><small>{liveThread.summary}</small></button>}
-    <div className="mobile-inline-stats"><span>Поселения <b>{hubs.length}</b></span><span>Фракции <b>{factions.length}</b></span><span>Цепочки <b>{chains.length}</b></span></div>
-    <details className="mobile-collapsible"><summary>Биология вида</summary><p><b>Тело:</b> {civilization.speciesProfile?.bodyPlan}</p><p><b>Обмен:</b> {civilization.speciesProfile?.metabolism}</p><p><b>Срок жизни:</b> {civilization.speciesProfile?.lifespan} лет</p><p>{civilization.speciesProfile?.unusualTrait}</p></details>
-    <details className="mobile-collapsible"><summary>Происхождение и отношение</summary><p>{civilization.originMystery}</p><p>{civilization.outsiderPolicy}</p>{civilization.extinctionCause && <p className="warning-text">{civilization.extinctionCause}</p>}</details>
-    <details className="mobile-collapsible"><summary>Культуры · {civilization.cultures?.length ?? 0}</summary>{civilization.cultures?.map((culture) => <article key={culture.id}><b>{culture.name}</b><p>{culture.values.join(', ')}</p><small>Табу: {culture.taboos.join(', ')}</small></article>)}</details>
-    <details className="mobile-collapsible"><summary>Государства · {civilization.states?.length ?? 0}</summary>{civilization.states?.map((state) => <article key={state.id}><b>{state.name}</b><p>{state.government}</p><small>{state.status}</small></article>)}</details>
-    {chains.length > 0 && <details className="mobile-collapsible"><summary>Археология · {chains.length}</summary>{chains.map((chain) => <article key={chain.id}><b>{chain.title}</b><p>{chain.summary}</p><small>{chain.status}</small></article>)}</details>}
-  </section>;
-}
-
-function CivilizationDetail({ civilization, contact, chains, contactAvailable, onContact }: { civilization: Civilization; contact?: ReturnType<typeof useGameStore.getState>['civilizationContacts'][number]; chains: ReturnType<typeof useGameStore.getState>['archaeologyChains']; contactAvailable: boolean; onContact(): void }) {
-  const store = useGameStore();
-  const liveThreads = store.worldThreads.filter((thread) => thread.civilizationIds.includes(civilization.id));
-  const civilizationFactions = store.factions.filter((faction) => faction.civilizationId === civilization.id);
-  const civilizationHubs = store.hubs.filter((hub) => hub.civilizationId === civilization.id);
-  const recentHistory = store.galaxy?.history.filter((event) => event.civilizationIds.includes(civilization.id)).slice(-4).reverse() ?? [];
-  return <>
-    <header className="civilization-hero"><div><span className="eyebrow">{civilization.status.toUpperCase()} · TECH {civilization.techLevel}</span><h1>{civilization.name}</h1><p>{civilization.speciesName} · {civilization.ideology}</p></div>{civilization.status !== 'dead' && <div className="contact-panel"><b>{contact ? contactStageLabel(contact.stage) : 'нет канала'}</b><span>язык {contact?.languageLevel ?? 0}/5 · доверие {contact?.trust ?? 0}</span><button className="primary-button" disabled={!contactAvailable} onClick={onContact}>Попытка контакта</button></div>}</header>
-    <section className="civilization-live-strip"><article><span className="eyebrow">СЕЙЧАС</span><h3>{liveThreads[0]?.title ?? 'Изменения не подтверждены'}</h3><p>{liveThreads[0]?.summary ?? 'Контактные сети не передают свежих сведений.'}</p>{liveThreads[0] && <button onClick={() => store.setScreen('world')}>Следить за событием</button>}</article><article><span className="eyebrow">ПРИСУТСТВИЕ В ГАЛАКТИКЕ</span><h3>{civilizationHubs.length} поселений · {civilizationFactions.length} фракций</h3><p>{civilizationHubs.slice(0,3).map((hub) => hub.name).join(', ') || 'Известных действующих хабов нет.'}</p></article><article><span className="eyebrow">ПОСЛЕДНИЙ ИЗВЕСТНЫЙ ПОВОРОТ</span><h3>{recentHistory[0]?.title ?? 'Архив молчит'}</h3><p>{recentHistory[0]?.summary ?? civilization.originMystery}</p></article></section>
-    <section className="civilization-grid">
-      <article><h2>Биология вида</h2><p><b>Тело:</b> {civilization.speciesProfile?.bodyPlan}</p><p><b>Обмен:</b> {civilization.speciesProfile?.metabolism}</p><p><b>Размножение:</b> {civilization.speciesProfile?.reproduction}</p><p><b>Срок жизни:</b> {civilization.speciesProfile?.lifespan} лет</p><p><b>Адаптация:</b> {civilization.speciesProfile?.homeAdaptation}</p><p><b>Особенность:</b> {civilization.speciesProfile?.unusualTrait}</p></article>
-      <article><h2>Происхождение</h2><p>{civilization.originMystery}</p>{civilization.extinctionCause && <p className="warning-text"><b>Версия гибели:</b> {civilization.extinctionCause}</p>}<h3>Отношение к чужакам</h3><p>{civilization.outsiderPolicy}</p><div className="tags">{civilization.socialClasses?.map((entry) => <span key={entry}>{entry}</span>)}</div></article>
-      <article className="wide"><h2>Культуры</h2><div className="inner-grid">{civilization.cultures?.map((culture) => <div className="culture-card" key={culture.id}><h3>{culture.name}</h3><p><b>Ценности:</b> {culture.values.join(', ')}</p><p><b>Табу:</b> {culture.taboos.join(', ')}</p><p><b>Искусство:</b> {culture.artForms.join(', ')}</p></div>)}</div></article>
-      <article><h2>Языки</h2>{civilization.languages?.map((language) => <div className="compact-row" key={language.id}><div><b>{language.name}</b><small>{language.script}</small></div><span>{language.complexity}/10</span></div>)}</article>
-      <article><h2>Религии</h2>{civilization.religions?.map((religion) => <div className="religion-card" key={religion.id}><h3>{religion.name}</h3><p>{religion.doctrine}</p><small>Святыни: {religion.sacredObjects.join(', ')}</small></div>)}</article>
-      <article className="wide"><h2>Государства</h2><div className="inner-grid">{civilization.states?.map((state) => <div className="state-card" key={state.id}><span className="eyebrow">{state.status}</span><h3>{state.name}</h3><p>{state.government}</p><small>{state.outsiderPolicy}</small></div>)}</div></article>
-      {chains.length > 0 && <article className="wide"><h2>Археологические цепочки</h2>{chains.map((chain) => <div className={`arch-chain status-${chain.status}`} key={chain.id}><h3>{chain.title}</h3><p>{chain.summary}</p><div>{chain.stages.map((stage, index) => <div className={`arch-stage stage-${stage.status}`} key={stage.id}><b>{index + 1}. {stage.title}</b><span>{stage.summary}</span><small>{stage.status}{stage.targetPointOfInterestId ? ' · цель найдена' : ''}</small></div>)}</div></div>)}</article>}
-    </section>
-  </>;
-}
-
-function CrewScreen() {
-  const store = useGameStore();
-  return <div className="game-shell"><AppChrome/><main className="scroll-screen crew-screen"><header><div><span className="eyebrow">ЛЮДИ КОРАБЛЯ</span><h1>Экипаж</h1><p>Полноценные напарники редки. Максимум активного состава — четыре.</p></div><div><button disabled={Boolean(store.busyAction)} onClick={() => void store.refreshCrewCandidates()}>Найти кандидатов · ₡40</button><button disabled={Boolean(store.busyAction) || store.crew.length === 0} onClick={() => void store.settlePayroll()}>Выплатить жалование</button></div></header><section className="crew-columns"><div><h2>На борту · {store.crew.length}/4</h2><div className="crew-grid">{store.crew.length ? store.crew.map((member) => <article className="crew-card" key={member.id}><span className={`crew-status status-${member.status}`}>{member.status}</span><div className="crew-avatar">{member.name.slice(0, 1)}</div><h3>{member.name}</h3><p>{member.species} · {member.culture}</p><b>{roleLabel(member.primaryRole)}{member.secondaryRole ? ` / ${roleLabel(member.secondaryRole)}` : ''}</b><div className="stat-row"><span>Здоровье</span><b>{member.health}</b></div><div className="stat-row"><span>Мораль</span><b>{member.morale}</b></div><div className="stat-row"><span>Верность</span><b>{member.loyalty}</b></div><div className="tags">{member.traits.map((trait) => <span key={trait}>{trait}</span>)}</div><small>Зарплата: ₡{member.salary} · доля {member.sharePercent}%</small><button className="danger-button" onClick={() => void store.dismissCrew(member.id)}>Расторгнуть контракт</button></article>) : <p className="empty-state">Ты пока один. Кандидатов проще искать в хабах.</p>}</div></div><div><h2>Кандидаты</h2><div className="crew-grid">{store.crewCandidates.length ? store.crewCandidates.map((candidate) => <article className="crew-card candidate" key={candidate.id}><div className="crew-avatar">{candidate.name.slice(0, 1)}</div><h3>{candidate.name}</h3><p>{candidate.species} · {candidate.culture}</p><b>{roleLabel(candidate.primaryRole)} · уровень {candidate.level}</b><div className="tags">{candidate.traits.map((trait) => <span key={trait}>{trait}</span>)}</div><div className="stat-row"><span>Подписание</span><b>₡{candidate.signingCost}</b></div><button className="primary-button" disabled={store.crew.length >= 4 || (store.captain?.credits ?? 0) < candidate.signingCost} onClick={() => void store.hireCrew(candidate.id)}>Нанять</button></article>) : <p className="empty-state">Список пуст.</p>}</div></div></section></main></div>;
-}
-
 function ArchiveScreen() {
   const store = useGameStore();
   const compact = useCompactLayout();
@@ -525,29 +451,6 @@ function ArchiveScreen() {
     {tab === 'locations' && store.locationStates.map((state) => <article key={state.pointOfInterestId}><span>визитов {state.visitCount} · {state.lastOutcome}</span><h3>{store.pointsOfInterest.find((point) => point.id === state.pointOfInterestId)?.name ?? state.pointOfInterestId}</h3><p>Врагов осталось: {state.enemyStates.filter((enemy) => enemy.health > 0).length}. Объектов использовано: {state.resolvedObjectIds.length}. Данных забрано: {state.collectedEvidenceKeys.length}.</p></article>)}
     {tab === 'history' && store.galaxy.history.filter((entry) => entry.systemIds.some((id) => store.galaxy?.systems.find((system) => system.id === id)?.visited) || entry.civilizationIds.some((id) => store.civilizationContacts.find((contact) => contact.civilizationId === id && contact.stage !== 'unknown'))).slice(-160).reverse().map((entry) => <article key={entry.id}><span>{formatYear(entry.year)}</span><h3>{entry.title}</h3><p>{entry.summary}</p></article>)}
   </section><aside className="archive-summary"><b>Последние записи</b>{store.logs.slice(0, 5).map((entry) => <p key={entry.id}>{entry.title}</p>)}</aside></main></div>;
-}
-
-function ShipScreen() {
-  const store = useGameStore();
-  const compact = useCompactLayout();
-  const [mobileTab, setMobileTab] = useState<'status' | 'systems' | 'cargo' | 'actions'>('status');
-  if (!store.ship || !store.captain) return null;
-  const snapshot = store.getSnapshot();
-
-  if (compact) {
-    return <div className="game-shell"><AppChrome/><main className="mobile-data-screen ship-mobile">
-      <header className="mobile-screen-header"><div><span className="eyebrow">ЛИЧНЫЙ КОРАБЛЬ</span><h1>{store.ship.name}</h1></div><b>{store.ship.hull}%</b></header>
-      <nav className="mobile-segmented four"><button className={mobileTab === 'status' ? 'active' : ''} onClick={() => setMobileTab('status')}>Статус</button><button className={mobileTab === 'systems' ? 'active' : ''} onClick={() => setMobileTab('systems')}>Системы</button><button className={mobileTab === 'cargo' ? 'active' : ''} onClick={() => setMobileTab('cargo')}>Груз</button><button className={mobileTab === 'actions' ? 'active' : ''} onClick={() => setMobileTab('actions')}>Действия</button></nav>
-      <section className="mobile-tab-content">
-        {mobileTab === 'status' && <><article className="mobile-status-card"><div className="meter"><span>Корпус</span><strong>{store.ship.hull}%</strong><i style={{ width: `${store.ship.hull}%` }}/></div><div className="meter"><span>Топливо</span><strong>{store.ship.fuel}%</strong><i style={{ width: `${store.ship.fuel}%` }}/></div><div className="compact-stat"><span>Регистрация</span><b>{store.ship.registration}</b></div><div className="compact-stat"><span>Транспондер</span><b>{store.ship.transponder}</b></div></article><article className="mobile-status-card"><span className="eyebrow">КАПИТАН</span><h2>{store.captain.name}</h2><p>Уровень {store.captain.level} · здоровье {store.captain.health}/{store.captain.maxHealth}</p><small>{store.captain.condition}</small></article></>}
-        {mobileTab === 'systems' && <section>{store.ship.systems.map((system) => <div className={`mobile-system-row ${system.disabled ? 'disabled' : ''}`} key={system.id}><div><b>{system.label}</b><small>{system.effect}</small></div><strong>{Math.round(system.integrity)}%</strong><i><em style={{ width: `${system.integrity}%` }}/></i></div>)}<details className="mobile-collapsible"><summary>Установленные модули · {store.ship.modules.length}</summary>{store.ship.modules.map((module) => <article key={module.id}><b>{module.name}</b><p>{module.effect}</p><small>{module.slot}</small></article>)}</details></section>}
-        {mobileTab === 'cargo' && <section className="mobile-list">{store.ship.cargo.length === 0 ? <div className="mobile-empty"><b>Трюм пуст</b></div> : store.ship.cargo.map((item) => { const knowledge = item.artifactId ? store.artifactKnowledge.find((entry) => entry.artifactId === item.artifactId) : undefined; return <article className="mobile-cargo-row" key={item.id}><span>{item.illegal ? 'КОНТРАБАНДА' : item.artifactId ? 'АРТЕФАКТ' : 'ГРУЗ'}</span><b>{item.name}</b><small>₡{item.value}{item.artifactId ? ` · знания ${knowledge?.level ?? 0}/6` : ''}</small>{item.artifactId && <button onClick={() => store.setScreen('laboratory')}>Лаборатория</button>}{!item.contractId && !item.commodityId && !item.artifactId && <button onClick={() => void store.sellCargo(item.id)}>Продать</button>}</article>; })}</section>}
-        {mobileTab === 'actions' && <section className="mobile-action-list"><button onClick={() => void store.repairShip()}>Ремонт корабля</button><button onClick={() => void store.refuelShip()}>Заправка</button><button onClick={() => store.setScreen('operations')}>Оперативная обстановка</button>{snapshot && <button onClick={() => exportSnapshot(snapshot)}>Экспорт сохранения</button>}<button onClick={() => void store.createBackup()}>Создать backup ({store.backupCount})</button><button className="danger-button" onClick={() => { if (window.confirm('Удалить ironman-сейв и все резервные копии?')) void store.clearGame(); }}>Удалить ironman</button></section>}
-      </section>
-    </main></div>;
-  }
-
-  return <div className="game-shell"><AppChrome/><main className="scroll-screen ship-screen"><section className="ship-hero"><span className="eyebrow">ЛИЧНЫЙ КОРАБЛЬ</span><h1>{store.ship.name}</h1><div className="ship-silhouette"><div className="ship-core"/><div className="ship-wing left"/><div className="ship-wing right"/></div><div className="ship-actions"><button onClick={() => void store.repairShip()}>Ремонт</button><button onClick={() => void store.refuelShip()}>Заправка</button>{snapshot && <button onClick={() => exportSnapshot(snapshot)}>Экспорт</button>}<button onClick={() => void store.createBackup()}>Backup ({store.backupCount})</button><button className="danger-button" onClick={() => { if (window.confirm('Удалить ironman-сейв и все резервные копии?')) void store.clearGame(); }}>Удалить ironman</button></div></section><section className="ship-data"><article><h2>Состояние</h2><div className="meter"><span>Корпус</span><strong>{store.ship.hull}</strong><i style={{ width: `${store.ship.hull}%` }}/></div><div className="meter"><span>Топливо</span><strong>{store.ship.fuel}</strong><i style={{ width: `${store.ship.fuel}%` }}/></div><div className="stat-row"><span>Регистрация</span><b>{store.ship.registration}</b></div><div className="stat-row"><span>Транспондер</span><b>{store.ship.transponder}</b></div><button onClick={() => store.setScreen('operations')}>Оперативная обстановка</button></article><article><h2>Корабельные системы</h2>{store.ship.systems.map((system) => <div className={`operation-system-row ${system.disabled ? 'disabled' : ''}`} key={system.id}><div><b>{system.label}</b><small>{system.effect}</small></div><strong>{Math.round(system.integrity)}%</strong><i><em style={{ width: `${system.integrity}%` }}/></i></div>)}</article><article><h2>Модули</h2>{store.ship.modules.map((module) => <div className="module-row" key={module.id}><span>{module.slot}</span><div><b>{module.name}</b><p>{module.effect}</p></div></div>)}</article><article><h2>Капитан</h2><p>{store.captain.name} · уровень {store.captain.level}</p><p>Здоровье {store.captain.health}/{store.captain.maxHealth}</p><p>Статус: {store.captain.condition}</p></article><article><h2>Груз и анализ</h2>{store.ship.cargo.length === 0 ? <p>Трюм пуст.</p> : store.ship.cargo.map((item) => { const knowledge = item.artifactId ? store.artifactKnowledge.find((entry) => entry.artifactId === item.artifactId) : undefined; return <div className="module-row cargo-analysis" key={item.id}><div><b>{item.name}</b><p>{item.illegal ? 'ЗАПРЕЩЁННЫЙ ГРУЗ · ' : ''}оценка ₡{item.value} · знания {knowledge?.level ?? 0}/6</p>{item.artifactId && <button onClick={() => store.setScreen('laboratory')}>Открыть в лаборатории</button>}{!item.contractId && !item.commodityId && !item.artifactId && <button onClick={() => void store.sellCargo(item.id)}>Продать ₡{Math.round(item.value * .72)}</button>}</div></div>; })}</article></section></main></div>;
 }
 
 function SettingsScreen() {
@@ -583,11 +486,11 @@ export default function App() {
   else if (screen === 'contracts') content = <ContractsScreen/>;
   else if (screen === 'factions') content = <FactionsScreen/>;
   else if (screen === 'civilizations') content = <ContactsScreen chrome={<AppChrome/>}/>;
-  else if (screen === 'crew') content = <CrewScreen/>;
+  else if (screen === 'crew') content = <CrewScreenV33 chrome={<AppChrome/>}/>;
   else if (screen === 'archive') content = <ArchiveScreen/>;
   else if (screen === 'laboratory') content = <LaboratoryScreen chrome={<AppChrome/>}/>;
   else if (screen === 'world') content = <WorldScreen chrome={<AppChrome/>}/>;
   else if (screen === 'operations') content = <OperationsScreen chrome={<AppChrome/>}/>;
-  else content = <ShipScreen/>;
+  else content = <ShipScreenV33 chrome={<AppChrome/>}/>;
   return <Suspense fallback={<BootScreen/>}>{content}{galaxy && <TutorialController/>}{galaxy && <StoryScenePopup/>}{galaxy && <ShipCombatModal/>}</Suspense>;
 }

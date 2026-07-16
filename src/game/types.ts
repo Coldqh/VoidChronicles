@@ -318,6 +318,58 @@ export interface CrewMemory {
   impact: number;
 }
 
+export type ShipCompartmentId = 'bridge' | 'engineering' | 'reactor' | 'medbay' | 'laboratory' | 'quarters' | 'cargo' | 'airlock';
+export interface CrewRelationship {
+  crewId: string;
+  affinity: number;
+  tension: number;
+  lastChangedYear: number;
+  reason: string;
+}
+export interface CrewPersonalArc {
+  id: string;
+  title: string;
+  summary: string;
+  stage: number;
+  status: 'dormant' | 'active' | 'resolved' | 'failed';
+}
+export interface CrewIssue {
+  id: string;
+  kind: 'conflict' | 'request' | 'injury' | 'scarcity';
+  title: string;
+  summary: string;
+  crewIds: string[];
+  severity: number;
+  createdYear: number;
+  status: 'open' | 'resolved';
+  resolvedYear?: number;
+  resolution?: string;
+}
+export interface ShipCompartment {
+  id: ShipCompartmentId;
+  name: string;
+  function: string;
+  condition: number;
+  level: number;
+  disabled: boolean;
+  capacity: number;
+  assignedCrewIds: string[];
+  tags: string[];
+}
+export interface ShipTrophy {
+  id: string;
+  name: string;
+  description: string;
+  sourceId?: string;
+}
+export interface ShipLifeState {
+  compartments: ShipCompartment[];
+  supplies: { food: number; oxygen: number; medicine: number; parts: number };
+  issues: CrewIssue[];
+  trophies: ShipTrophy[];
+  lastUpdatedHour: number;
+}
+
 export interface CrewMember {
   id: string;
   name: string;
@@ -340,6 +392,11 @@ export interface CrewMember {
   status: CrewStatus;
   injuries: Injury[];
   memories: CrewMemory[];
+  fatigue?: number;
+  stress?: number;
+  shipCompartmentId?: ShipCompartmentId;
+  relationships?: CrewRelationship[];
+  personalArc?: CrewPersonalArc;
 }
 
 export interface CrewCandidate extends CrewMember {
@@ -380,6 +437,7 @@ export interface Ship {
   modules: ShipModule[];
   statuses: string[];
   systems: ShipSystemState[];
+  life?: ShipLifeState;
   transponder: string;
   registration: string;
 }

@@ -1,0 +1,7 @@
+Void Chronicles v0.32.3 — Interface Consolidation
+
+- удалён старый встроенный экран CivilizationsScreen;
+- единственным маршрутом цивилизаций оставлен ContactsScreen;
+- удалены старые мобильные и десктопные досье из App.tsx;
+- исправлена потеря projected storyScenes в buildWorldAdvance;
+- версия поднята до 0.32.3.

@@ -1,0 +1,13 @@
+Void Chronicles v0.32.3 + v0.33.0 — выполненные проверки
+
+PASS — node --check для обоих установщиков.
+PASS — повторное применение обоих установщиков на одном дереве.
+PASS — проверка всех якорей против структуры актуального main.
+PASS — синтаксический разбор пропатченных App.tsx, store.ts, snapshot.ts и operations/runtime.ts.
+PASS — строгая TypeScript-компиляция ship/life.ts.
+PASS — строгая TypeScript-компиляция новых CrewScreen и ShipScreen.
+PASS — совместная компиляция Operation Runtime и Ship Life.
+PASS — 11 целевых тестов: ship life, UI consolidation и операции.
+PASS — детерминированность износа, запасов и конфликтов.
+PASS — миграция старого корабля без life и старого экипажа без новых полей.
+PASS — отдых, ремонт, отношения, личные линии и трофеи.

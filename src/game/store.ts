@@ -32,6 +32,7 @@ import type {
   SaveMetadata,
   ScanReport,
   Ship,
+  ShipCompartmentId,
   ShipEncounterState,
   ShipSystemId,
   StarSystem,
@@ -73,6 +74,7 @@ import { adjustEcosystem, adjustSystemEconomy, advanceSimulation, initializeSimu
 import { createKnowledgeFromLegacy, emptyKnowledge, projectKnowledgeToGalaxy, revealKnowledge } from '../simulation/knowledge';
 import { projectContractsFromEvents, projectNewsFromEvents, projectWorldThreads } from '../simulation/projections';
 import { applyCaptainCareer, createOperationObjective, projectOperationRequests, resolveOperationStep } from '../operations/runtime';
+import { advanceShipLife, createShipLifeState, normalizeShipLife, repairCompartment as repairShipCompartment, resolveCrewIssue as resolveShipCrewIssue, resolvePersonalArc, restCrew as restShipCrew } from '../ship/life';
 
 export type MainScreen = 'menu' | 'command' | 'continuity' | 'chronicle' | 'galaxy' | 'system' | 'hub' | 'contracts' | 'factions' | 'civilizations' | 'crew' | 'archive' | 'laboratory' | 'world' | 'operations' | 'ship' | 'settings';
 export type HydrationStatus = 'idle' | 'loading' | 'ready' | 'error';
@@ -174,6 +176,12 @@ interface GameStore {
   hireCrew(candidateId: string): Promise<void>;
   dismissCrew(crewId: string): Promise<void>;
   settlePayroll(): Promise<void>;
+  restCrew(): Promise<void>;
+  repairCompartment(compartmentId: ShipCompartmentId): Promise<void>;
+  resolveCrewIssue(issueId: string, choice: 'mediate' | 'side-first' | 'side-second' | 'ignore'): Promise<void>;
+  assignCrewCompartment(crewId: string, compartmentId: ShipCompartmentId): Promise<void>;
+  handleCrewStory(crewId: string, choice: 'listen' | 'help' | 'refuse'): Promise<void>;
+  resupplyShip(): Promise<void>;
   dockAtHub(hubId: string): Promise<{ ok: boolean; message: string }>;
   leaveHub(): Promise<void>;
   acceptContract(contractId: string): Promise<{ ok: boolean; message: string }>;
@@ -229,6 +237,7 @@ const initialShip = (): Ship => ({
   systems: createShipSystems(),
   transponder: 'WANDERER-01',
   registration: 'VC-01-CORE',
+  life: createShipLifeState(0)
 });
 
 function buildStationAssignments(crew: CrewMember[]): Partial<Record<ShipSystemId, string>> {
@@ -458,12 +467,16 @@ function buildWorldAdvance(
   const datedScenes = state.storyScenes.map((scene) => scene.status === 'available' && scene.expiresYear !== undefined && scene.expiresYear < nextYear ? { ...scene, status: 'expired' as const } : scene);
   const storyScenes = projectOperationRequests({ threads: worldThreads, contacts: state.civilizationContacts, civilizations: galaxy.civilizations, factions, existingScenes: datedScenes, year: nextYear });
   const consequences = processDueConsequences(state.pendingConsequences, nextYear);
-  const logs = [...consequences.due.map((entry) => makeLog(nextYear, entry.title, entry.text, entry.tone)), ...state.logs];
+  const shipLife = state.ship && state.legacy.mode === 'active' ? advanceShipLife({ ship: state.ship, crew: state.crew, hours, seed: galaxy.seed, year: nextYear, reason }) : null;
+  const incidentLogs = shipLife?.incidents.map((entry) => makeLog(nextYear, entry.title, entry.summary, entry.severity >= 70 ? 'danger' : 'warning')) ?? [];
+  const logs = [...incidentLogs, ...consequences.due.map((entry) => makeLog(nextYear, entry.title, entry.text, entry.tone)), ...state.logs];
   const projectedGalaxy = projectKnowledgeToGalaxy({ ...galaxy, currentYear: nextYear }, knowledge);
   return {
     emittedEvents: advanced.emittedEvents,
     patch: {
       simulation: advanced.simulation,
+      ship: shipLife?.ship ?? state.ship,
+      crew: shipLife?.crew ?? state.crew,
       hubs: projectedHubs,
       galaxy: projectedGalaxy,
       gameYear: nextYear,
@@ -472,7 +485,7 @@ function buildWorldAdvance(
       worldThreads,
       warFronts,
       pendingConsequences: consequences.consequences,
-      storyScenes: state.storyScenes.map((scene) => scene.status === 'available' && scene.expiresYear !== undefined && scene.expiresYear < nextYear ? { ...scene, status: 'expired' as const } : scene),
+      storyScenes,
       objectives: state.objectives.map((objective) => objective.status === 'active' && objective.deadlineYear !== undefined && objective.deadlineYear < nextYear ? { ...objective, status: 'failed' as const } : objective),
       logs: logs.slice(0, 750)
     }
@@ -976,7 +989,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       set({
         ...advanced.patch,
         knowledge,
-        ship: updatedShip,
+        ship: advanced.patch.ship ? { ...(advanced.patch.ship as Ship), fuel: updatedShip.fuel, systems: updatedShip.systems } : updatedShip,
         currentSystemId: target.id,
         selectedSystemId: target.id,
         currentHubId: null,
@@ -2085,6 +2098,101 @@ export const useGameStore = create<GameStore>((set, get) => ({
         });
       }
       await persist(set, get, 'crew-payroll');
+    }, undefined);
+  },
+  async restCrew() {
+    return runExclusive('crew-rest', set, get, async () => {
+      const state = get();
+      if (!state.ship || !state.simulation) return;
+      const advanced = buildWorldAdvance(state, 12, 'crew-rest');
+      const nextYear = advanced.patch.gameYear ?? state.gameYear;
+      const result = restShipCrew((advanced.patch.ship as Ship | undefined) ?? state.ship, (advanced.patch.crew as CrewMember[] | undefined) ?? state.crew, nextYear);
+      set({ ...advanced.patch, ship: result.ship, crew: result.crew, logs: [makeLog(nextYear, 'Смена отдыха', result.message, 'good'), ...((advanced.patch.logs as GameLogEntry[] | undefined) ?? state.logs)].slice(0, 750) });
+      await persist(set, get, 'crew-rest');
+    }, undefined);
+  },
+  async repairCompartment(compartmentId) {
+    return runExclusive('compartment-repair', set, get, async () => {
+      const state = get();
+      if (!state.ship) return;
+      const result = repairShipCompartment(state.ship, state.crew, compartmentId, state.gameYear);
+      set({ ship: result.ship, crew: result.crew, logs: [makeLog(state.gameYear, 'Ремонт отсека', result.message, result.partsUsed ? 'good' : 'warning'), ...state.logs].slice(0, 750) });
+      await persist(set, get, 'compartment-repair');
+    }, undefined);
+  },
+  async resolveCrewIssue(issueId, choice) {
+    return runExclusive('crew-issue', set, get, async () => {
+      const state = get();
+      if (!state.ship) return;
+      const result = resolveShipCrewIssue({ ship: state.ship, crew: state.crew, issueId, choice, year: state.gameYear });
+      set({ ship: result.ship, crew: result.crew, logs: [makeLog(state.gameYear, 'Решение капитана', result.message, choice === 'mediate' ? 'good' : choice === 'ignore' ? 'warning' : 'info'), ...state.logs].slice(0, 750) });
+      await persist(set, get, 'crew-issue');
+    }, undefined);
+  },
+  async assignCrewCompartment(crewId, compartmentId) {
+    const state = get();
+    if (!state.ship?.life || !state.crew.some((entry) => entry.id === crewId)) return;
+    const target = state.ship.life.compartments.find((entry) => entry.id === compartmentId);
+    if (!target || (!target.assignedCrewIds.includes(crewId) && target.assignedCrewIds.length >= target.capacity)) {
+      set({ logs: [makeLog(state.gameYear, 'Назначение поста', 'В выбранном отсеке нет свободного места.', 'warning'), ...state.logs].slice(0, 750) });
+      return;
+    }
+    const compartments = state.ship.life.compartments.map((entry) => ({
+      ...entry,
+      assignedCrewIds: entry.id === compartmentId
+        ? Array.from(new Set([...entry.assignedCrewIds.filter((id) => id !== crewId), crewId])).slice(0, entry.capacity)
+        : entry.assignedCrewIds.filter((id) => id !== crewId)
+    }));
+    set({
+      ship: { ...state.ship, life: { ...state.ship.life, compartments } },
+      crew: state.crew.map((entry) => entry.id === crewId ? { ...entry, shipCompartmentId: compartmentId } : entry)
+    });
+    await persist(set, get, 'crew-compartment');
+  },
+  async handleCrewStory(crewId, choice) {
+    return runExclusive('crew-story', set, get, async () => {
+      const state = get();
+      if (!state.captain) return;
+      const result = resolvePersonalArc({ crew: state.crew, crewId, choice, year: state.gameYear });
+      if (state.captain.credits < result.creditsCost) {
+        set({ logs: [makeLog(state.gameYear, 'Личная просьба', 'Недостаточно кредитов, чтобы помочь.', 'warning'), ...state.logs].slice(0, 750) });
+        return;
+      }
+      set({
+        captain: { ...state.captain, credits: state.captain.credits - result.creditsCost },
+        crew: result.crew,
+        logs: [makeLog(state.gameYear, 'Личная история экипажа', result.message, choice === 'help' ? 'good' : choice === 'refuse' ? 'warning' : 'info'), ...state.logs].slice(0, 750)
+      });
+      await persist(set, get, 'crew-story');
+    }, undefined);
+  },
+  async resupplyShip() {
+    return runExclusive('ship-resupply', set, get, async () => {
+      const state = get();
+      if (!state.ship || !state.captain) return;
+      if (!state.currentHubId) {
+        set({ logs: [makeLog(state.gameYear, 'Пополнение запасов', 'Для погрузки припасов нужна стыковка с хабом.', 'warning'), ...state.logs].slice(0, 750) });
+        return;
+      }
+      const cost = 180;
+      if (state.captain.credits < cost) {
+        set({ logs: [makeLog(state.gameYear, 'Пополнение запасов', 'Нужно ₡' + cost + '.', 'warning'), ...state.logs].slice(0, 750) });
+        return;
+      }
+      const normalized = normalizeShipLife(state.ship, state.crew, state.gameYear);
+      normalized.ship.life!.supplies = {
+        food: 100,
+        oxygen: 100,
+        medicine: normalized.ship.life!.supplies.medicine + 5,
+        parts: normalized.ship.life!.supplies.parts + 8
+      };
+      set({
+        captain: { ...state.captain, credits: state.captain.credits - cost },
+        ship: normalized.ship,
+        crew: normalized.crew,
+        logs: [makeLog(state.gameYear, 'Запасы пополнены', 'Еда и кислород восстановлены, медикаменты и запчасти приняты на борт.', 'good'), ...state.logs].slice(0, 750)
+      });
+      await persist(set, get, 'ship-resupply');
     }, undefined);
   },
   async dockAtHub(hubId) {

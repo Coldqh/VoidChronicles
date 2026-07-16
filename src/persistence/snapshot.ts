@@ -13,6 +13,7 @@ import { createKnowledgeFromLegacy, projectKnowledgeToGalaxy } from '../simulati
 import { projectWorldThreads } from '../simulation/projections';
 import { worldYear } from '../simulation/clock';
 import { normalizeEcologyState } from '../ecology/integrity';
+import { createShipLifeState } from '../ship/life';
 
 export const CURRENT_SCHEMA_VERSION = SAVE_SCHEMA_VERSION;
 export { APP_VERSION };
@@ -316,6 +317,24 @@ const shipSystemIdSchema = z.enum(['engine','reactor','weapons','sensors','comms
 const shipSystemSchema = z.object({
   id: shipSystemIdSchema, label: z.string(), integrity: finiteNumber, maxIntegrity: finiteNumber, disabled: z.boolean(), effect: z.string()
 });
+const shipCompartmentIdSchema = z.enum(['bridge','engineering','reactor','medbay','laboratory','quarters','cargo','airlock']);
+const crewRelationshipSchema = z.object({ crewId: z.string(), affinity: finiteNumber, tension: finiteNumber, lastChangedYear: finiteNumber, reason: z.string() });
+const crewPersonalArcSchema = z.object({ id: z.string(), title: z.string(), summary: z.string(), stage: finiteNumber, status: z.enum(['dormant','active','resolved','failed']) });
+const crewIssueSchema = z.object({
+  id: z.string(), kind: z.enum(['conflict','request','injury','scarcity']), title: z.string(), summary: z.string(),
+  crewIds: z.array(z.string()), severity: finiteNumber, createdYear: finiteNumber, status: z.enum(['open','resolved']),
+  resolvedYear: finiteNumber.optional(), resolution: z.string().optional()
+});
+const shipCompartmentSchema = z.object({
+  id: shipCompartmentIdSchema, name: z.string(), function: z.string(), condition: finiteNumber, level: finiteNumber,
+  disabled: z.boolean(), capacity: finiteNumber, assignedCrewIds: z.array(z.string()), tags: z.array(z.string())
+});
+const shipLifeSchema = z.object({
+  compartments: z.array(shipCompartmentSchema),
+  supplies: z.object({ food: finiteNumber, oxygen: finiteNumber, medicine: finiteNumber, parts: finiteNumber }),
+  issues: z.array(crewIssueSchema), trophies: z.array(z.object({ id: z.string(), name: z.string(), description: z.string(), sourceId: z.string().optional() })),
+  lastUpdatedHour: finiteNumber
+});
 const shipSchema = z.object({
   id: z.string().min(1),
   name: z.string(),
@@ -329,6 +348,7 @@ const shipSchema = z.object({
   modules: z.array(moduleSchema),
   statuses: z.array(z.string()),
   systems: z.array(shipSystemSchema).default([]),
+  life: shipLifeSchema.default(createShipLifeState(0)),
   transponder: z.string().default('WANDERER-01'),
   registration: z.string().default('VC-01-CORE')
 });
@@ -463,9 +483,14 @@ const crewMemberSchema = z.object({
   paidUntilYear: finiteNumber,
   traits: z.array(z.string()),
   belief: z.string(),
-  status: z.enum(['active', 'injured', 'unpaid', 'missing']),
+  status: z.enum(['active', 'injured', 'unpaid', 'missing', 'deceased']),
   injuries: z.array(injurySchema),
-  memories: z.array(crewMemorySchema)
+  memories: z.array(crewMemorySchema),
+  fatigue: finiteNumber.optional(),
+  stress: finiteNumber.optional(),
+  shipCompartmentId: shipCompartmentIdSchema.optional(),
+  relationships: z.array(crewRelationshipSchema).optional(),
+  personalArc: crewPersonalArcSchema.optional()
 });
 const crewCandidateSchema = crewMemberSchema.extend({
   signingCost: finiteNumber,
