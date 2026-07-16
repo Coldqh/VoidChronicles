@@ -3,6 +3,9 @@ import { useGameStore, type MainScreen } from '../game/store';
 import { useCompactLayout } from '../hooks/useCompactLayout';
 import { APP_VERSION } from '../version';
 import { formatInteger } from '../ui/format';
+import { ArchiveWorkspaceV352 } from '../screens/ArchiveWorkspaceV352';
+import { SystemWorkspaceV352 } from '../screens/SystemWorkspaceV352';
+import '../styles/interfaceV352.css';
 
 const BRAND_MARK = `${import.meta.env.BASE_URL}brand/void-chronicles-mark.webp`;
 
@@ -22,6 +25,7 @@ export function ExperienceChrome() {
 
   const requestCount = store.storyScenes.filter((scene) => scene.status === 'available' && scene.operationRequest).length;
   const activeOperationCount = store.objectives.filter((objective) => objective.status === 'active' && objective.operation).length;
+  const contractCount = store.contracts.filter((contract) => contract.status === 'available' || contract.status === 'active').length;
   const crisisCount = store.worldThreads.filter((thread) => thread.status === 'escalating' || thread.urgency >= 70).length;
   const shipIssueCount = store.ship?.life?.issues.filter((issue) => issue.status === 'open').length ?? 0;
   const fuel = store.ship?.fuel ?? 0;
@@ -30,17 +34,16 @@ export function ExperienceChrome() {
   const mainItems = useMemo<NavigationItem[]>(() => [
     { id: 'command', label: 'Мостик', icon: '◆', description: 'Главное решение сейчас' },
     { id: 'galaxy', label: 'Карта', icon: '✦', description: 'Маршруты и сектора', badge: store.navigation.activePlan?.status === 'active' ? 1 : 0 },
-    { id: 'operations', label: 'Операции', icon: '⚔', description: 'Запросы и активные задачи', badge: requestCount + activeOperationCount },
+    { id: 'operations', label: 'Операции', icon: '⚔', description: 'Запросы, контракты и активные задачи', badge: requestCount + activeOperationCount + contractCount },
     { id: 'world', label: 'Мир', icon: '◎', description: 'Цивилизации и кризисы', badge: crisisCount },
     { id: 'ship', label: 'Корабль', icon: '▲', description: 'Отсеки, люди и запасы', badge: shipIssueCount }
-  ], [activeOperationCount, crisisCount, requestCount, shipIssueCount, store.navigation.activePlan?.status]);
+  ], [activeOperationCount, contractCount, crisisCount, requestCount, shipIssueCount, store.navigation.activePlan?.status]);
 
   const secondaryItems = useMemo<NavigationItem[]>(() => [
     { id: 'system', label: 'Текущая система', icon: '◉', description: 'Планеты, сигналы и высадки' },
     { id: 'civilizations', label: 'Контакты', icon: '⌬', description: 'Дипломатия и профили видов' },
     { id: 'crew', label: 'Экипаж', icon: '♟', description: 'Люди, отношения и истории' },
     { id: 'laboratory', label: 'Лаборатория', icon: '◈', description: 'Артефакты и технологии' },
-    { id: 'contracts', label: 'Контракты', icon: '▤', description: 'Работа и обязательства' },
     { id: 'factions', label: 'Фракции', icon: '⚑', description: 'Политические силы' },
     { id: 'archive', label: 'Архив', icon: '▣', description: 'Открытия и расследования' },
     { id: 'chronicle', label: 'Хроника', icon: '◫', description: 'Известная история галактики' },
@@ -63,12 +66,29 @@ export function ExperienceChrome() {
     return () => document.documentElement.classList.remove('v35-nav-open');
   }, [open]);
 
+  useEffect(() => {
+    const root = document.documentElement;
+    root.classList.toggle('v352-screen-archive', store.screen === 'archive');
+    root.classList.toggle('v352-screen-system', store.screen === 'system');
+    if (store.screen === 'contracts') store.setScreen('operations');
+    return () => {
+      root.classList.remove('v352-screen-archive');
+      root.classList.remove('v352-screen-system');
+    };
+  }, [store.screen, store.setScreen]);
+
   if (!store.captain || !store.ship) return null;
 
   const navigate = (screen: MainScreen) => {
     store.setScreen(screen);
     setOpen(false);
   };
+
+  const workspace = store.screen === 'archive'
+    ? <ArchiveWorkspaceV352/>
+    : store.screen === 'system'
+      ? <SystemWorkspaceV352/>
+      : null;
 
   const hud = <header className="v35-hud">
     <button className="v35-hud-menu" aria-label="Открыть все разделы" onClick={() => setOpen((value) => !value)}>
@@ -121,6 +141,7 @@ export function ExperienceChrome() {
       <button className={open ? 'active' : ''} onClick={() => setOpen((value) => !value)}><i>•••</i><span>Ещё</span>{shipIssueCount > 0 && <em>{shipIssueCount}</em>}</button>
     </nav>
     {allMenu}
+    {workspace}
   </>;
 
   return <>
@@ -135,5 +156,6 @@ export function ExperienceChrome() {
       <button className="v35-rail-more" onClick={() => setOpen(true)}><i>⌘</i><span>Все</span></button>
     </aside>
     {allMenu}
+    {workspace}
   </>;
 }
