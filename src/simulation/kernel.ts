@@ -488,7 +488,7 @@ function resolveEcologyCycle(
   if (!system || !planet) return null;
 
   const result = simulateEcologyCycle(current, event.seedKey, event.dueHour);
-  state.ecosystems[planetId] = result.ecology;
+  state.ecosystems[planetId] = normalizeEcologyState(result.ecology);
   const settlements = Object.values(state.settlements).filter(
     (entry) => entry.planetId === planetId && !entry.abandoned
   );
@@ -769,8 +769,11 @@ export function upgradeSimulationEcosystems(
   input: LegacySimulation,
   context: SimulationContext
 ): SimulationState {
-  const ecosystems =
-    input.ecosystems ?? initializeEcosystems(context.galaxy, input.clock.absoluteHour);
+  const ecosystems = Object.fromEntries(
+    Object.entries(
+      input.ecosystems ?? initializeEcosystems(context.galaxy, input.clock.absoluteHour)
+    ).map(([planetId, ecology]) => [planetId, normalizeEcologyState(ecology)])
+  );
   const existingIds = new Set(input.scheduledEvents.map((event) => event.id));
   const ecologyEvents: ScheduledWorldEvent[] = Object.keys(ecosystems)
     .map((planetId, index) => ({

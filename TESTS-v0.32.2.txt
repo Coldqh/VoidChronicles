@@ -1,0 +1,14 @@
+Void Chronicles v0.32.2 validation
+
+PASS — CivilizationProfileWindow + ContactsScreen strict TypeScript compile
+PASS — patched WorldScreen TypeScript syntax compile
+PASS — installer first application
+PASS — installer second application (idempotency)
+PASS — civilizationProfiles.test.ts: 3 tests
+PASS — ecologyIntegerBoundary.test.ts: 2 tests
+PASS — player ecology runtime: 1 test
+PASS — biomass 70.68999999998 normalizes and displays as 71
+PASS — player restore-ecosystem action persists integer metrics
+PASS — ZIP integrity and byte-for-byte extraction
+
+Validated against current main source anchors from version 0.32.1.

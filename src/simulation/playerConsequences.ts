@@ -1,4 +1,5 @@
 import type { Contract, Faction } from '../game/types';
+import { normalizeEcologyState } from '../ecology/integrity';
 import { causalizeDraft } from './causality';
 import { recomputeSystemFromSettlements } from './economy';
 import type {
@@ -172,6 +173,7 @@ function restoreEcosystem(state: SimulationState, planetId: string | undefined, 
   ecology.climateStability = clamp(ecology.climateStability + 2 + magnitude);
   ecology.biomass = Math.max(0, ecology.biomass * (1 + 0.01 * magnitude));
   ecology.lastUpdatedHour = atHour;
+  state.ecosystems[resolvedPlanetId] = normalizeEcologyState(ecology);
   return [resolvedPlanetId];
 }
 

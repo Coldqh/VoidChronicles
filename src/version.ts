@@ -1,4 +1,4 @@
-export const APP_VERSION = '0.32.1';
-export const APP_CODENAME = 'PLAYER_OPERATIONS_TESTED';
+export const APP_VERSION = '0.32.2';
+export const APP_CODENAME = 'CIVILIZATION_PROFILES';
 export const SAVE_SCHEMA_VERSION = 13;
 export const BUILD_TIME = typeof __BUILD_TIME__ !== 'undefined' ? __BUILD_TIME__ : 'development';

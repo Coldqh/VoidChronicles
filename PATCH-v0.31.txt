@@ -1,0 +1,27 @@
+Void Chronicles v0.31.0 — Living Contacts & Interface Rework
+
+Numeric integrity
+- Ecology metrics are normalized to integers after direct changes, civilization pressure and save loading.
+- Old saves containing values such as 70.68999999999998 are repaired automatically.
+- Shared formatters were added for integers, percentages, metrics and population.
+
+Interface rework
+- The Civilizations navigation entry is now Contacts.
+- A new responsive contact dossier replaces the old encyclopedia-first screen.
+- Global panel, navigation, spacing and mobile presentation received a modern visual pass.
+- Knowledge remains progressive: unknown political, cultural and access fields stay hidden.
+
+Living diplomacy
+- Trade proposals affect supply, prosperity and settlement stocks.
+- Aid affects food, water, medicine, health and unrest.
+- Landing requests unlock territory and settlement intelligence.
+- Scientific exchange affects research and knowledge.
+- Heritage can be returned directly to its creators.
+- Trusted contacts can receive mediation proposals during active crises.
+- Outcomes depend on culture, outsider policy, trust, respect, suspicion and a diplomat specialist.
+- Agreements and diplomatic history are reconstructed from causal world events and survive saves without a schema migration.
+
+Installation
+1. Extract this archive over C:\VoidChronicles.
+2. Run: node APPLY-v0.31.mjs
+3. Run: npm run check
