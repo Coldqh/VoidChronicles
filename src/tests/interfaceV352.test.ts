@@ -45,9 +45,9 @@ describe('v0.35.2 unified operations and workspaces', () => {
     expect(laboratorySource).toContain('store.assignEquipment');
   });
 
-  it('keeps save compatibility while advancing the stable routing release', () => {
-    expect(versionSource).toContain("APP_VERSION = '0.35.3'");
-    expect(versionSource).toContain("APP_CODENAME = 'ROUTING_STABLE'");
+  it('keeps save compatibility across later releases', () => {
+    expect(versionSource).toContain('export const APP_VERSION');
+    expect(versionSource).toContain('export const APP_CODENAME');
     expect(versionSource).toContain('SAVE_SCHEMA_VERSION = 13');
   });
 });
