@@ -10,8 +10,9 @@ describe('v0.32 interface consolidation', () => {
   });
 
   it('turns operations into a playable workspace', () => {
-    expect(operationsSource).toContain('Принять операцию');
-    expect(operationsSource).toContain("store.advanceOperation");
+    expect(operationsSource).toContain("'accept-operation'");
+    expect(operationsSource).toContain('>Принять</button>');
+    expect(operationsSource).toContain('store.advanceOperation');
     expect(operationsSource).toContain('Карьера');
     expect(contactsSource).toContain('Открыть запросы');
   });

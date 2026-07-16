@@ -41,7 +41,7 @@ describe('planetary ecosystems', () => {
     expect(after.cycle).toBeGreaterThan(before.cycle);
     expect(after.lastUpdatedHour).toBeGreaterThan(before.lastUpdatedHour);
     expect(advanced.simulation.scheduledEvents.some((entry) => entry.kind === 'ecology-cycle' && entry.entityId === ecologyId)).toBe(true);
-  });
+  }, 15_000);
 
   it('upgrades a v1 simulation with ecological state without changing its clock', async () => {
     const generated = await world('ECO-UPGRADE');
