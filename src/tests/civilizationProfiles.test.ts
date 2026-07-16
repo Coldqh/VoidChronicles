@@ -6,7 +6,10 @@ import { describe, expect, it } from 'vitest';
 
 describe('civilization profiles and routing', () => {
   it('opens a dedicated profile window from contacts and the living world', () => {
-    expect(contactsSource).toContain('setProfileCivilizationId(entry.civilization.id)');
+    expect(contactsSource).toContain('setSelectedId(entry.civilization.id)');
+    expect(contactsSource).toContain('Открыть полный профиль');
+    expect(contactsSource).toContain('setProfileCivilizationId(civilization.id)');
+    expect(contactsSource).not.toContain('setProfileCivilizationId(entry.civilization.id)');
     expect(contactsSource).toContain('<CivilizationProfileWindow');
     expect(worldSource).toContain('setProfileCivilizationId(polity.civilizationId)');
     expect(worldSource).toContain('<CivilizationProfileWindow');

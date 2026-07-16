@@ -16,15 +16,18 @@ describe('v0.32.3 and v0.33 interface',()=>{
     expect(appSource).toContain('ShipScreenV33');
     expect(appSource).toContain("<ContactsScreen chrome={<AppChrome/>}/>");
   });
+
   it('uses dedicated ship and crew workspaces',()=>{
     expect(crewSource).toContain('Усталость');
-    expect(crewSource).toContain('Отношения на борту');
+    expect(crewSource).toContain('ОТНОШЕНИЯ НА БОРТУ');
+    expect(crewSource).toContain('selectedRelationships');
     expect(crewSource).toContain('handleCrewStory');
     expect(crewSource).toContain('assignCrewCompartment');
     expect(shipSource).toContain('ВНУТРЕННЯЯ СХЕМА');
     expect(shipSource).toContain('Запчасти');
     expect(shipSource).toContain('resupplyShip');
   });
+
   it('persists and advances ship life through world time and operations',()=>{
     expect(storeSource).toContain('advanceShipLife');
     expect(storeSource).toContain('async resolveCrewIssue');
@@ -33,6 +36,7 @@ describe('v0.32.3 and v0.33 interface',()=>{
     expect(snapshotSource).toContain('shipLifeSchema.default(createShipLifeState(0))');
     expect(operationsSource).toContain('crewReadiness');
   });
+
   it('contains persistent consequences instead of decorative cards',()=>{
     expect(lifeSource).toContain('advanceShipLife');
     expect(lifeSource).toContain('resolveCrewIssue');
