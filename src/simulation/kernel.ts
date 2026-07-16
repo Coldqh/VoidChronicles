@@ -1,5 +1,6 @@
 import { initializeEcosystems } from '../ecology/generate';
 import { simulateEcologyCycle } from '../ecology/simulate';
+import { normalizeEcologyState } from '../ecology/integrity';
 import { HOURS_PER_DAY, worldYear } from './clock';
 import type { SimulationContext } from './context';
 import { initializeContinuitySettlementLayer } from './continuity';
@@ -814,5 +815,5 @@ export function adjustEcosystem(
     if (value === undefined) continue;
     next[key] = clamp((next[key] as number) + value) as never;
   }
-  return { ...input, ecosystems: { ...input.ecosystems, [planetId]: next } };
+  return { ...input, ecosystems: { ...input.ecosystems, [planetId]: normalizeEcologyState(next) } };
 }

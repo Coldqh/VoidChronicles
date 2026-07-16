@@ -28,10 +28,13 @@ import { useCompactLayout } from './hooks/useCompactLayout';
 const LaboratoryScreen = lazy(() => import('./screens/LaboratoryScreen').then((module) => ({ default: module.LaboratoryScreen })));
 const WorldScreen = lazy(() => import('./screens/WorldScreen').then((module) => ({ default: module.WorldScreen })));
 const OperationsScreen = lazy(() => import('./screens/OperationsScreen').then((module) => ({ default: module.OperationsScreen })));
+const ContactsScreen = lazy(() => import('./screens/ContactsScreen').then((module) => ({ default: module.ContactsScreen })));
 import { ChronicleScreen, ContinuityScreen } from './screens/LegacyScreen';
 import './styles/app.css';
 import './styles/adaptive.css';
 import './styles/mobileGameplay.css';
+import './styles/playerOperationsV32.css';
+import './styles/interfaceV31.css';
 
 const defaultSettings: GalaxySettings = {
   seed: 'VOID-CHRONICLES-005',
@@ -138,7 +141,7 @@ const navigationGroups: { title: string; items: { id: MainScreen; label: string;
   ] },
   { title: 'МИР', items: [
     { id: 'world', label: 'Живой мир', icon: '◎' },
-    { id: 'civilizations', label: 'Цивилизации', icon: '⌬' },
+    { id: 'civilizations', label: 'Контакты', icon: '⌬' },
     { id: 'factions', label: 'Фракции', icon: '⚑' },
     { id: 'contracts', label: 'Контракты', icon: '▤' },
     { id: 'archive', label: 'Архив', icon: '▣' }
@@ -577,7 +580,7 @@ export default function App() {
   else if (screen === 'hub') content = <HubScreen/>;
   else if (screen === 'contracts') content = <ContractsScreen/>;
   else if (screen === 'factions') content = <FactionsScreen/>;
-  else if (screen === 'civilizations') content = <CivilizationsScreen/>;
+  else if (screen === 'civilizations') content = <ContactsScreen chrome={<AppChrome/>}/>;
   else if (screen === 'crew') content = <CrewScreen/>;
   else if (screen === 'archive') content = <ArchiveScreen/>;
   else if (screen === 'laboratory') content = <LaboratoryScreen chrome={<AppChrome/>}/>;

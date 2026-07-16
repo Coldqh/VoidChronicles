@@ -1,47 +1,63 @@
 import { useState, type ReactNode } from 'react';
+import type { OperationApproach } from '../game/types';
+import { careerLabels, currentOperationStage, operationLabels } from '../operations/runtime';
 import { useGameStore } from '../game/store';
-import { useCompactLayout } from '../hooks/useCompactLayout';
+
+type Tab = 'requests' | 'active' | 'threats' | 'career';
 
 export function OperationsScreen({ chrome }: { chrome: ReactNode }) {
   const store = useGameStore();
-  const compact = useCompactLayout();
-  const [mobileTab, setMobileTab] = useState<'pursuits' | 'wars'>('pursuits');
-  const activePursuits = store.pursuits.filter((entry) => entry.status === 'active');
-  const activeWars = store.warFronts.filter((entry) => entry.status === 'active' || entry.status === 'cold');
+  const [tab, setTab] = useState<Tab>('requests');
+  const [notice, setNotice] = useState('');
+  const requests = store.storyScenes.filter((scene) => scene.status === 'available' && scene.operationRequest);
+  const active = store.objectives.filter((objective) => objective.status === 'active' && objective.operation);
+  const finished = store.objectives.filter((objective) => objective.operation && objective.status !== 'active').slice(0, 8);
   const currentSystem = store.galaxy?.systems.find((entry) => entry.id === store.currentSystemId);
-  const localWars = activeWars.filter((entry) => currentSystem && entry.systemIds.includes(currentSystem.id));
+  const career = store.captain?.career;
+  const pursuits = store.pursuits.filter((entry) => entry.status === 'active');
+  const wars = store.warFronts.filter((entry) => entry.status === 'active' || entry.status === 'cold');
 
-  const pursuitContent = activePursuits.length ? activePursuits.map((entry) => <article className="mobile-threat-row" key={entry.id}>
-    <div><span>УРОВЕНЬ {entry.intensity}</span><b>{entry.sourceName}</b></div>
-    <details className="mobile-inline-details"><summary>Что им известно</summary><p>{entry.reason}</p><ul><li>{entry.knownIdentity ? 'капитан' : 'личность скрыта'}</li><li>{entry.knownTransponder ? 'транспондер' : 'сигнал скрыт'}</li><li>{entry.knownShipProfile ? 'корпус' : 'профиль скрыт'}</li></ul></details>
-  </article>) : <div className="mobile-empty"><b>Розыска нет</b></div>;
+  const advance = async (id: string, approach: OperationApproach) => {
+    const result = await store.advanceOperation(id, approach);
+    setNotice(result.message);
+  };
 
-  const warContent = activeWars.length ? activeWars.map((front) => {
-    const attacker = store.factions.find((entry) => entry.id === front.attackerFactionId);
-    const defender = store.factions.find((entry) => entry.id === front.defenderFactionId);
-    const here = currentSystem && front.systemIds.includes(currentSystem.id);
-    const width = Math.max(10, Math.min(90, 50 + (front.attackerScore - front.defenderScore) * 5));
-    return <article className={`mobile-war-row ${here ? 'local' : ''}`} key={front.id}>
-      <span>{front.status} · интенсивность {front.intensity}</span><b>{attacker?.name ?? front.attackerFactionId}</b><small>против {defender?.name ?? front.defenderFactionId}</small>
-      <i><em style={{ width: `${width}%` }}/></i>{here && <strong>Ты находишься в зоне конфликта</strong>}
-    </article>;
-  }) : <div className="mobile-empty"><b>Фронтов нет</b><p>Подтверждённых войн не обнаружено.</p></div>;
+  return <div className="game-shell">{chrome}<main className="v32-operations">
+    <header className="v32-operations-hero"><div><span className="eyebrow">ЗАПРОСЫ · ЗАДАЧИ · ПОСЛЕДСТВИЯ</span><h1>Операции</h1><p>Мир ставит задачу. Ты выбираешь способ и получаешь не только успех или провал.</p></div><div><b>{requests.length + active.length}</b><span>требуют решения</span></div></header>
+    <nav className="v32-operation-tabs">
+      <button className={tab === 'requests' ? 'active' : ''} onClick={() => setTab('requests')}>Запросы {requests.length || ''}</button>
+      <button className={tab === 'active' ? 'active' : ''} onClick={() => setTab('active')}>Активные {active.length || ''}</button>
+      <button className={tab === 'threats' ? 'active' : ''} onClick={() => setTab('threats')}>Угрозы</button>
+      <button className={tab === 'career' ? 'active' : ''} onClick={() => setTab('career')}>Карьера</button>
+    </nav>
+    {notice && <div className="v32-operation-notice">{notice}</div>}
 
-  if (compact) {
-    return <div className="game-shell">{chrome}<main className="mobile-data-screen operations-mobile">
-      <header className="mobile-screen-header"><div><span className="eyebrow">РОЗЫСК · ВОЙНЫ</span><h1>Операции</h1></div><b>{activePursuits.length + localWars.length}</b></header>
-      {store.activeShipEncounter && <article className="mobile-alert-card"><span>НЕЗАВЕРШЁННЫЙ КОНТАКТ</span><b>{store.activeShipEncounter.contact.name}</b><small>{store.activeShipEncounter.contact.demand}</small></article>}
-      <nav className="mobile-segmented two" aria-label="Раздел операций"><button className={mobileTab === 'pursuits' ? 'active' : ''} onClick={() => setMobileTab('pursuits')}>Розыск {activePursuits.length || ''}</button><button className={mobileTab === 'wars' ? 'active' : ''} onClick={() => setMobileTab('wars')}>Войны {activeWars.length || ''}</button></nav>
-      <section className="mobile-tab-content">{mobileTab === 'pursuits' ? pursuitContent : warContent}</section>
-    </main></div>;
-  }
+    {tab === 'requests' && <section className="v32-request-grid">{requests.length ? requests.map((scene) => {
+      const request = scene.operationRequest!;
+      const system = store.galaxy?.systems.find((entry) => entry.id === request.targetSystemId);
+      return <article key={scene.id}><span>{operationLabels[request.category]} · срочность {request.urgency}</span><h2>{request.title}</h2><p>{request.summary}</p><dl><div><dt>Заказчик</dt><dd>{request.issuerName}</dd></div><div><dt>Цель</dt><dd>{system?.name ?? 'координаты не подтверждены'}</dd></div><div><dt>Награда</dt><dd>₡{request.reward}</dd></div><div><dt>Срок</dt><dd>{request.deadlineYear}</dd></div></dl><div className="v32-request-actions"><button className="primary-button" onClick={() => void store.resolveStoryScene(scene.id, 'accept-operation')}>Принять</button><button onClick={() => void store.resolveStoryScene(scene.id, 'decline-operation')}>Отказать</button></div></article>;
+    }) : <div className="v32-empty"><b>Новых запросов нет</b><p>Они появляются из реальных войн, дефицитов, открытий и экологических кризисов после официального контакта.</p></div>}</section>}
 
-  return <div className="game-shell">{chrome}<main className="scroll-screen operations-screen operations-two-column">
-    <header className="screen-hero operations-hero"><div><span className="eyebrow">РОЗЫСК · ВОЙНЫ</span><h1>Оперативная обстановка</h1><p>Кто ищет корабль и где война меняет маршруты.</p></div><div className="hero-counter"><b>{activePursuits.length + localWars.length}</b><span>активных угроз</span></div></header>
-    {store.activeShipEncounter && <section className="operations-alert"><div><span>НЕЗАВЕРШЁННЫЙ КОНТАКТ</span><h2>{store.activeShipEncounter.contact.name}</h2><p>{store.activeShipEncounter.contact.demand}</p></div><b>{store.activeShipEncounter.phase}</b></section>}
-    <section className="operations-grid">
-      <article><span className="eyebrow">РОЗЫСК</span><h2>Кто идёт по следу</h2>{activePursuits.length ? activePursuits.map((entry) => <div className="pursuit-row" key={entry.id}><div><b>{entry.sourceName}</b><small>{entry.reason}</small></div><strong>{entry.intensity}</strong><ul><li>{entry.knownIdentity ? 'знают капитана' : 'личность не подтверждена'}</li><li>{entry.knownTransponder ? 'знают транспондер' : 'сигнал не подтверждён'}</li><li>{entry.knownShipProfile ? 'знают профиль корпуса' : 'профиль скрыт'}</li></ul></div>) : <p>Активных ориентировок нет.</p>}</article>
-      <article className="warfront-card"><span className="eyebrow">ЛОКАЛЬНЫЕ ВОЙНЫ</span><h2>Фронты галактики</h2>{activeWars.length ? activeWars.map((front) => { const attacker = store.factions.find((entry) => entry.id === front.attackerFactionId); const defender = store.factions.find((entry) => entry.id === front.defenderFactionId); const here = currentSystem && front.systemIds.includes(currentSystem.id); return <div className={`warfront-row ${here ? 'local' : ''}`} key={front.id}><div><b>{attacker?.name ?? front.attackerFactionId}</b><span>против</span><b>{defender?.name ?? front.defenderFactionId}</b></div><small>{front.status} · интенсивность {front.intensity} · систем {front.systemIds.length}</small><div className="war-score"><i style={{ width: `${Math.max(10, Math.min(90, 50 + (front.attackerScore - front.defenderScore) * 5))}%` }}/></div>{here && <em>ТЕКУЩАЯ СИСТЕМА В ЗОНЕ КОНФЛИКТА</em>}</div>; }) : <p>Подтверждённых войн нет.</p>}</article>
-    </section>
+    {tab === 'active' && <section className="v32-active-operations">{active.length ? active.map((objective) => {
+      const operation = objective.operation!;
+      const stage = currentOperationStage(objective);
+      const target = store.galaxy?.systems.find((entry) => entry.id === operation.targetSystemId);
+      const atTarget = store.currentSystemId === operation.targetSystemId;
+      return <article key={objective.id} className="v32-operation-card">
+        <header><div><span>{operationLabels[operation.category]} · {operation.issuerName}</span><h2>{objective.title}</h2></div><strong>{objective.progress}%</strong></header>
+        <p>{objective.description}</p>
+        <div className="v32-stage-track">{operation.stages.map((entry, index) => <div key={entry.id} className={`stage-${entry.status}`}><i>{index + 1}</i><span><b>{entry.title}</b><small>{entry.progress}/{entry.requiredProgress}</small></span></div>)}</div>
+        {stage && <section className="v32-current-stage"><span>ТЕКУЩИЙ ЭТАП</span><h3>{stage.title}</h3><p>{stage.description}</p>
+          {!atTarget && stage.kind !== 'report' ? <button onClick={() => { store.selectSystem(operation.targetSystemId); store.setScreen('galaxy'); }}>Проложить маршрут к {target?.name ?? 'цели'}</button>
+          : stage.kind === 'scan' && !currentSystem?.scanned ? <button onClick={() => store.setScreen('system')}>Открыть сканирование системы</button>
+          : <div className="v32-approaches"><button onClick={() => void advance(objective.id, 'careful')}><b>Осторожно</b><span>Дольше и дороже, выше шанс</span></button><button onClick={() => void advance(objective.id, 'direct')}><b>Напрямую</b><span>Быстро, риск для капитана</span></button><button onClick={() => void advance(objective.id, 'negotiate')}><b>Договориться</b><span>Сила контакта и дипломата</span></button></div>}
+        </section>}
+      </article>;
+    }) : <div className="v32-empty"><b>Активных операций нет</b><p>Прими входящий запрос или продолжай исследование мира.</p></div>}
+    {finished.length > 0 && <details className="v32-finished"><summary>Завершённые и проваленные · {finished.length}</summary>{finished.map((objective) => <div key={objective.id}><b>{objective.title}</b><span>{objective.operation?.outcome ?? objective.status}</span></div>)}</details>}</section>}
+
+    {tab === 'threats' && <section className="v32-threat-grid"><article><h2>Розыск</h2>{pursuits.length ? pursuits.map((entry) => <div key={entry.id}><b>{entry.sourceName}</b><span>уровень {entry.intensity}</span><p>{entry.reason}</p></div>) : <p>Активных ориентировок нет.</p>}</article><article><h2>Фронты</h2>{wars.length ? wars.map((front) => <div key={front.id}><b>{front.status}</b><span>интенсивность {front.intensity}</span><p>Систем в зоне конфликта: {front.systemIds.length}</p></div>) : <p>Подтверждённых войн нет.</p>}</article></section>}
+
+    {tab === 'career' && <section className="v32-career"><header><span className="eyebrow">ИМЯ КАПИТАНА В ГАЛАКТИКЕ</span><h2>{career?.primary ? careerLabels[career.primary] : 'Путь ещё не определён'}</h2><p>Специализация рождается из поступков, а не выбирается в меню.</p></header><div className="v32-career-grid">{Object.entries(careerLabels).map(([id, label]) => <article key={id}><span>{label}</span><b>{career?.renown[id as keyof typeof careerLabels] ?? 0}</b></article>)}</div><div className="v32-career-titles"><h3>Титулы</h3>{career?.titles.length ? career.titles.map((title) => <span key={title}>{title}</span>) : <p>Галактика пока не дала капитану устойчивого имени.</p>}<small>Завершено операций: {career?.completedOperations ?? 0}</small></div></section>}
   </main></div>;
 }

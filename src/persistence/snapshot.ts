@@ -12,11 +12,19 @@ import { repairSimulationPersistence } from '../simulation/integrity';
 import { createKnowledgeFromLegacy, projectKnowledgeToGalaxy } from '../simulation/knowledge';
 import { projectWorldThreads } from '../simulation/projections';
 import { worldYear } from '../simulation/clock';
+import { normalizeEcologyState } from '../ecology/integrity';
 
 export const CURRENT_SCHEMA_VERSION = SAVE_SCHEMA_VERSION;
 export { APP_VERSION };
 
 const finiteNumber = z.number().finite();
+const captainCareerPathSchema = z.enum(['explorer','archaeologist','diplomat','rescuer','hunter','smuggler','scientist','trader']);
+const captainCareerSchema = z.object({
+  primary: captainCareerPathSchema.optional(),
+  renown: z.record(captainCareerPathSchema, finiteNumber).default({}),
+  titles: z.array(z.string()).default([]),
+  completedOperations: finiteNumber.default(0)
+});
 const dangerSchema = z.enum(['safe', 'caution', 'danger', 'extreme']);
 const planetTypeSchema = z.enum(['rocky', 'ocean', 'desert', 'ice', 'gas', 'toxic', 'jungle', 'artificial', 'anomalous']);
 const scanLevelSchema = z.union([z.literal(0), z.literal(1), z.literal(2), z.literal(3)]);
@@ -280,7 +288,8 @@ const captainSchema = z.object({
   injuries: z.array(injurySchema),
   alive: z.boolean(),
   condition: z.enum(['active','dead','missing','captured','coma','stranded','retired']).default('active'),
-  commandIdentity: z.preprocess(() => 'organic', z.literal('organic'))
+  commandIdentity: z.preprocess(() => 'organic', z.literal('organic')),
+  career: captainCareerSchema.optional()
 });
 
 const cargoSchema = z.object({
@@ -362,6 +371,11 @@ const scanReportSchema = z.object({
   detectedPointOfInterestIds: z.array(z.string())
 });
 
+const expeditionObjectiveSchema = z.object({
+  kind: z.enum(['recover-artifact','restore-archive','determine-cause','recover-black-box','rescue-survivors','collect-sample','disable-system','document-site','establish-contact','investigate-anomaly']),
+  title: z.string(), description: z.string(), requiredObjects: finiteNumber, requiredEvidence: finiteNumber,
+  requiresArtifact: z.boolean().optional(), completionText: z.string()
+});
 const pointOfInterestSchema = z.object({
   id: z.string(),
   systemId: z.string(),
@@ -381,7 +395,10 @@ const pointOfInterestSchema = z.object({
   visits: finiteNumber,
   discoveredYear: finiteNumber,
   lastVisitedYear: finiteNumber.optional(),
-  access: z.enum(['surface','orbital','remote']).default('surface')
+  access: z.enum(['surface','orbital','remote']).default('surface'), confirmedSummary: z.string().optional(), completionSummary: z.string().optional(),
+  sourceEventIds: z.array(z.string()).optional(), historicalSettlementId: z.string().optional(), ruinId: z.string().optional(), warId: z.string().optional(),
+  artifactIds: z.array(z.string()).optional(), figureIds: z.array(z.string()).optional(), polityIds: z.array(z.string()).optional(), archiveId: z.string().optional(),
+  loreTags: z.array(z.string()).optional(), objective: expeditionObjectiveSchema.optional()
 });
 
 const evidenceSchema = z.object({
@@ -531,6 +548,22 @@ const locationStateSchema = z.object({
   collectedEvidenceKeys: z.array(z.string()), revealedTileKeys: z.array(z.string()), artifactTaken: z.boolean(),
   lastOutcome: z.enum(['evacuated','resolved','failed']), lastVisitedYear: finiteNumber
 });
+const operationStageSchema = z.object({
+  id: z.string(), kind: z.enum(['travel','scan','field','delivery','negotiation','analysis','report']),
+  title: z.string(), description: z.string(), status: z.enum(['locked','active','completed','failed']),
+  progress: finiteNumber, requiredProgress: finiteNumber, systemId: z.string()
+});
+const operationRequestSchema = z.object({
+  id: z.string(), threadId: z.string(), category: z.enum(['relief','evacuation','escort','mediation','investigation','recovery','containment']),
+  title: z.string(), summary: z.string(), issuerName: z.string(), issuerCivilizationId: z.string().optional(), issuerFactionId: z.string().optional(),
+  targetSystemId: z.string(), reward: finiteNumber, deadlineYear: finiteNumber, urgency: finiteNumber, stages: z.array(operationStageSchema)
+});
+const operationStateSchema = z.object({
+  requestId: z.string(), threadId: z.string(), category: z.enum(['relief','evacuation','escort','mediation','investigation','recovery','containment']),
+  issuerName: z.string(), issuerCivilizationId: z.string().optional(), issuerFactionId: z.string().optional(), reward: finiteNumber,
+  targetSystemId: z.string(), stages: z.array(operationStageSchema), currentStageIndex: finiteNumber, quality: finiteNumber, attempts: finiteNumber,
+  outcome: z.enum(['failed','partial','successful','exceptional']).optional(), completedYear: finiteNumber.optional(), log: z.array(z.string())
+});
 
 const storyChoiceEffectSchema = z.object({
   credits: finiteNumber.optional(), reputation: finiteNumber.optional(), factionId: z.string().optional(), factionReputation: finiteNumber.optional(),
@@ -545,7 +578,7 @@ const storySceneSchema = z.object({
   id: z.string(), category: z.enum(['distress','negotiation','crew','mystery','travel','hub','consequence']),
   status: z.enum(['available','resolved','expired']), title: z.string(), summary: z.string(), body: z.string(), source: z.string(), systemId: z.string(),
   hubId: z.string().optional(), npcIds: z.array(z.string()), factionIds: z.array(z.string()), createdYear: finiteNumber, expiresYear: finiteNumber.optional(),
-  choices: z.array(storyChoiceSchema), resolvedChoiceId: z.string().optional()
+  choices: z.array(storyChoiceSchema), resolvedChoiceId: z.string().optional(), operationRequest: operationRequestSchema.optional()
 });
 const pendingConsequenceSchema = z.object({
   id: z.string(), status: z.enum(['pending','resolved']), createdYear: finiteNumber, triggerYear: finiteNumber, title: z.string(), text: z.string(),
@@ -553,7 +586,8 @@ const pendingConsequenceSchema = z.object({
 });
 const objectiveSchema = z.object({
   id: z.string(), title: z.string(), description: z.string(), kind: z.enum(['urgent','opportunity','story','tutorial']), status: z.enum(['active','completed','failed']),
-  createdYear: finiteNumber, deadlineYear: finiteNumber.optional(), systemId: z.string().optional(), hubId: z.string().optional(), sourceSceneId: z.string().optional(), progress: finiteNumber
+  createdYear: finiteNumber, deadlineYear: finiteNumber.optional(), systemId: z.string().optional(), hubId: z.string().optional(), sourceSceneId: z.string().optional(), progress: finiteNumber,
+  operation: operationStateSchema.optional()
 });
 const tutorialSchema = z.object({ enabled: z.boolean(), active: z.boolean(), currentStep: finiteNumber, completed: z.boolean(), targetPlanetId: z.string().optional(), targetPointOfInterestId: z.string().optional() });
 const shipContactSchema = z.object({
@@ -882,7 +916,7 @@ function normalizeSnapshot(snapshot: SnapshotCurrent): SnapshotCurrent {
     systems: Object.fromEntries(Object.entries(snapshot.simulation.systems).filter(([id]) => systemIds.has(id))),
     civilizations: Object.fromEntries(Object.entries(snapshot.simulation.civilizations).filter(([id]) => civilizationLayer.galaxy.civilizations.some((entry) => entry.id === id))),
     factions: Object.fromEntries(Object.entries(snapshot.simulation.factions).filter(([id]) => snapshot.factions.some((entry) => entry.id === id))),
-    ecosystems: Object.fromEntries(Object.entries(snapshot.simulation.ecosystems).filter(([id]) => planetIds.has(id))),
+    ecosystems: Object.fromEntries(Object.entries(snapshot.simulation.ecosystems).filter(([id]) => planetIds.has(id)).map(([id, ecology]) => [id, normalizeEcologyState(ecology)])),
     scheduledEvents: snapshot.simulation.scheduledEvents.slice(0, 10_000),
     events: snapshot.simulation.events.slice(0, 1_000),
     nextSequence: Math.max(1, Math.floor(snapshot.simulation.nextSequence))

@@ -57,6 +57,61 @@ export type StorySceneStatus = 'available' | 'resolved' | 'expired';
 export type ObjectiveStatus = 'active' | 'completed' | 'failed';
 export type ConsequenceStatus = 'pending' | 'resolved';
 
+export type CaptainCareerPath = 'explorer' | 'archaeologist' | 'diplomat' | 'rescuer' | 'hunter' | 'smuggler' | 'scientist' | 'trader';
+export interface CaptainCareerState {
+  primary?: CaptainCareerPath;
+  renown: Partial<Record<CaptainCareerPath, number>>;
+  titles: string[];
+  completedOperations: number;
+}
+export type OperationCategory = 'relief' | 'evacuation' | 'escort' | 'mediation' | 'investigation' | 'recovery' | 'containment';
+export type OperationApproach = 'careful' | 'direct' | 'negotiate';
+export type OperationOutcome = 'failed' | 'partial' | 'successful' | 'exceptional';
+export type OperationStageKind = 'travel' | 'scan' | 'field' | 'delivery' | 'negotiation' | 'analysis' | 'report';
+export type OperationStageStatus = 'locked' | 'active' | 'completed' | 'failed';
+export interface OperationStage {
+  id: string;
+  kind: OperationStageKind;
+  title: string;
+  description: string;
+  status: OperationStageStatus;
+  progress: number;
+  requiredProgress: number;
+  systemId: string;
+}
+export interface OperationRequest {
+  id: string;
+  threadId: string;
+  category: OperationCategory;
+  title: string;
+  summary: string;
+  issuerName: string;
+  issuerCivilizationId?: string;
+  issuerFactionId?: string;
+  targetSystemId: string;
+  reward: number;
+  deadlineYear: number;
+  urgency: number;
+  stages: OperationStage[];
+}
+export interface OperationState {
+  requestId: string;
+  threadId: string;
+  category: OperationCategory;
+  issuerName: string;
+  issuerCivilizationId?: string;
+  issuerFactionId?: string;
+  reward: number;
+  targetSystemId: string;
+  stages: OperationStage[];
+  currentStageIndex: number;
+  quality: number;
+  attempts: number;
+  outcome?: OperationOutcome;
+  completedYear?: number;
+  log: string[];
+}
+
 export interface GalaxySettings {
   seed: string;
   systemCount: number;
@@ -251,6 +306,7 @@ export interface Captain {
   alive: boolean;
   condition: CaptainCondition;
   commandIdentity: CommandIdentity;
+  career?: CaptainCareerState;
 }
 
 
@@ -639,6 +695,7 @@ export interface StoryScene {
   expiresYear?: number;
   choices: StoryChoice[];
   resolvedChoiceId?: string;
+  operationRequest?: OperationRequest;
 }
 
 export interface PendingConsequence {
@@ -666,6 +723,7 @@ export interface PlayerObjective {
   hubId?: string;
   sourceSceneId?: string;
   progress: number;
+  operation?: OperationState;
 }
 
 export interface TutorialState {

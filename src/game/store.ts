@@ -23,6 +23,7 @@ import type {
   LocalNpc,
   MarketGood,
   NewsItem,
+  OperationApproach,
   PointOfInterest,
   PlayerObjective,
   PendingConsequence,
@@ -71,6 +72,7 @@ import { ACTION_TIME, expeditionHours, HOURS_PER_YEAR, travelHours, worldYear } 
 import { adjustEcosystem, adjustSystemEconomy, advanceSimulation, initializeSimulation, recordWorldEvent } from '../simulation/kernel';
 import { createKnowledgeFromLegacy, emptyKnowledge, projectKnowledgeToGalaxy, revealKnowledge } from '../simulation/knowledge';
 import { projectContractsFromEvents, projectNewsFromEvents, projectWorldThreads } from '../simulation/projections';
+import { applyCaptainCareer, createOperationObjective, projectOperationRequests, resolveOperationStep } from '../operations/runtime';
 
 export type MainScreen = 'menu' | 'command' | 'continuity' | 'chronicle' | 'galaxy' | 'system' | 'hub' | 'contracts' | 'factions' | 'civilizations' | 'crew' | 'archive' | 'laboratory' | 'world' | 'operations' | 'ship' | 'settings';
 export type HydrationStatus = 'idle' | 'loading' | 'ready' | 'error';
@@ -179,6 +181,7 @@ interface GameStore {
   buyMarketGood(hubId: string, good: MarketGood): Promise<{ ok: boolean; message: string }>;
   sellCommodity(itemId: string, hubId: string): Promise<void>;
   attemptFirstContact(civilizationId: string): Promise<{ ok: boolean; message: string }>;
+  advanceOperation(objectiveId: string, approach: OperationApproach): Promise<{ ok: boolean; message: string }>;
   interactWithNpc(npcId: string, kind: 'deal' | 'help' | 'threat'): Promise<void>;
   resolveHypothesis(hypothesisId: string, disposition: 'published' | 'sold' | 'suppressed'): Promise<void>;
   sellArtifactToHub(itemId: string, hubId: string, channel: 'market' | 'museum' | 'heirs' | 'blackMarket'): Promise<void>;
@@ -202,7 +205,8 @@ const initialCaptain = (): Captain => ({
   injuries: [],
   alive: true,
   condition: 'active',
-  commandIdentity: 'organic'
+  commandIdentity: 'organic',
+  career: { renown: {}, titles: [], completedOperations: 0 }
 });
 
 const initialShip = (): Ship => ({
@@ -451,6 +455,8 @@ function buildWorldAdvance(
   const news = projectNewsFromEvents(advanced.emittedEvents, knowledge, overrides.news ?? state.news, currentSystemId ?? undefined);
   const researchProjects = overrides.researchProjects ?? state.researchProjects;
   const worldThreads = projectWorldThreads({ simulation: advanced.simulation, warFronts, factions, contracts, research: researchProjects });
+  const datedScenes = state.storyScenes.map((scene) => scene.status === 'available' && scene.expiresYear !== undefined && scene.expiresYear < nextYear ? { ...scene, status: 'expired' as const } : scene);
+  const storyScenes = projectOperationRequests({ threads: worldThreads, contacts: state.civilizationContacts, civilizations: galaxy.civilizations, factions, existingScenes: datedScenes, year: nextYear });
   const consequences = processDueConsequences(state.pendingConsequences, nextYear);
   const logs = [...consequences.due.map((entry) => makeLog(nextYear, entry.title, entry.text, entry.tone)), ...state.logs];
   const projectedGalaxy = projectKnowledgeToGalaxy({ ...galaxy, currentYear: nextYear }, knowledge);
@@ -596,7 +602,10 @@ export const useGameStore = create<GameStore>((set, get) => ({
         factionId: choice.effect.factionId,
         sourceSceneId: scene.id
       } : null;
-      const objective = choice.effect.objectiveTitle ? {
+      const operationObjective = scene.operationRequest && choice.id === 'accept-operation'
+        ? createOperationObjective(scene.operationRequest, get().gameYear)
+        : null;
+      const objective = operationObjective ?? (choice.effect.objectiveTitle ? {
         id: `objective_${scene.id}_${choice.id}`,
         title: choice.effect.objectiveTitle,
         description: choice.effect.objectiveDescription ?? scene.summary,
@@ -606,7 +615,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
         systemId: choice.effect.objectiveSystemId ?? scene.systemId,
         sourceSceneId: scene.id,
         progress: 0
-      } : null;
+      } : null);
       set({
         storyScenes: get().storyScenes.map((entry) => entry.id === scene.id ? { ...entry, status: 'resolved' as const, resolvedChoiceId: choice.id } : entry),
         activeStorySceneId: get().activeStorySceneId === scene.id ? null : get().activeStorySceneId,
@@ -2333,6 +2342,124 @@ export const useGameStore = create<GameStore>((set, get) => ({
       return { ok: success, message: success ? `Стадия контакта: ${nextStage}` : 'Контакт сорван; данные сохранены' };
     }, { ok: false, message: 'Другое действие ещё выполняется' });
   },
+
+async advanceOperation(objectiveId, approach) {
+  return runExclusive('operation-step', set, get, async () => {
+    const state = get();
+    const objective = state.objectives.find((entry) => entry.id === objectiveId && entry.status === 'active' && entry.operation);
+    const captain = state.captain;
+    const galaxy = state.galaxy;
+    const simulationState = state.simulation;
+    if (!objective || !captain || !galaxy || !simulationState || !state.currentSystemId) {
+      return { ok: false, message: 'Активная операция не найдена' };
+    }
+    const currentSystem = galaxy.systems.find((entry) => entry.id === state.currentSystemId);
+    const operation = objective.operation!;
+    const contactTrust = operation.issuerCivilizationId
+      ? state.civilizationContacts.find((entry) => entry.civilizationId === operation.issuerCivilizationId)?.trust ?? 0
+      : 0;
+    const result = resolveOperationStep({
+      objective,
+      approach,
+      seed: galaxy.seed,
+      currentSystemId: state.currentSystemId,
+      currentSystemScanned: Boolean(currentSystem?.scanned),
+      captain,
+      crew: state.crew,
+      contactTrust,
+      absoluteHour: simulationState.clock.absoluteHour
+    });
+    if (!result.ok) return { ok: false, message: result.message };
+
+    const advanced = buildWorldAdvance(state, result.hours, `operation:${objective.id}:${approach}`);
+    let simulation = (advanced.patch.simulation as SimulationState | undefined) ?? simulationState;
+    let warFronts = (advanced.patch.warFronts as WarFront[] | undefined) ?? state.warFronts;
+    let worldThreads = (advanced.patch.worldThreads as WorldThread[] | undefined) ?? state.worldThreads;
+    const outcomeStrength = result.outcome === 'exceptional' ? 12 : result.outcome === 'successful' ? 8 : result.outcome === 'partial' ? 4 : result.outcome === 'failed' ? -3 : 0;
+
+    if (result.completed) {
+      if (operation.category === 'relief') {
+        simulation = adjustSystemEconomy(simulation, operation.targetSystemId, { supply: outcomeStrength, prosperity: Math.round(outcomeStrength / 2), migrationPressure: -Math.max(0, Math.round(outcomeStrength / 2)) });
+      } else if (operation.category === 'evacuation') {
+        simulation = adjustSystemEconomy(simulation, operation.targetSystemId, { security: Math.round(outcomeStrength / 2), migrationPressure: -outcomeStrength, supply: Math.round(outcomeStrength / 3) });
+      } else if (operation.category === 'escort') {
+        simulation = adjustSystemEconomy(simulation, operation.targetSystemId, { security: outcomeStrength, tradePressure: outcomeStrength, supply: Math.round(outcomeStrength / 2) });
+      } else if (operation.category === 'mediation') {
+        simulation = adjustSystemEconomy(simulation, operation.targetSystemId, { security: outcomeStrength, migrationPressure: -Math.max(0, outcomeStrength) });
+        if (operation.issuerFactionId) {
+          warFronts = warFronts.map((front) => front.attackerFactionId === operation.issuerFactionId || front.defenderFactionId === operation.issuerFactionId
+            ? { ...front, intensity: Math.max(0, Math.round(front.intensity - Math.max(0, outcomeStrength))), status: front.intensity <= Math.max(0, outcomeStrength) ? 'ceasefire' as const : front.status, lastUpdateYear: state.gameYear }
+            : front);
+        }
+      } else if (operation.category === 'containment') {
+        const targetSystem = galaxy.systems.find((entry) => entry.id === operation.targetSystemId);
+        const planet = targetSystem?.planets.find((entry) => simulation.ecosystems[entry.id]);
+        if (planet) simulation = adjustEcosystem(simulation, planet.id, { contamination: -Math.max(0, outcomeStrength), resilience: Math.max(0, Math.round(outcomeStrength / 2)), biodiversity: Math.max(0, Math.round(outcomeStrength / 3)) });
+      } else if (operation.issuerCivilizationId) {
+        const civilizationState = simulation.civilizations[operation.issuerCivilizationId];
+        if (civilizationState) simulation = {
+          ...simulation,
+          civilizations: {
+            ...simulation.civilizations,
+            [operation.issuerCivilizationId]: {
+              ...civilizationState,
+              research: Math.max(0, Math.min(100, Math.round(civilizationState.research + Math.max(0, outcomeStrength)))),
+              stability: Math.max(0, Math.min(100, Math.round(civilizationState.stability + Math.round(outcomeStrength / 3))))
+            }
+          }
+        };
+      }
+
+      const recorded = recordWorldEvent(simulation, {
+        kind: operation.category === 'containment' ? 'ecology' : operation.category === 'mediation' ? 'politics' : operation.category === 'investigation' || operation.category === 'recovery' ? 'discovery' : 'economy',
+        title: `${objective.title}: ${result.outcome}`,
+        summary: result.message,
+        severity: result.outcome === 'failed' ? 7 : result.outcome === 'partial' ? 4 : 5,
+        visibility: 'public',
+        systemIds: [operation.targetSystemId],
+        civilizationIds: operation.issuerCivilizationId ? [operation.issuerCivilizationId] : [],
+        factionIds: operation.issuerFactionId ? [operation.issuerFactionId] : [],
+        tags: ['player-operation', operation.category, result.outcome ?? 'unknown'],
+        data: { operationId: objective.id, operationOutcome: result.outcome ?? 'unknown', operationQuality: result.objective.operation?.quality ?? 0 }
+      });
+      simulation = recorded.simulation;
+      worldThreads = worldThreads.map((thread) => thread.id === operation.threadId ? {
+        ...thread,
+        playerInvolved: true,
+        status: result.outcome === 'failed' ? 'escalating' as const : 'resolved' as const,
+        progress: result.outcome === 'failed' ? Math.max(0, thread.progress - 8) : 100,
+        urgency: result.outcome === 'failed' ? Math.min(100, thread.urgency + 8) : Math.max(0, thread.urgency - outcomeStrength),
+        updates: [{ id: `operation_update_${recorded.event.id}`, year: state.gameYear, text: result.message, tone: result.outcome === 'failed' ? 'danger' as const : result.outcome === 'partial' ? 'warning' as const : 'good' as const }, ...thread.updates].slice(0, 24)
+      } : thread);
+    }
+
+    const captainAfterCosts = {
+      ...captain,
+      credits: Math.max(0, captain.credits - result.creditsCost + result.reward),
+      health: Math.max(1, captain.health - result.healthLoss),
+      reputation: captain.reputation + result.reputation
+    };
+    const nextCaptain = applyCaptainCareer(captainAfterCosts, result.career, result.careerGain, result.completed);
+    const factions = operation.issuerFactionId && result.completed
+      ? adjustFactionStanding(state.factions, operation.issuerFactionId, state.gameYear, `operation-${operation.category}`, result.reputation, result.message)
+      : state.factions;
+    const objectives = state.objectives.map((entry) => entry.id === objective.id ? result.objective : entry);
+    const baseLogs = (advanced.patch.logs as GameLogEntry[] | undefined) ?? state.logs;
+
+    set({
+      ...advanced.patch,
+      simulation,
+      warFronts,
+      worldThreads,
+      captain: nextCaptain,
+      factions,
+      objectives,
+      logs: [makeLog(state.gameYear, objective.title, result.message, result.outcome === 'failed' ? 'danger' : result.completed ? 'good' : 'info'), ...baseLogs].slice(0, 750)
+    });
+    await persist(set, get, `operation-${objective.id}-${approach}`, { immediate: result.completed });
+    return { ok: true, message: result.message };
+  }, { ok: false, message: 'Другое действие ещё выполняется' });
+},
   async interactWithNpc(npcId, kind) {
     return runExclusive('npc-interaction', set, get, async () => {
       const state = get();
