@@ -393,11 +393,33 @@ describe('living figures institutions heritage and planetary consequences', () =
 
   it('applies civilization pressure directly to a planetary ecosystem', () => {
     const { civilization, context, simulation } = fixture();
-    const before = simulation.ecosystems.planet_lyra!.contamination;
+    const before = {
+      contamination: simulation.ecosystems.planet_lyra!.contamination,
+      biomass: simulation.ecosystems.planet_lyra!.biomass,
+      biodiversity: simulation.ecosystems.planet_lyra!.biodiversity,
+      resilience: simulation.ecosystems.planet_lyra!.resilience,
+      climateStability: simulation.ecosystems.planet_lyra!.climateStability
+    };
     const impacts = planetaryImpacts(simulation, context);
     expect(impacts[0]?.planetId).toBe('planet_lyra');
     simulatePlanetaryConsequencesCycle(simulation, civilization, context, 365 * 24);
-    expect(simulation.ecosystems.planet_lyra!.contamination === before).toBe(false);
+    const after = simulation.ecosystems.planet_lyra!;
+    expect([
+      after.contamination,
+      after.biomass,
+      after.biodiversity,
+      after.resilience,
+      after.climateStability,
+      after.carryingCapacity,
+      ...Object.values(after.resources)
+    ].every(Number.isInteger)).toBe(true);
+    expect(
+      after.contamination !== before.contamination ||
+      after.biomass !== before.biomass ||
+      after.biodiversity !== before.biodiversity ||
+      after.resilience !== before.resilience ||
+      after.climateStability !== before.climateStability
+    ).toBe(true);
     expect(simulation.events.some((event) => event.tags.includes('planetary-consequence-state'))).toBe(true);
   });
 
