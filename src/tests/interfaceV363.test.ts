@@ -31,10 +31,10 @@ describe('v0.36.3 tactical mobile polish', () => {
     expect(tokenSource).toContain("type ExpeditionEnemyVisual = 'creature' | 'drone' | 'humanoid' | 'swarm' | 'anomaly'");
   });
 
-  it('loads the final mobile polish layer without changing save schema', () => {
+  it('keeps the mobile polish layer and save compatibility across later releases', () => {
     expect(appSource).toContain("import './styles/mobilePolishV363.css';");
-    expect(versionSource).toContain("APP_VERSION = '0.36.3'");
-    expect(versionSource).toContain("APP_CODENAME = 'TACTICAL_MOBILE_POLISH'");
+    expect(versionSource).toContain('export const APP_VERSION');
+    expect(versionSource).toContain('export const APP_CODENAME');
     expect(versionSource).toContain('SAVE_SCHEMA_VERSION = 13');
   });
 });

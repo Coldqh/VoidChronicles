@@ -20,10 +20,12 @@ describe('v0.37.0 living consequences integration', () => {
     expect(versionSource).toContain('SAVE_SCHEMA_VERSION = 13');
   });
 
-  it('surfaces real consequences on the captain journal', () => {
+  it('surfaces real consequences and linked operations on the captain journal', () => {
     expect(journeySource).toContain('pendingConsequences');
     expect(journeySource).toContain("scene.category === 'consequence'");
-    expect(journeySource).toContain('operation.chain');
+    expect(journeySource).toContain('activeOperation?.operation?.chain');
+    expect(journeySource).toContain('operationChain.stage');
+    expect(journeySource).toContain('operationChain.maxStages');
   });
 
   it('advances the release', () => {
