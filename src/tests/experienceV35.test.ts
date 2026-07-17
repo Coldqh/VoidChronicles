@@ -16,13 +16,14 @@ describe('v0.35 cinematic UI/UX rebuild', () => {
     expect(appSource).toContain("import './styles/experienceV35.css'");
   });
 
-  it('reduces the primary navigation to five player spaces with actionable badges', () => {
+  it('keeps the action spaces in primary navigation and information spaces in the full menu', () => {
     expect(chromeSource).toContain("label: 'Мостик'");
+    expect(chromeSource).toContain("label: 'Система'");
     expect(chromeSource).toContain("label: 'Карта'");
     expect(chromeSource).toContain("label: 'Операции'");
-    expect(chromeSource).toContain("label: 'Мир'");
+    expect(chromeSource).toContain("label: 'Обстановка'");
     expect(chromeSource).toContain("label: 'Корабль'");
-    expect(chromeSource).toContain('requestCount + activeOperationCount');
+    expect(chromeSource).toContain('requestCount + activeOperationCount + contractCount');
     expect(chromeSource).toContain('shipIssueCount');
   });
 
@@ -31,6 +32,7 @@ describe('v0.35 cinematic UI/UX rebuild', () => {
     expect(appSource).toContain("import './styles/experienceV35.css'");
     expect(chromeSource).toContain('v35-hud-vitals');
     expect(chromeSource).toContain('v35-mobile-dock');
+    expect(chromeSource).toContain('v361-mobile-vitals');
   });
 
   it('turns core systems into distinct game spaces instead of generic dashboards', () => {

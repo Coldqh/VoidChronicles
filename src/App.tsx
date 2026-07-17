@@ -332,6 +332,7 @@ const BootScreen = () => <main className="boot-screen"><div className="boot-mark
 export default function App() {
   const rawScreen = useGameStore((state) => state.screen);
   const screen = normalizeMainScreenRoute(rawScreen);
+  const compact = useCompactLayout();
   const galaxy = useGameStore((state) => state.galaxy);
   const hydration = useGameStore((state) => state.hydrationStatus);
   const hydrate = useGameStore((state) => state.hydrateFromStorage);
@@ -342,20 +343,20 @@ export default function App() {
   let content;
   if (screen === 'settings') content = <SettingsScreen/>;
   else if (screen === 'continuity') content = <ContinuityScreen/>;
-  else if (screen === 'chronicle') content = <ChronicleScreen chrome={galaxy && useGameStore.getState().legacy.mode !== 'chronicle' ? <AppChrome/> : undefined}/>;
+  else if (screen === 'chronicle') content = compact && galaxy ? <MobileChronicleScreenV361 chrome={useGameStore.getState().legacy.mode !== 'chronicle' ? <AppChrome/> : undefined}/> : <ChronicleScreen chrome={galaxy && useGameStore.getState().legacy.mode !== 'chronicle' ? <AppChrome/> : undefined}/>;
   else if (!galaxy || screen === 'menu') content = <MainMenu/>;
-  else if (screen === 'command') content = <CommandDeckScreen/>;
+  else if (screen === 'command') content = compact ? <MobileCommandScreenV361 chrome={<AppChrome/>}/> : <CommandDeckScreen/>;
   else if (screen === 'galaxy') content = <GalaxyScreenV34 chrome={<AppChrome/>}/>;
-  else if (screen === 'system') content = <div className="game-shell"><AppChrome/><SystemWorkspaceV352/></div>;
+  else if (screen === 'system') content = compact ? <SystemScreen/> : <div className="game-shell"><AppChrome/><SystemWorkspaceV352/></div>;
   else if (screen === 'hub') content = <HubScreen/>;
-  else if (screen === 'contracts') content = <OperationsScreen chrome={<AppChrome/>}/>;
-  else if (screen === 'factions') content = <FactionsScreen/>;
+  else if (screen === 'contracts') content = compact ? <MobileOperationsScreenV361 chrome={<AppChrome/>}/> : <OperationsScreen chrome={<AppChrome/>}/>;
+  else if (screen === 'factions') content = compact ? <MobileFactionsScreenV361 chrome={<AppChrome/>}/> : <FactionsScreen/>;
   else if (screen === 'civilizations') content = <ContactsScreen chrome={<AppChrome/>}/>;
   else if (screen === 'crew') content = <CrewScreenV33 chrome={<AppChrome/>}/>;
   else if (screen === 'archive') content = <div className="game-shell"><AppChrome/><ArchiveWorkspaceV352/></div>;
   else if (screen === 'laboratory') content = <LaboratoryScreen chrome={<AppChrome/>}/>;
-  else if (screen === 'world') content = <WorldScreen chrome={<AppChrome/>}/>;
-  else if (screen === 'operations') content = <OperationsScreen chrome={<AppChrome/>}/>;
+  else if (screen === 'world') content = compact ? <MobileSituationScreenV361 chrome={<AppChrome/>}/> : <WorldScreen chrome={<AppChrome/>}/>;
+  else if (screen === 'operations') content = compact ? <MobileOperationsScreenV361 chrome={<AppChrome/>}/> : <OperationsScreen chrome={<AppChrome/>}/>;
   else content = <ShipScreenV33 chrome={<AppChrome/>}/>;
   return <Suspense fallback={<BootScreen/>}>{content}{galaxy && <TutorialController/>}{galaxy && <StoryScenePopup/>}{galaxy && <ShipCombatModal/>}</Suspense>;
 }

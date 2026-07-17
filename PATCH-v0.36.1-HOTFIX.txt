@@ -1,0 +1,5 @@
+Void Chronicles v0.36.1 MOBILE COMMAND UI — CI hotfix
+- repairs CRLF-sensitive App.tsx integration
+- restores the full mobile stylesheet
+- updates legacy tests for the new navigation and release
+- keeps SAVE_SCHEMA_VERSION 13

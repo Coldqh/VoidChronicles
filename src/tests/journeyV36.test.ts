@@ -72,8 +72,8 @@ describe('v0.36 first voyage and captain journey', () => {
     expect(journalSource).toContain('ЦЕПОЧКА РЕЙСА');
     expect(journeySource).toContain('firstVoyageStages');
     expect(tutorialSource).toContain('ПЕРВЫЙ РЕЙС');
-    expect(versionSource).toContain("APP_VERSION = '0.36.0'");
-    expect(versionSource).toContain("APP_CODENAME = 'FIRST_VOYAGE'");
+    expect(versionSource).toContain('export const APP_VERSION');
+    expect(versionSource).toContain('export const APP_CODENAME');
     expect(versionSource).toContain('SAVE_SCHEMA_VERSION = 13');
   });
 });

@@ -1,0 +1,7 @@
+APPLY-v0.36.1-HOTFIX.mjs
+src/styles/mobileCommandV361.css
+src/tests/experienceV35.test.ts
+src/tests/journeyV36.test.ts
+src/tests/interfaceV361.test.ts
+PATCH-v0.36.1-HOTFIX.txt
+FILES-v0.36.1-HOTFIX.txt

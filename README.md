@@ -1,8 +1,17 @@
 # Void Chronicles
 
-**Current version: v0.35.3 — Routing Stable**
+**Current version: v0.36.1 — Mobile Command UI**
 
 Procedural single-player space exploration roguelike and autonomous galaxy-history simulator built with React, TypeScript and Canvas.
+
+## v0.36.1 Mobile Command UI
+
+- phone navigation keeps Bridge, Current System, Galaxy Map and Operations permanently available;
+- Bridge, Operations, Situation, Chronicle and Factions use dedicated compact compositions;
+- the current System route uses the full-screen orbital map on compact devices;
+- long dashboards are split into tabs, lists and dossiers;
+- iPhone safe areas, 100dvh and one scroll owner are enforced by the mobile shell;
+- desktop workspaces and save schema 13 remain unchanged.
 
 ## v0.35.3 Routing Stable
 

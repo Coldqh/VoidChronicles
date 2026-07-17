@@ -1,6 +1,6 @@
+import { readFileSync } from 'node:fs';
 import appSource from '../App.tsx?raw';
 import chromeSource from '../components/ExperienceChrome.tsx?raw';
-import mobileCss from '../styles/mobileCommandV361.css?raw';
 import commandSource from '../screens/MobileCommandScreenV361.tsx?raw';
 import operationsSource from '../screens/MobileOperationsScreenV361.tsx?raw';
 import situationSource from '../screens/MobileSituationScreenV361.tsx?raw';
@@ -8,6 +8,8 @@ import chronicleSource from '../screens/MobileChronicleScreenV361.tsx?raw';
 import factionsSource from '../screens/MobileFactionsScreenV361.tsx?raw';
 import versionSource from '../version.ts?raw';
 import { describe, expect, it } from 'vitest';
+
+const mobileCss = readFileSync(new URL('../styles/mobileCommandV361.css', import.meta.url), 'utf8');
 
 describe('v0.36.1 mobile command UI', () => {
   it('promotes the current system into the five-button phone dock', () => {
@@ -23,7 +25,8 @@ describe('v0.36.1 mobile command UI', () => {
     expect(appSource).toContain('MobileSituationScreenV361');
     expect(appSource).toContain('MobileChronicleScreenV361');
     expect(appSource).toContain('MobileFactionsScreenV361');
-    expect(appSource).toContain("compact ? <SystemScreen/>");
+    expect(appSource).toContain("screen === 'system'");
+    expect(appSource).toContain('compact ? <SystemScreen/>');
   });
 
   it('uses tabs and list dossier transitions instead of stacked phone dashboards', () => {
@@ -35,6 +38,7 @@ describe('v0.36.1 mobile command UI', () => {
   });
 
   it('owns the iPhone viewport with one scroll body and safe-area chrome', () => {
+    expect(mobileCss.length).toBeGreaterThan(1000);
     expect(mobileCss).toContain('height: 100dvh');
     expect(mobileCss).toContain('env(safe-area-inset-top)');
     expect(mobileCss).toContain('env(safe-area-inset-bottom)');
