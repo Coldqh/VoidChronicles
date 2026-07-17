@@ -31,22 +31,22 @@ export function ExperienceChrome() {
 
   const mainItems = useMemo<NavigationItem[]>(() => [
     { id: 'command', label: 'Мостик', icon: '◆', description: 'Главное решение сейчас' },
+    { id: 'system', label: 'Система', icon: '◉', description: 'Планеты, сигналы и высадки' },
     { id: 'galaxy', label: 'Карта', icon: '✦', description: 'Маршруты и сектора', badge: store.navigation.activePlan?.status === 'active' ? 1 : 0 },
-    { id: 'operations', label: 'Операции', icon: '⚔', description: 'Запросы, контракты и активные задачи', badge: requestCount + activeOperationCount + contractCount },
-    { id: 'world', label: 'Мир', icon: '◎', description: 'Цивилизации и кризисы', badge: crisisCount },
-    { id: 'ship', label: 'Корабль', icon: '▲', description: 'Отсеки, люди и запасы', badge: shipIssueCount }
-  ], [activeOperationCount, contractCount, crisisCount, requestCount, shipIssueCount, store.navigation.activePlan?.status]);
+    { id: 'operations', label: 'Операции', icon: '⚔', description: 'Запросы, контракты и задачи', badge: requestCount + activeOperationCount + contractCount }
+  ], [activeOperationCount, contractCount, requestCount, store.navigation.activePlan?.status]);
 
   const secondaryItems = useMemo<NavigationItem[]>(() => [
-    { id: 'system', label: 'Текущая система', icon: '◉', description: 'Планеты, сигналы и высадки' },
+    { id: 'world', label: 'Обстановка', icon: '◎', description: 'Кризисы, войны и новости', badge: crisisCount },
     { id: 'civilizations', label: 'Контакты', icon: '⌬', description: 'Дипломатия и профили видов' },
-    { id: 'crew', label: 'Экипаж', icon: '♟', description: 'Люди, отношения и истории' },
-    { id: 'laboratory', label: 'Лаборатория', icon: '◈', description: 'Артефакты и технологии' },
     { id: 'factions', label: 'Фракции', icon: '⚑', description: 'Политические силы' },
+    { id: 'crew', label: 'Экипаж', icon: '♟', description: 'Люди, отношения и истории' },
+    { id: 'ship', label: 'Корабль', icon: '▲', description: 'Отсеки, модули и запасы', badge: shipIssueCount },
+    { id: 'laboratory', label: 'Лаборатория', icon: '◈', description: 'Артефакты и технологии' },
     { id: 'archive', label: 'Архив', icon: '▣', description: 'Открытия и расследования' },
     { id: 'chronicle', label: 'Хроника', icon: '◫', description: 'Известная история галактики' },
     { id: 'settings', label: 'Настройки', icon: '⚙', description: 'Сейв, PWA и кампания' }
-  ], []);
+  ], [crisisCount, shipIssueCount]);
 
   const urgent = store.storyScenes.find((scene) => scene.status === 'available')
     ?? store.worldThreads.find((thread) => thread.status === 'escalating');
@@ -71,33 +71,11 @@ export function ExperienceChrome() {
     setOpen(false);
   };
 
-  const hud = <header className="v35-hud">
-    <button className="v35-hud-menu" aria-label="Открыть все разделы" onClick={() => setOpen((value) => !value)}>
-      <span/><span/><span/>
-    </button>
-    <button className="v35-hud-brand" onClick={() => navigate('command')}>
-      <img src={BRAND_MARK} alt=""/>
-      <span><b>VOID CHRONICLES</b><small>v{APP_VERSION}</small></span>
-    </button>
-    <div className="v35-hud-location">
-      <span>{current?.name ?? 'НЕИЗВЕСТНАЯ СИСТЕМА'}</span>
-      <small>{store.currentHubId ? store.hubs.find((hub) => hub.id === store.currentHubId)?.name : current?.region ?? 'КОРАБЛЬ В КОСМОСЕ'}</small>
-    </div>
-    {urgent && <button className="v35-hud-signal" onClick={() => 'choices' in urgent ? store.openStoryScene(urgent.id) : navigate('world')}>
-      <i/><span>{urgent.title}</span>
-    </button>}
-    <div className="v35-hud-vitals">
-      <span className={hull < 35 ? 'critical' : ''}><small>КОРПУС</small><b>{formatInteger(hull)}%</b></span>
-      <span className={fuel < 25 ? 'critical' : ''}><small>ТОПЛИВО</small><b>{formatInteger(fuel)}%</b></span>
-      <span><small>КРЕДИТЫ</small><b>₡{formatInteger(store.captain.credits)}</b></span>
-    </div>
-  </header>;
-
-  const allMenu = open && <div className="v35-command-menu">
+  const allMenu = open && <div className="v35-command-menu v361-command-menu">
     <button className="v35-command-menu-scrim" aria-label="Закрыть меню" onClick={() => setOpen(false)}/>
     <section className="v35-command-menu-panel" role="dialog" aria-label="Все разделы корабля">
       <header>
-        <div><span className="eyebrow">КОРАБЕЛЬНАЯ СИСТЕМА</span><h2>Куда перейти</h2></div>
+        <div><span className="eyebrow">VOID CHRONICLES · v{APP_VERSION}</span><h2>Разделы корабля</h2></div>
         <button aria-label="Закрыть" onClick={() => setOpen(false)}>×</button>
       </header>
       <div className="v35-menu-primary">
@@ -107,32 +85,44 @@ export function ExperienceChrome() {
       </div>
       <div className="v35-menu-secondary">
         {secondaryItems.map((item) => <button key={item.id} className={store.screen === item.id ? 'active' : ''} onClick={() => navigate(item.id)}>
-          <i>{item.icon}</i><span><b>{item.label}</b><small>{item.description}</small></span>
+          <i>{item.icon}</i><span><b>{item.label}</b><small>{item.description}</small></span>{Boolean(item.badge) && <em>{item.badge}</em>}
         </button>)}
       </div>
     </section>
   </div>;
 
   if (compact) return <>
-    {hud}
-    <nav className="v35-mobile-dock" aria-label="Главная навигация">
-      {mainItems.slice(0, 3).map((item) => <button key={item.id} className={store.screen === item.id ? 'active' : ''} onClick={() => navigate(item.id)}>
+    <header className="app-hud v361-mobile-hud">
+      <button className="v361-menu-button" aria-label="Открыть все разделы" onClick={() => setOpen((value) => !value)}><span/><span/><span/></button>
+      <button className="v361-mobile-brand" aria-label="Открыть мостик" onClick={() => navigate('command')}><img src={BRAND_MARK} alt=""/></button>
+      <button className="v361-mobile-location" onClick={() => navigate('system')}>
+        <b>{current?.name ?? 'НЕИЗВЕСТНАЯ СИСТЕМА'}</b>
+        <span>{urgent ? urgent.title : current?.region ?? 'КОРАБЛЬ В КОСМОСЕ'}</span>
+      </button>
+      <div className="v361-mobile-vitals"><span className={hull < 35 ? 'critical' : ''}>{formatInteger(hull)}%</span><span className={fuel < 25 ? 'critical' : ''}>{formatInteger(fuel)}%</span></div>
+    </header>
+    <nav className="mobile-dock v35-mobile-dock v361-mobile-dock" aria-label="Главная навигация">
+      {mainItems.map((item) => <button key={item.id} className={store.screen === item.id ? 'active' : ''} onClick={() => navigate(item.id)}>
         <i>{item.icon}</i><span>{item.label}</span>{Boolean(item.badge) && <em>{item.badge}</em>}
       </button>)}
-      <button className={open ? 'active' : ''} onClick={() => setOpen((value) => !value)}><i>•••</i><span>Ещё</span>{shipIssueCount > 0 && <em>{shipIssueCount}</em>}</button>
+      <button className={open || secondaryItems.some((item) => item.id === store.screen) ? 'active' : ''} onClick={() => setOpen((value) => !value)}><i>•••</i><span>Ещё</span>{shipIssueCount > 0 && <em>{shipIssueCount}</em>}</button>
     </nav>
     {allMenu}
   </>;
+
+  const hud = <header className="v35-hud">
+    <button className="v35-hud-menu" aria-label="Открыть все разделы" onClick={() => setOpen((value) => !value)}><span/><span/><span/></button>
+    <button className="v35-hud-brand" onClick={() => navigate('command')}><img src={BRAND_MARK} alt=""/><span><b>VOID CHRONICLES</b><small>v{APP_VERSION}</small></span></button>
+    <div className="v35-hud-location"><span>{current?.name ?? 'НЕИЗВЕСТНАЯ СИСТЕМА'}</span><small>{store.currentHubId ? store.hubs.find((hub) => hub.id === store.currentHubId)?.name : current?.region ?? 'КОРАБЛЬ В КОСМОСЕ'}</small></div>
+    {urgent && <button className="v35-hud-signal" onClick={() => 'choices' in urgent ? store.openStoryScene(urgent.id) : navigate('world')}><i/><span>{urgent.title}</span></button>}
+    <div className="v35-hud-vitals"><span className={hull < 35 ? 'critical' : ''}><small>КОРПУС</small><b>{formatInteger(hull)}%</b></span><span className={fuel < 25 ? 'critical' : ''}><small>ТОПЛИВО</small><b>{formatInteger(fuel)}%</b></span><span><small>КРЕДИТЫ</small><b>₡{formatInteger(store.captain.credits)}</b></span></div>
+  </header>;
 
   return <>
     {hud}
     <aside className="v35-rail" aria-label="Главные разделы">
       <button className="v35-rail-brand" onClick={() => navigate('command')}><img src={BRAND_MARK} alt="Void Chronicles"/></button>
-      <nav>
-        {mainItems.map((item) => <button key={item.id} className={store.screen === item.id ? 'active' : ''} onClick={() => navigate(item.id)} title={item.description}>
-          <i>{item.icon}</i><span>{item.label}</span>{Boolean(item.badge) && <em>{item.badge}</em>}
-        </button>)}
-      </nav>
+      <nav>{mainItems.map((item) => <button key={item.id} className={store.screen === item.id ? 'active' : ''} onClick={() => navigate(item.id)} title={item.description}><i>{item.icon}</i><span>{item.label}</span>{Boolean(item.badge) && <em>{item.badge}</em>}</button>)}</nav>
       <button className="v35-rail-more" onClick={() => setOpen(true)}><i>⌘</i><span>Все</span></button>
     </aside>
     {allMenu}

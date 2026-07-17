@@ -1,0 +1,7 @@
+Void Chronicles v0.36.1 — MOBILE COMMAND UI
+
+1. Extract this archive over the repository root.
+2. Run: node APPLY-v0.36.1.mjs
+3. Run: npm run check
+
+The installer is idempotent. SAVE_SCHEMA_VERSION remains 13.

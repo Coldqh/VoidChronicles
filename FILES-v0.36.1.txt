@@ -1,0 +1,18 @@
+Modified/replaced by archive:
+- package.json
+- src/version.ts
+- src/components/ExperienceChrome.tsx
+
+Added by archive:
+- src/screens/MobileCommandScreenV361.tsx
+- src/screens/MobileOperationsScreenV361.tsx
+- src/screens/MobileSituationScreenV361.tsx
+- src/screens/MobileChronicleScreenV361.tsx
+- src/screens/MobileFactionsScreenV361.tsx
+- src/styles/mobileCommandV361.css
+- src/tests/interfaceV361.test.ts
+
+Modified by APPLY-v0.36.1.mjs:
+- src/App.tsx
+- package-lock.json
+- README.md

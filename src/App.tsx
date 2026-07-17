@@ -28,6 +28,11 @@ import { CommandDeckV35 } from './screens/CommandDeckV35';
 import { ArchiveWorkspaceV352 } from './screens/ArchiveWorkspaceV352';
 import { SystemWorkspaceV352 } from './screens/SystemWorkspaceV352';
 import { normalizeMainScreenRoute } from './routing/routes';
+import { MobileCommandScreenV361 } from './screens/MobileCommandScreenV361';
+import { MobileOperationsScreenV361 } from './screens/MobileOperationsScreenV361';
+import { MobileSituationScreenV361 } from './screens/MobileSituationScreenV361';
+import { MobileChronicleScreenV361 } from './screens/MobileChronicleScreenV361';
+import { MobileFactionsScreenV361 } from './screens/MobileFactionsScreenV361';
 const LaboratoryScreen = lazy(() => import('./screens/LaboratoryScreen').then((module) => ({ default: module.LaboratoryScreen })));
 const WorldScreen = lazy(() => import('./screens/WorldScreen').then((module) => ({ default: module.WorldScreen })));
 const OperationsScreen = lazy(() => import('./screens/OperationsScreen').then((module) => ({ default: module.OperationsScreen })));
@@ -45,6 +50,7 @@ import './styles/civilizationProfiles.css';
 import './styles/shipCrewLife.css';
 import './styles/galacticGeography.css';
 import './styles/experienceV35.css';
+import './styles/mobileCommandV361.css';
 
 const defaultSettings: GalaxySettings = {
   seed: 'VOID-CHRONICLES-005',
