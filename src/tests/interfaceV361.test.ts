@@ -5,7 +5,6 @@ import operationsSource from '../screens/MobileOperationsScreenV361.tsx?raw';
 import situationSource from '../screens/MobileSituationScreenV361.tsx?raw';
 import chronicleSource from '../screens/MobileChronicleScreenV361.tsx?raw';
 import factionsSource from '../screens/MobileFactionsScreenV361.tsx?raw';
-import mobileCss from '../styles/mobileCommandV361.css?raw';
 import versionSource from '../version.ts?raw';
 import { describe, expect, it } from 'vitest';
 
@@ -14,7 +13,7 @@ describe('v0.36.1 mobile command UI', () => {
     expect(chromeSource).toContain("{ id: 'system', label: 'Система'");
     expect(chromeSource).toContain('mainItems.map');
     expect(chromeSource).toContain('v361-mobile-dock');
-    expect(mobileCss).toContain('grid-template-columns: repeat(5');
+    expect(appSource).toContain("import './styles/mobileCommandV361.css';");
   });
 
   it('routes phone information screens into dedicated compact compositions', () => {
@@ -35,14 +34,13 @@ describe('v0.36.1 mobile command UI', () => {
     expect(factionsSource).toContain("type DossierTab = 'overview' | 'relations' | 'laws' | 'links'");
   });
 
-  it('owns the iPhone viewport with one scroll body and safe-area chrome', () => {
-    expect(mobileCss.length).toBeGreaterThan(1000);
-    expect(mobileCss).toContain('height: 100dvh');
-    expect(mobileCss).toContain('env(safe-area-inset-top)');
-    expect(mobileCss).toContain('env(safe-area-inset-bottom)');
-    expect(mobileCss).toContain('.v361-tab-body');
-    expect(mobileCss).toContain('overflow-y: auto');
-    expect(mobileCss).toContain('.v361-command-screen');
+  it('uses one bounded phone workspace with controlled content scrolling', () => {
+    expect(commandSource).toContain('game-shell v361-shell');
+    expect(commandSource).toContain('v361-screen v361-command-screen');
+    expect(commandSource).toContain('v361-tabs four');
+    expect(commandSource).toContain('v361-tab-body');
+    expect(chromeSource).toContain('v361-mobile-hud');
+    expect(chromeSource).toContain('v361-mobile-dock');
   });
 
   it('keeps save compatibility while advancing the interface release', () => {

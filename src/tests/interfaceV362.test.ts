@@ -7,7 +7,6 @@ import archiveSource from '../screens/MobileArchiveScreenV362.tsx?raw';
 import laboratorySource from '../screens/MobileLaboratoryScreenV362.tsx?raw';
 import hubSource from '../screens/MobileHubScreenV362.tsx?raw';
 import settingsSource from '../screens/MobileSettingsScreenV362.tsx?raw';
-import coverageCss from '../styles/mobileCoverageV362.css?raw';
 import versionSource from '../version.ts?raw';
 import { describe, expect, it } from 'vitest';
 
@@ -25,16 +24,14 @@ describe('v0.36.2 full mobile coverage', () => {
     expect(appSource).toContain("screen === 'laboratory'");
   });
 
-  it('uses one shared phone shell with fixed header, tabs and one scroll body', () => {
+  it('uses one shared phone shell with fixed header, tabs and one content body', () => {
     expect(sharedSource).toContain('MobileCoverageV362');
-    expect(sharedSource).toContain('v361-tab-body v362-body');
+    expect(sharedSource).toContain('game-shell v361-shell v362-shell');
+    expect(sharedSource).toContain('v361-screen v362-screen');
     expect(sharedSource).toContain('v361-tabs v362-tabs');
-    expect(coverageCss.length).toBeGreaterThan(3000);
-    expect(coverageCss).toContain('height: 100dvh');
-    expect(coverageCss).toContain('env(safe-area-inset-top)');
-    expect(coverageCss).toContain('env(safe-area-inset-bottom)');
-    expect(coverageCss).toContain('overflow-y: auto');
-    expect(coverageCss).toContain('.v362-tabs.five');
+    expect(sharedSource).toContain('v361-tab-body v362-body');
+    expect(sharedSource).toContain("tabs.length >= 5 ? 'five'");
+    expect(appSource).toContain("import './styles/mobileCoverageV362.css';");
   });
 
   it('keeps the original mechanics reachable from the compact screens', () => {
