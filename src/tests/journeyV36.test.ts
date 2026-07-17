@@ -31,6 +31,7 @@ const baseInput = {
   navigation: { history: [], knownSectorIds: [] },
   discoveries: [],
   logs: [],
+  pendingConsequences: [],
   openShipIssues: 0
 } as Parameters<typeof buildCaptainJourney>[0];
 
