@@ -41,18 +41,18 @@ export function MobileCommandScreenV361({ chrome }: { chrome: ReactNode }) {
     else store.setScreen(action.screen);
   };
 
-  return <div className="game-shell v361-shell">{chrome}<main className="mobile-data-screen v361-screen v361-command-screen">
+  return <div className="game-shell v361-shell">{chrome}<main className="mobile-data-screen v361-screen v361-command-screen v363-command-screen">
     <header className="v361-screen-header">
       <div><span>МОСТИК · ГОД {formatInteger(store.gameYear)}</span><h1>{current.name}</h1></div>
       <div className="v361-header-stats"><b>{formatInteger(store.ship.hull)}%</b><b>{formatInteger(store.ship.fuel)}%</b><b>₡{formatInteger(store.captain.credits)}</b></div>
     </header>
 
-    <section className={`v361-primary-card tone-${journey.focus.tone}`}>
+    <section className={`v361-primary-card v363-primary-card tone-${journey.focus.tone}`}>
       <div><span>{journey.focus.eyebrow}</span><h2>{journey.focus.title}</h2><p>{journey.focus.text}</p></div>
       <button className="primary-button" onClick={() => runAction(journey.focus.action)}>{journey.focus.label}</button>
     </section>
 
-    <div className="v361-quick-rows">
+    <div className="v361-quick-rows v363-quick-rows">
       <button onClick={() => store.setScreen('galaxy')}><span>МАРШРУТ</span><b>{activeRoute ? `${current.name} → ${nextSystem?.name ?? 'следующая система'}` : 'Не проложен'}</b><em>›</em></button>
       <button onClick={() => store.setScreen('ship')}><span>КОРАБЛЬ</span><b>{openIssues.length ? `${openIssues.length} проблем · готовность ${readiness}%` : `Готовность ${readiness}%`}</b><em>›</em></button>
     </div>
@@ -67,7 +67,7 @@ export function MobileCommandScreenV361({ chrome }: { chrome: ReactNode }) {
     <section className="v361-tab-body">
       {tab === 'order' && <article className="v361-focus-panel">
         <span>ТЕКУЩИЙ ПРИКАЗ</span><h2>{journey.focus.title}</h2><p>{journey.focus.text}</p>
-        <button className="primary-button" onClick={() => runAction(journey.focus.action)}>{journey.focus.label}</button>
+        <small className="v363-order-hint">Основное действие находится в верхнем блоке.</small>
       </article>}
 
       {tab === 'voyage' && <div className="v361-stage-list">

@@ -1,0 +1,7 @@
+APPLY-v0.36.3.mjs
+src/components/ExpeditionTokens.tsx
+src/styles/mobilePolishV363.css
+src/tests/interfaceV361.test.ts
+src/tests/interfaceV362.test.ts
+src/tests/interfaceV363.test.ts
+PATCH-v0.36.3.txt

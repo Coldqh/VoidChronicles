@@ -1,0 +1,9 @@
+Void Chronicles v0.36.3 — TACTICAL MOBILE POLISH
+
+- compact bridge layout with bounded rows and no duplicate order action;
+- removed mobile header logo and duplicated top-left menu button;
+- grouped and restyled the full sections menu;
+- synchronized expedition movement frames and removed disabled-state dimming;
+- added inline SVG player, enemy and objective models;
+- added biome-aware procedural terrain textures;
+- preserved SAVE_SCHEMA_VERSION 13.

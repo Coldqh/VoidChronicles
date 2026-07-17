@@ -19,6 +19,7 @@ import {
   saveExpeditionCheckpoint
 } from '../exploration/expeditionCheckpoint';
 import { generateSurface, type SurfaceMap, type SurfaceObject, type SurfaceTile } from '../generation/surface';
+import { ExpeditionEnemyToken, ExpeditionObjectToken, ExpeditionPlayerToken, enemyVisualForName } from './ExpeditionTokens';
 
 interface Props {
   seed: string;
@@ -35,8 +36,9 @@ interface Props {
 
 type Phase = 'loadout' | 'field' | 'debrief';
 const DEFAULT_LOADOUT: EquipmentId[] = ['pistol', 'armor', 'scanner', 'medkit', 'oxygen'];
-const STEP_DELAY_MS = 145;
+const STEP_DELAY_MS = 72;
 const wait = (ms: number) => new Promise<void>((resolve) => window.setTimeout(resolve, ms));
+const nextFrame = () => new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
 const distance = (a: {x:number;y:number}, b:{x:number;y:number}) => Math.abs(a.x-b.x)+Math.abs(a.y-b.y);
 
 function tileAt(state: SurfaceMap, x: number, y: number): SurfaceTile | undefined {
@@ -294,6 +296,7 @@ export function ExpeditionModal({ seed, planet, point, artifact, crew, personalE
         const path = findFastestPath(mapRef.current, { x, y });
         const next = path[1];
         if (!next || !performStep(next.x, next.y)) break;
+        await nextFrame();
         await wait(STEP_DELAY_MS);
       }
     } finally {
@@ -311,7 +314,7 @@ export function ExpeditionModal({ seed, planet, point, artifact, crew, personalE
     }
     movingRef.current = true;
     setIsMoving(true);
-    try { performStep(enemy.x, enemy.y); await wait(STEP_DELAY_MS); }
+    try { if (performStep(enemy.x, enemy.y)) { await nextFrame(); await wait(STEP_DELAY_MS); } }
     finally { movingRef.current = false; setIsMoving(false); }
   };
 
@@ -395,18 +398,19 @@ export function ExpeditionModal({ seed, planet, point, artifact, crew, personalE
   }
 
   const tutorialObjectId = map.objects.find((entry) => !entry.resolved && entry.evidence)?.id;
-  return <div className="modal-backdrop"><section className="modal expedition-modal field-modal">
-    <header><div><span className="eyebrow">{restored ? 'ВОССТАНОВЛЕННЫЙ ЗАХОД' : map.biome.toUpperCase()}</span><h2>{point.name}</h2><p>{isMoving ? 'Перемещение…' : `${map.hazardName} · ${turnsLeft} ходов`}</p></div><button className="icon-button" disabled={isLeaving || isMoving} onClick={onClose}>×</button></header>
+  return <div className="modal-backdrop"><section className={`modal expedition-modal field-modal expedition-biome-${planet.type} expedition-site-${point.type}`} data-moving={isMoving ? 'true' : 'false'}>
+    <header><div><span className="eyebrow">{restored ? 'ВОССТАНОВЛЕННЫЙ ЗАХОД' : map.biome.toUpperCase()}</span><h2>{point.name}</h2><p>{map.hazardName} · {turnsLeft} ходов</p></div><button className="icon-button" disabled={isLeaving || isMoving} onClick={onClose}>×</button></header>
     <section className="field-mission-strip"><div><span>ЗАДАЧА</span><b>{map.objectiveTitle}</b><small>{map.objectiveDescription}</small></div><strong>{objectiveResolved}/{objectiveTotal}</strong></section>
     <section className={`field-target-panel ${selectedEnemy ? 'has-target' : ''}`}>
-      {selectedEnemy ? <><div><span>ЦЕЛЬ</span><b>{selectedEnemy.name}</b></div><div><span>HP</span><b>{Math.max(0, selectedEnemy.health)}/{selectedEnemy.maxHealth}</b></div><div><span>УРОН</span><b>{selectedEnemy.damage}</b></div><button disabled={isMoving || distance(map.player, selectedEnemy) !== 1} onClick={() => void attackSelected()}>{distance(map.player, selectedEnemy) === 1 ? 'Атаковать' : 'Слишком далеко'}</button></> : <p>Объекты с меткой цели двигают конкретную задачу. Остальные дают контекст и повышают достоверность вывода.</p>}
+      {selectedEnemy && <><div className="field-target-identity"><ExpeditionEnemyToken variant={enemyVisualForName(selectedEnemy.name)}/><div><span>ЦЕЛЬ</span><b>{selectedEnemy.name}</b></div></div><div><span>HP</span><b>{Math.max(0, selectedEnemy.health)}/{selectedEnemy.maxHealth}</b></div><div><span>УРОН</span><b>{selectedEnemy.damage}</b></div><button disabled={isMoving || distance(map.player, selectedEnemy) !== 1} onClick={() => void attackSelected()}>{distance(map.player, selectedEnemy) === 1 ? 'Атаковать' : 'Далеко'}</button></>}
     </section>
     <div className="expedition-layout"><div className="surface-grid" style={{ gridTemplateColumns: `repeat(${map.width}, minmax(0, 1fr))`, gridTemplateRows: `repeat(${map.height}, minmax(0, 1fr))` }}>
       {map.tiles.map((tile) => {
         const enemy = map.enemies.find((entry) => entry.x === tile.x && entry.y === tile.y && entry.health > 0);
         const player = map.player.x === tile.x && map.player.y === tile.y;
         const object = map.objects.find((entry) => entry.x === tile.x && entry.y === tile.y && !entry.resolved);
-        return <button key={`${tile.x}-${tile.y}`} aria-label={`${tile.x},${tile.y}`} data-tutorial={tile.revealed && object?.id === tutorialObjectId ? 'collect-data' : undefined} disabled={isLeaving || playerHealth <= 0 || isMoving} className={`tile tile-${tile.revealed ? tile.kind : 'hidden'} ${player ? 'tile-player' : ''} ${enemy ? 'tile-enemy' : ''} ${enemy?.id === selectedEnemyId ? 'tile-selected-enemy' : ''} ${object ? 'tile-object' : ''} ${object?.objective ? 'tile-objective' : ''}`} onClick={() => void moveTo(tile.x, tile.y)}>{player ? '◆' : enemy ? '▲' : tile.revealed && object ? object.kind === 'artifact' ? '✦' : object.kind === 'terminal' ? '▣' : object.kind === 'sample' ? '●' : object.objective ? '◆' : '▥' : ''}</button>;
+        const reachable = tile.revealed && tile.kind !== 'rock' && distance(map.player, tile) === 1;
+        return <button key={`${tile.x}-${tile.y}`} aria-label={`${tile.x},${tile.y}`} aria-current={player ? 'true' : undefined} data-tutorial={tile.revealed && object?.id === tutorialObjectId ? 'collect-data' : undefined} disabled={isLeaving || playerHealth <= 0 || isMoving} className={`tile tile-${tile.revealed ? tile.kind : 'hidden'} ${reachable ? 'tile-reachable' : ''} ${player ? 'tile-player' : ''} ${enemy ? 'tile-enemy' : ''} ${enemy?.id === selectedEnemyId ? 'tile-selected-enemy' : ''} ${object ? 'tile-object' : ''} ${object?.objective ? 'tile-objective' : ''}`} onClick={() => void moveTo(tile.x, tile.y)}>{player ? <ExpeditionPlayerToken/> : enemy ? <ExpeditionEnemyToken variant={enemyVisualForName(enemy.name)}/> : tile.revealed && object ? <ExpeditionObjectToken kind={object.kind} objective={object.objective}/> : null}</button>;
       })}
     </div><aside className="expedition-sidebar">
       <div className="meter"><span>HP</span><strong>{playerHealth}</strong><i style={{ width: `${playerHealth}%` }} /></div>

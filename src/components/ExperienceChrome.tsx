@@ -71,31 +71,37 @@ export function ExperienceChrome() {
     setOpen(false);
   };
 
+  const renderMenuItem = (item: NavigationItem) => <button key={item.id} className={store.screen === item.id ? 'active' : ''} onClick={() => navigate(item.id)}>
+    <i>{item.icon}</i><span><b>{item.label}</b><small>{item.description}</small></span>{Boolean(item.badge) && <em>{item.badge}</em>}
+  </button>;
+
+  const worldMenu = secondaryItems.filter((item) => ['world', 'civilizations', 'factions', 'chronicle'].includes(item.id));
+  const shipMenu = secondaryItems.filter((item) => ['crew', 'ship', 'laboratory', 'archive'].includes(item.id));
+  const serviceMenu = secondaryItems.filter((item) => item.id === 'settings');
+
   const allMenu = open && <div className="v35-command-menu v361-command-menu">
     <button className="v35-command-menu-scrim" aria-label="Закрыть меню" onClick={() => setOpen(false)}/>
-    <section className="v35-command-menu-panel" role="dialog" aria-label="Все разделы корабля">
+    <section className="v35-command-menu-panel v363-menu-panel" role="dialog" aria-label="Разделы">
       <header>
-        <div><span className="eyebrow">VOID CHRONICLES · v{APP_VERSION}</span><h2>Разделы корабля</h2></div>
+        <div><span className="eyebrow">VOID CHRONICLES · v{APP_VERSION}</span><h2>Разделы</h2></div>
         <button aria-label="Закрыть" onClick={() => setOpen(false)}>×</button>
       </header>
-      <div className="v35-menu-primary">
-        {mainItems.map((item) => <button key={item.id} className={store.screen === item.id ? 'active' : ''} onClick={() => navigate(item.id)}>
-          <i>{item.icon}</i><span><b>{item.label}</b><small>{item.description}</small></span>{Boolean(item.badge) && <em>{item.badge}</em>}
-        </button>)}
+      <div className="v363-menu-scroll">
+        <section className="v363-menu-group"><h3>Основное</h3><div className="v363-menu-grid">{mainItems.map(renderMenuItem)}</div></section>
+        <section className="v363-menu-group"><h3>Мир</h3><div className="v363-menu-grid">{worldMenu.map(renderMenuItem)}</div></section>
+        <section className="v363-menu-group"><h3>Корабль</h3><div className="v363-menu-grid">{shipMenu.map(renderMenuItem)}</div></section>
+        <section className="v363-menu-group"><h3>Служебное</h3><div className="v363-menu-grid">{serviceMenu.map(renderMenuItem)}</div></section>
       </div>
-      <div className="v35-menu-secondary">
-        {secondaryItems.map((item) => <button key={item.id} className={store.screen === item.id ? 'active' : ''} onClick={() => navigate(item.id)}>
-          <i>{item.icon}</i><span><b>{item.label}</b><small>{item.description}</small></span>{Boolean(item.badge) && <em>{item.badge}</em>}
-        </button>)}
-      </div>
+      <footer className="v363-menu-footer">
+        <span>Текущая система<b>{current?.name ?? 'Неизвестно'}</b></span>
+        <strong>{formatInteger(hull)}% · {formatInteger(fuel)}%</strong>
+      </footer>
     </section>
   </div>;
 
   if (compact) return <>
-    <header className="app-hud v361-mobile-hud">
-      <button className="v361-menu-button" aria-label="Открыть все разделы" onClick={() => setOpen((value) => !value)}><span/><span/><span/></button>
-      <button className="v361-mobile-brand" aria-label="Открыть мостик" onClick={() => navigate('command')}><img src={BRAND_MARK} alt=""/></button>
-      <button className="v361-mobile-location" onClick={() => navigate('system')}>
+    <header className="app-hud v361-mobile-hud v363-mobile-hud">
+      <button className="v361-mobile-location v363-mobile-location" onClick={() => navigate('system')}>
         <b>{current?.name ?? 'НЕИЗВЕСТНАЯ СИСТЕМА'}</b>
         <span>{urgent ? urgent.title : current?.region ?? 'КОРАБЛЬ В КОСМОСЕ'}</span>
       </button>

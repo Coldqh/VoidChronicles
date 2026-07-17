@@ -1,0 +1,520 @@
+/* v0.36.3 — compact bridge, grouped navigation and textured tactical expeditions. */
+
+@media (max-width: 700px) {
+  /* Mobile HUD: no duplicated logo or top-left menu. */
+  .v363-mobile-hud {
+    grid-template-columns: minmax(0, 1fr) auto !important;
+    padding-left: max(9px, env(safe-area-inset-left)) !important;
+    padding-right: max(9px, env(safe-area-inset-right)) !important;
+  }
+
+  .v363-mobile-location {
+    width: 100%;
+    height: 36px !important;
+    padding: 2px 1px !important;
+  }
+
+  .v363-mobile-location b {
+    font-size: 12px !important;
+    letter-spacing: .01em;
+  }
+
+  .v363-mobile-location span {
+    font-size: 8px !important;
+  }
+
+  /* Bridge: every row has a real bounded height. */
+  .v361-shell > .v361-screen.v363-command-screen {
+    grid-template-rows: 40px 86px 74px 34px minmax(0, 1fr) !important;
+    gap: 5px !important;
+  }
+
+  .v363-primary-card {
+    min-height: 0 !important;
+    height: 86px !important;
+    padding: 8px !important;
+    grid-template-columns: minmax(0, 1fr) 104px !important;
+    border-radius: 9px !important;
+    background:
+      linear-gradient(110deg, rgba(28, 115, 139, .14), transparent 55%),
+      linear-gradient(180deg, rgba(10, 27, 37, .98), rgba(5, 17, 25, .98)) !important;
+    box-shadow: inset 0 1px rgba(255,255,255,.035), 0 8px 24px rgba(0,0,0,.18);
+  }
+
+  .v363-primary-card h2 {
+    font-size: 14px !important;
+    line-height: 1.08 !important;
+  }
+
+  .v363-primary-card p {
+    font-size: 9px !important;
+    -webkit-line-clamp: 2 !important;
+  }
+
+  .v363-primary-card button {
+    min-height: 38px !important;
+    padding: 5px 7px !important;
+    font-size: 9px !important;
+  }
+
+  .v363-quick-rows {
+    height: 74px !important;
+    min-height: 74px !important;
+    grid-template-rows: repeat(2, 35px) !important;
+    gap: 4px !important;
+  }
+
+  .v363-quick-rows button {
+    height: 35px !important;
+    min-height: 35px !important;
+    padding: 4px 28px 4px 8px !important;
+    grid-template-columns: 60px minmax(0, 1fr) !important;
+    border: 1px solid rgba(112, 216, 241, .09) !important;
+    background:
+      linear-gradient(90deg, rgba(46, 132, 155, .055), transparent 60%),
+      rgba(7, 20, 29, .9) !important;
+    box-shadow: inset 0 1px rgba(255,255,255,.02);
+  }
+
+  .v363-quick-rows button span {
+    font-size: 8px !important;
+  }
+
+  .v363-quick-rows button b {
+    font-size: 10px !important;
+  }
+
+  .v363-order-hint {
+    display: block;
+    margin-top: 8px;
+    color: #617b86;
+    font-size: 9px;
+  }
+
+  /* Grouped full navigation. */
+  .v361-command-menu .v35-command-menu-panel.v363-menu-panel {
+    display: grid !important;
+    grid-template-rows: auto minmax(0, 1fr) auto !important;
+    overflow: hidden !important;
+  }
+
+  .v363-menu-scroll {
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 2px 0 8px;
+  }
+
+  .v363-menu-group {
+    margin: 0 0 9px;
+  }
+
+  .v363-menu-group h3 {
+    margin: 0 0 4px;
+    padding: 0 3px;
+    color: #64818d;
+    font-size: 8px;
+    font-weight: 700;
+    letter-spacing: .16em;
+    text-transform: uppercase;
+  }
+
+  .v363-menu-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 4px;
+  }
+
+  .v363-menu-grid button {
+    position: relative;
+    min-width: 0;
+    min-height: 49px !important;
+    padding: 6px 24px 6px 7px !important;
+    display: grid !important;
+    grid-template-columns: 22px minmax(0, 1fr) !important;
+    align-items: center;
+    gap: 6px !important;
+    border: 1px solid rgba(112, 216, 241, .095) !important;
+    border-radius: 8px !important;
+    background:
+      linear-gradient(135deg, rgba(48, 138, 162, .06), transparent 52%),
+      rgba(8, 22, 31, .94) !important;
+    text-align: left !important;
+  }
+
+  .v363-menu-grid button.active {
+    border-color: rgba(106, 225, 250, .35) !important;
+    background:
+      linear-gradient(135deg, rgba(49, 171, 201, .15), transparent 64%),
+      rgba(8, 27, 37, .98) !important;
+    box-shadow: inset 0 0 0 1px rgba(83, 204, 232, .08);
+  }
+
+  .v363-menu-grid button > i {
+    width: 22px;
+    color: #82dff5;
+    font-size: 13px;
+    font-style: normal;
+    text-align: center;
+  }
+
+  .v363-menu-grid button > span {
+    min-width: 0;
+    display: grid;
+    gap: 1px;
+  }
+
+  .v363-menu-grid button b {
+    overflow: hidden;
+    color: #dceff4;
+    font-size: 11px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .v363-menu-grid button small {
+    overflow: hidden;
+    color: #657d87;
+    font-size: 8px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .v363-menu-grid button em {
+    position: absolute;
+    right: 6px;
+    top: 6px;
+    min-width: 15px;
+    height: 15px;
+    display: grid;
+    place-items: center;
+    border-radius: 99px;
+    background: #b64e5c;
+    color: white;
+    font-size: 8px;
+    font-style: normal;
+  }
+
+  .v363-menu-footer {
+    min-height: 42px;
+    padding: 6px 3px 0;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 8px;
+    border-top: 1px solid rgba(255,255,255,.055);
+  }
+
+  .v363-menu-footer span {
+    min-width: 0;
+    display: grid;
+    color: #58727d;
+    font-size: 8px;
+  }
+
+  .v363-menu-footer b {
+    overflow: hidden;
+    color: #bed7de;
+    font-size: 10px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .v363-menu-footer strong {
+    color: #75d9ef;
+    font-size: 9px;
+    font-weight: 700;
+  }
+
+  /* Tactical expedition layout: explicit rows prevent giant empty panels. */
+  .expedition-modal.field-modal {
+    grid-template-rows: auto auto auto minmax(0, 1fr) !important;
+    gap: 4px !important;
+    background:
+      radial-gradient(circle at 50% 42%, rgba(37, 112, 129, .07), transparent 45%),
+      #030a0f !important;
+  }
+
+  .field-modal > header {
+    min-height: 39px !important;
+    margin-bottom: 0 !important;
+  }
+
+  .field-modal .field-mission-strip {
+    min-height: 46px !important;
+    margin: 0 !important;
+    padding: 5px 7px !important;
+    border-radius: 8px !important;
+    background:
+      linear-gradient(90deg, rgba(38, 137, 162, .08), transparent 62%),
+      rgba(6, 20, 28, .95) !important;
+  }
+
+  .field-modal .field-mission-strip b {
+    font-size: 10px !important;
+  }
+
+  .field-modal .field-mission-strip small {
+    display: block;
+    max-width: 100%;
+    overflow: hidden;
+    font-size: 8px !important;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .field-modal .field-target-panel:not(.has-target) {
+    display: none !important;
+  }
+
+  .field-modal .field-target-panel.has-target {
+    min-height: 43px !important;
+    margin: 0 !important;
+    padding: 4px 5px !important;
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) 54px 46px 92px !important;
+    align-items: center;
+    gap: 4px !important;
+    border-radius: 8px !important;
+  }
+
+  .field-target-identity {
+    min-width: 0;
+    display: grid !important;
+    grid-template-columns: 32px minmax(0, 1fr);
+    align-items: center;
+    gap: 5px;
+  }
+
+  .field-target-identity .expedition-token {
+    width: 30px;
+    height: 30px;
+  }
+
+  .field-modal .expedition-layout {
+    min-height: 0 !important;
+    gap: 4px !important;
+  }
+
+  .field-modal .surface-grid {
+    place-self: stretch !important;
+    width: 100% !important;
+    height: 100% !important;
+    max-width: none !important;
+    max-height: none !important;
+    padding: 6px !important;
+    gap: 3px !important;
+    border: 1px solid rgba(101, 210, 235, .12);
+    border-radius: 10px;
+    background:
+      linear-gradient(rgba(82, 170, 189, .025) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(82, 170, 189, .025) 1px, transparent 1px),
+      radial-gradient(circle at 50% 50%, rgba(33, 93, 107, .15), transparent 58%),
+      #02080c !important;
+    background-size: 18px 18px, 18px 18px, auto, auto !important;
+    box-shadow: inset 0 0 34px rgba(0,0,0,.62);
+  }
+
+  .field-modal .tile {
+    position: relative;
+    isolation: isolate;
+    overflow: hidden;
+    border: 1px solid rgba(114, 195, 211, .12) !important;
+    border-radius: 6px !important;
+    opacity: 1 !important;
+    filter: none !important;
+    transition: transform 70ms ease, border-color 70ms ease, box-shadow 70ms ease, background 70ms ease !important;
+  }
+
+  .field-modal .tile::before {
+    content: "";
+    position: absolute;
+    z-index: -1;
+    inset: 0;
+    opacity: .42;
+    background:
+      radial-gradient(circle at 30% 22%, rgba(255,255,255,.13), transparent 22%),
+      linear-gradient(135deg, transparent 42%, rgba(255,255,255,.035) 43% 46%, transparent 47%);
+    pointer-events: none;
+  }
+
+  .field-modal .tile:disabled {
+    opacity: 1 !important;
+    filter: none !important;
+    cursor: default;
+  }
+
+  .field-modal .tile-hidden {
+    border-color: rgba(50, 72, 80, .08) !important;
+    background: #02070a !important;
+  }
+
+  .field-modal .tile-floor {
+    background:
+      radial-gradient(circle at 68% 30%, rgba(116, 174, 184, .13), transparent 34%),
+      linear-gradient(145deg, var(--terrain-a, #18303a), var(--terrain-b, #0d2028)) !important;
+  }
+
+  .field-modal .tile-rock {
+    border-color: rgba(83, 111, 117, .16) !important;
+    background:
+      radial-gradient(circle at 28% 32%, rgba(173, 188, 190, .12), transparent 20%),
+      radial-gradient(circle at 72% 68%, rgba(0,0,0,.28), transparent 31%),
+      linear-gradient(135deg, var(--rock-a, #26363a), var(--rock-b, #111c20)) !important;
+  }
+
+  .field-modal .tile-hazard {
+    border-color: rgba(231, 111, 80, .34) !important;
+    background:
+      radial-gradient(circle at 50% 50%, rgba(231, 91, 61, .35), transparent 40%),
+      repeating-linear-gradient(135deg, rgba(255, 156, 92, .16) 0 4px, transparent 4px 9px),
+      #351b19 !important;
+  }
+
+  .field-modal .tile-ruin,
+  .field-modal .tile-terminal,
+  .field-modal .tile-door {
+    background:
+      linear-gradient(90deg, transparent 46%, rgba(117, 219, 240, .12) 47% 53%, transparent 54%),
+      linear-gradient(145deg, #233842, #101e24) !important;
+  }
+
+  .field-modal .tile-cover {
+    background:
+      linear-gradient(135deg, transparent 35%, rgba(134, 171, 178, .17) 36% 64%, transparent 65%),
+      #13272e !important;
+  }
+
+  .field-modal .tile-reachable:not(.tile-player):not(.tile-enemy) {
+    border-color: rgba(105, 224, 246, .42) !important;
+    box-shadow: inset 0 0 0 1px rgba(96, 219, 244, .12), 0 0 10px rgba(53, 184, 213, .09);
+  }
+
+  .field-modal .tile-player {
+    z-index: 3;
+    border-color: rgba(103, 235, 255, .88) !important;
+    box-shadow: 0 0 0 2px rgba(59, 196, 225, .2), 0 0 14px rgba(61, 213, 241, .34);
+  }
+
+  .field-modal .tile-enemy {
+    z-index: 2;
+    border-color: rgba(255, 111, 94, .7) !important;
+    box-shadow: 0 0 12px rgba(214, 72, 61, .22);
+  }
+
+  .field-modal .tile-selected-enemy {
+    box-shadow: 0 0 0 2px rgba(255, 123, 98, .28), 0 0 18px rgba(230, 78, 59, .38) !important;
+  }
+
+  .field-modal .tile-objective {
+    border-color: rgba(224, 196, 102, .62) !important;
+  }
+
+  .expedition-biome-rocky {
+    --terrain-a: #1c343c;
+    --terrain-b: #0e2027;
+    --rock-a: #364449;
+    --rock-b: #172328;
+  }
+
+  .expedition-biome-desert {
+    --terrain-a: #44382b;
+    --terrain-b: #251e18;
+    --rock-a: #5a4936;
+    --rock-b: #2b241d;
+  }
+
+  .expedition-biome-ice {
+    --terrain-a: #1d3946;
+    --terrain-b: #0e2530;
+    --rock-a: #42606b;
+    --rock-b: #1b3039;
+  }
+
+  .expedition-biome-toxic,
+  .expedition-biome-jungle {
+    --terrain-a: #243d35;
+    --terrain-b: #12261f;
+    --rock-a: #344b3f;
+    --rock-b: #182920;
+  }
+
+  .expedition-biome-artificial,
+  .expedition-biome-gas {
+    --terrain-a: #263541;
+    --terrain-b: #111d27;
+    --rock-a: #384956;
+    --rock-b: #17242d;
+  }
+
+  .expedition-biome-anomalous {
+    --terrain-a: #33294a;
+    --terrain-b: #19142a;
+    --rock-a: #493b61;
+    --rock-b: #211a34;
+  }
+
+  .expedition-token {
+    width: 72%;
+    height: 72%;
+    display: grid;
+    place-items: center;
+    pointer-events: none;
+    transform: translateZ(0);
+  }
+
+  .expedition-token svg {
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+    filter: drop-shadow(0 2px 3px rgba(0,0,0,.65));
+  }
+
+  .expedition-token-player .token-shadow { fill: #061015; stroke: #153a45; stroke-width: 2; }
+  .expedition-token-player .token-shell { fill: #bdebf4; stroke: #5de0f7; stroke-width: 1.5; }
+  .expedition-token-player .token-visor { fill: #0d4152; stroke: #78edff; stroke-width: 1.5; }
+  .expedition-token-player .token-core { fill: #62e8ff; }
+  .expedition-token-player .token-detail { fill: none; stroke: #e8fbff; stroke-width: 1.3; stroke-linecap: round; }
+
+  .expedition-token-enemy .enemy-shadow { fill: rgba(0,0,0,.72); }
+  .expedition-token-enemy .enemy-body { fill: #a63f39; stroke: #ff7969; stroke-width: 1.6; }
+  .expedition-token-enemy .enemy-eye { fill: #ffe0ad; stroke: #ff8e6c; stroke-width: 1; }
+  .expedition-token-enemy .enemy-detail { fill: none; stroke: #ff9582; stroke-width: 1.6; stroke-linecap: round; }
+  .expedition-token-enemy.enemy-drone .enemy-body { fill: #5f6870; stroke: #e97767; }
+  .expedition-token-enemy.enemy-drone .enemy-eye { fill: #ff4d4d; }
+  .expedition-token-enemy.enemy-humanoid .enemy-body { fill: #754543; }
+  .expedition-token-enemy.enemy-swarm .enemy-body { fill: #7c3f48; stroke: #f36e78; }
+  .expedition-token-enemy.enemy-anomaly .enemy-body { fill: #593e78; stroke: #c785ff; }
+  .expedition-token-enemy.enemy-anomaly .enemy-eye { fill: #8ef5ff; stroke: #dd9cff; }
+
+  .expedition-token-object .object-shell { fill: #162c34; stroke: #79d9ed; stroke-width: 2; }
+  .expedition-token-object .object-core { fill: #2e8398; stroke: #a6efff; stroke-width: 1.4; }
+  .expedition-token-object .object-detail { fill: none; stroke: #d2f8ff; stroke-width: 1.5; stroke-linecap: round; }
+  .expedition-token-object.is-objective svg { filter: drop-shadow(0 0 5px rgba(241, 206, 100, .65)); }
+  .expedition-token-object.object-artifact .object-shell { fill: #59471f; stroke: #f0ce67; }
+  .expedition-token-object.object-artifact .object-core { fill: #d8a83c; stroke: #fff0a6; }
+
+  .tile-player .expedition-token {
+    animation: expedition-token-arrive 110ms ease-out;
+  }
+
+  @keyframes expedition-token-arrive {
+    from { transform: scale(.82); opacity: .55; }
+    to { transform: scale(1); opacity: 1; }
+  }
+
+  .field-modal[data-moving="true"] .surface-grid,
+  .field-modal[data-moving="true"] .tile {
+    opacity: 1 !important;
+    filter: none !important;
+  }
+
+  .field-modal .expedition-sidebar {
+    border-top: 1px solid rgba(104, 209, 231, .08);
+    padding-top: 3px;
+  }
+
+  .field-modal .field-log {
+    background: rgba(6, 17, 24, .94) !important;
+  }
+}

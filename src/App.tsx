@@ -59,6 +59,7 @@ import './styles/galacticGeography.css';
 import './styles/experienceV35.css';
 import './styles/mobileCommandV361.css';
 import './styles/mobileCoverageV362.css';
+import './styles/mobilePolishV363.css';
 
 const defaultSettings: GalaxySettings = {
   seed: 'VOID-CHRONICLES-005',

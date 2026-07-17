@@ -1,8 +1,17 @@
 # Void Chronicles
 
-**Current version: v0.36.2 — Full Mobile Coverage**
+**Current version: v0.36.3 — Tactical Mobile Polish**
 
 Procedural single-player space exploration roguelike and autonomous galaxy-history simulator built with React, TypeScript and Canvas.
+
+## v0.36.3 Tactical Mobile Polish
+
+- compact bridge rows replace oversized empty panels;
+- the compact header no longer duplicates the logo or the More button;
+- the sections menu is grouped into Main, World, Ship and Service areas;
+- expedition movement renders one synchronized state per step without disabled-state dimming;
+- player, enemy and objective markers use inline SVG models and biome-aware procedural textures;
+- SAVE_SCHEMA_VERSION remains 13.
 
 ## v0.36.2 Full Mobile Coverage
 
