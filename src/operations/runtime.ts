@@ -125,6 +125,10 @@ function stagesFor(category: OperationCategory, systemId: string): OperationStag
   }));
 }
 
+export function operationStagesFor(category: OperationCategory, systemId: string): OperationStage[] {
+  return stagesFor(category, systemId);
+}
+
 export function initialCareerState(): NonNullable<Captain['career']> {
   return { renown: {}, titles: [], completedOperations: 0 };
 }
@@ -225,7 +229,8 @@ export function createOperationObjective(request: OperationRequest, year: number
       currentStageIndex: 0,
       quality: 0,
       attempts: 0,
-      log: [`Операция принята в ${year} году.`]
+      log: [`Операция принята в ${year} году.`],
+      chain: request.chain ? { ...request.chain } : undefined
     }
   };
 }

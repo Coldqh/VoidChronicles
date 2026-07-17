@@ -70,6 +70,7 @@ import { blueprintFromProject, createResearchProject, researchPower } from '../r
 import { advanceWarFronts, createShipSystems, createTravelEncounter, damageSystem, initializeWarFronts, normalizeShipSystems, systemIntegrity } from '../world/warfare';
 import { chronicleEntry, closeCurrentCaptain, createInitialLegacy } from '../world/legacy';
 import { generateHubScene, generateScanScene, generateTravelScene, initializeNarrative, processDueConsequences } from '../narrative/encounters';
+import { createOperationConsequence, projectLivingConsequenceScenes, worldEventDraftForConsequence } from '../narrative/livingConsequences';
 import type { PlayerKnowledgeState, SimulationState, WorldEvent } from '../simulation/types';
 import { ACTION_TIME, expeditionHours, HOURS_PER_YEAR, travelHours, worldYear } from '../simulation/clock';
 import { adjustEcosystem, adjustSystemEconomy, advanceSimulation, initializeSimulation, recordWorldEvent } from '../simulation/kernel';
@@ -453,34 +454,53 @@ function buildWorldAdvance(
   const knowledge = overrides.knowledge ?? state.knowledge;
   const currentSystemId = overrides.currentSystemId === undefined ? state.currentSystemId : overrides.currentSystemId;
   const advanced = advanceSimulation(simulation, { seed: galaxy.seed, galaxy, factions, hubs }, hours, reason);
+  let advancedSimulation = advanced.simulation;
+  const previousYear = worldYear(simulation.clock);
+  const nextYear = worldYear(advancedSimulation.clock);
+  const consequences = processDueConsequences(state.pendingConsequences, nextYear);
+  const consequenceEvents: WorldEvent[] = [];
+  for (const consequence of consequences.due) {
+    const draft = worldEventDraftForConsequence(consequence);
+    if (!draft) continue;
+    const recorded = recordWorldEvent(advancedSimulation, draft);
+    advancedSimulation = recorded.simulation;
+    consequenceEvents.push(recorded.event);
+  }
+  const emittedEvents = [...advanced.emittedEvents, ...consequenceEvents];
   const projectedHubs = hubs.map((hub) => {
-    const settlement = Object.values(advanced.simulation.settlements).find((entry) => entry.hubId === hub.id);
+    const settlement = Object.values(advancedSimulation.settlements).find((entry) => entry.hubId === hub.id);
     if (!settlement) return hub;
     const safety = settlement.security < 25 ? 'danger' as const : settlement.security < 55 ? 'caution' as const : 'safe' as const;
     return { ...hub, population: settlement.population, safety };
   });
-  const previousYear = worldYear(simulation.clock);
-  const nextYear = worldYear(advanced.simulation.clock);
   let warFronts = overrides.warFronts ?? state.warFronts;
   for (let year = previousYear + 1; year <= nextYear; year += 1) {
     warFronts = advanceWarFronts(`${galaxy.seed}:kernel`, warFronts, year);
   }
   const baseContracts = (overrides.contracts ?? state.contracts).map((contract) => contract.status === 'active' && nextYear > contract.deadlineYear ? { ...contract, status: 'expired' as const } : contract);
-  const contracts = projectContractsFromEvents({ events: advanced.emittedEvents, existing: baseContracts, hubs: projectedHubs, year: nextYear });
-  const news = projectNewsFromEvents(advanced.emittedEvents, knowledge, overrides.news ?? state.news, currentSystemId ?? undefined);
+  const contracts = projectContractsFromEvents({ events: emittedEvents, existing: baseContracts, hubs: projectedHubs, year: nextYear });
   const researchProjects = overrides.researchProjects ?? state.researchProjects;
-  const worldThreads = projectWorldThreads({ simulation: advanced.simulation, warFronts, factions, contracts, research: researchProjects });
+  const provisionalThreads = projectWorldThreads({ simulation: advancedSimulation, warFronts, factions, contracts, research: researchProjects });
   const datedScenes = state.storyScenes.map((scene) => scene.status === 'available' && scene.expiresYear !== undefined && scene.expiresYear < nextYear ? { ...scene, status: 'expired' as const } : scene);
-  const storyScenes = projectOperationRequests({ threads: worldThreads, contacts: state.civilizationContacts, civilizations: galaxy.civilizations, factions, existingScenes: datedScenes, year: nextYear });
-  const consequences = processDueConsequences(state.pendingConsequences, nextYear);
+  const operationScenes = projectOperationRequests({ threads: provisionalThreads, contacts: state.civilizationContacts, civilizations: galaxy.civilizations, factions, existingScenes: datedScenes, year: nextYear });
+  const consequenceProjection = projectLivingConsequenceScenes({
+    due: consequences.due,
+    existingScenes: operationScenes,
+    factions,
+    hubs: projectedHubs,
+    localNpcs: state.localNpcs,
+    year: nextYear
+  });
+  const news = projectNewsFromEvents(emittedEvents, knowledge, overrides.news ?? state.news, currentSystemId ?? undefined);
+  const worldThreads = projectWorldThreads({ simulation: advancedSimulation, warFronts, factions: consequenceProjection.factions, contracts, research: researchProjects });
   const shipLife = state.ship && state.legacy.mode === 'active' ? advanceShipLife({ ship: state.ship, crew: state.crew, hours, seed: galaxy.seed, year: nextYear, reason }) : null;
   const incidentLogs = shipLife?.incidents.map((entry) => makeLog(nextYear, entry.title, entry.summary, entry.severity >= 70 ? 'danger' : 'warning')) ?? [];
   const logs = [...incidentLogs, ...consequences.due.map((entry) => makeLog(nextYear, entry.title, entry.text, entry.tone)), ...state.logs];
   const projectedGalaxy = projectKnowledgeToGalaxy({ ...galaxy, currentYear: nextYear }, knowledge);
   return {
-    emittedEvents: advanced.emittedEvents,
+    emittedEvents,
     patch: {
-      simulation: advanced.simulation,
+      simulation: advancedSimulation,
       ship: shipLife?.ship ?? state.ship,
       crew: shipLife?.crew ?? state.crew,
       hubs: projectedHubs,
@@ -490,8 +510,10 @@ function buildWorldAdvance(
       news,
       worldThreads,
       warFronts,
+      factions: consequenceProjection.factions,
+      localNpcs: consequenceProjection.localNpcs,
       pendingConsequences: consequences.consequences,
-      storyScenes,
+      storyScenes: consequenceProjection.storyScenes,
       objectives: state.objectives.map((objective) => objective.status === 'active' && objective.deadlineYear !== undefined && objective.deadlineYear < nextYear ? { ...objective, status: 'failed' as const } : objective),
       logs: logs.slice(0, 750)
     }
@@ -2590,6 +2612,13 @@ async advanceOperation(objectiveId, approach) {
       : state.factions;
     const objectives = state.objectives.map((entry) => entry.id === objective.id ? result.objective : entry);
     const baseLogs = (advanced.patch.logs as GameLogEntry[] | undefined) ?? state.logs;
+    const baseConsequences = (advanced.patch.pendingConsequences as PendingConsequence[] | undefined) ?? state.pendingConsequences;
+    const operationConsequence = result.completed
+      ? createOperationConsequence({ objective: result.objective, year: advanced.patch.gameYear ?? state.gameYear, seed: galaxy.seed })
+      : null;
+    const pendingConsequences = operationConsequence && !baseConsequences.some((entry) => entry.id === operationConsequence.id)
+      ? [operationConsequence, ...baseConsequences]
+      : baseConsequences;
 
     set({
       ...advanced.patch,
@@ -2599,6 +2628,7 @@ async advanceOperation(objectiveId, approach) {
       captain: nextCaptain,
       factions,
       objectives,
+      pendingConsequences,
       logs: [makeLog(state.gameYear, objective.title, result.message, result.outcome === 'failed' ? 'danger' : result.completed ? 'good' : 'info'), ...baseLogs].slice(0, 750)
     });
     await persist(set, get, `operation-${objective.id}-${approach}`, { immediate: result.completed });

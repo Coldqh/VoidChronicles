@@ -1,8 +1,18 @@
 # Void Chronicles
 
-**Current version: v0.36.3 — Tactical Mobile Polish**
+**Current version: v0.37.0 — Living Consequences**
 
 Procedural single-player space exploration roguelike and autonomous galaxy-history simulator built with React, TypeScript and Canvas.
+
+## v0.37.0 Living Consequences
+
+- completed operations schedule delayed responses from the world;
+- consequences become news, world events, faction memories and returning NPC messages;
+- accepted follow-ups form deterministic chains of 2–4 linked operations;
+- success can expose theft, disputed ownership, broken ceasefires or mutated threats;
+- failure escalates shortages, blockades, evacuations and containment crises;
+- the captain journal shows real resolved consequences instead of arbitrary recent logs;
+- SAVE_SCHEMA_VERSION remains 13; new chain metadata is optional.
 
 ## v0.36.3 Tactical Mobile Polish
 

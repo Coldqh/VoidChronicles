@@ -1,0 +1,8 @@
+Void Chronicles v0.37.0 — LIVING CONSEQUENCES
+
+- delayed responses after completed operations;
+- 2–4 chapter operation chains;
+- consequence scenes, news and world events;
+- faction and returning NPC memory;
+- real consequences in the captain journal;
+- optional persistence metadata; SAVE_SCHEMA_VERSION remains 13.

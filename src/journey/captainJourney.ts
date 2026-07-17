@@ -4,6 +4,7 @@ import type {
   Discovery,
   GameLogEntry,
   NavigationState,
+  PendingConsequence,
   PlayerObjective,
   ResearchProject,
   Ship,
@@ -71,6 +72,7 @@ export interface CaptainJourneyInput {
   navigation: NavigationState;
   discoveries: Discovery[];
   logs: GameLogEntry[];
+  pendingConsequences: PendingConsequence[];
   openShipIssues: number;
 }
 
@@ -211,7 +213,8 @@ function careerMilestone(captain: Captain): CareerMilestone {
 
 export function buildCaptainJourney(input: CaptainJourneyInput): CaptainJourney {
   const tutorialStep = Math.max(0, Math.min(firstVoyageStep.length - 1, input.tutorial.currentStep));
-  const availableScene = input.storyScenes.find((scene) => scene.status === 'available');
+  const availableScene = input.storyScenes.find((scene) => scene.status === 'available' && scene.category === 'consequence')
+    ?? input.storyScenes.find((scene) => scene.status === 'available');
   const activeOperation = input.objectives.find((objective) => objective.status === 'active' && objective.operation);
   const activeObjective = input.objectives.find((objective) => objective.status === 'active' && objective.kind !== 'tutorial');
   const activeResearch = input.researchProjects.find((project) => project.status === 'active');
@@ -226,7 +229,7 @@ export function buildCaptainJourney(input: CaptainJourneyInput): CaptainJourney 
     focus = firstVoyageStep[tutorialStep];
   } else if (availableScene) {
     focus = {
-      eyebrow: availableScene.operationRequest ? 'НОВАЯ ОПЕРАЦИЯ' : 'ВХОДЯЩИЙ СИГНАЛ',
+      eyebrow: availableScene.category === 'consequence' ? 'ПОСЛЕДСТВИЕ РЕШЕНИЯ' : availableScene.operationRequest ? 'НОВАЯ ОПЕРАЦИЯ' : 'ВХОДЯЩИЙ СИГНАЛ',
       title: availableScene.title,
       text: availableScene.summary,
       label: 'Открыть сообщение',
@@ -309,7 +312,15 @@ export function buildCaptainJourney(input: CaptainJourneyInput): CaptainJourney 
     };
   }
 
-  const campaignThread = urgentThread
+  const operationChain = activeOperation?.operation?.chain;
+  const campaignThread = operationChain
+    ? {
+        title: activeOperation.title,
+        summary: activeOperation.description,
+        status: `связанная линия · глава ${operationChain.stage}/${operationChain.maxStages}`,
+        action: { kind: 'screen', screen: 'operations' } as JourneyAction
+      }
+    : urgentThread
     ? {
         title: urgentThread.title,
         summary: urgentThread.summary,
@@ -334,6 +345,10 @@ export function buildCaptainJourney(input: CaptainJourneyInput): CaptainJourney 
     firstVoyageStages: firstVoyageStages(input.tutorial),
     career: careerMilestone(input.captain),
     campaignThread,
-    recentConsequences: input.logs.slice(0, 3)
+    recentConsequences: input.pendingConsequences
+      .filter((entry) => entry.status === 'resolved')
+      .sort((a, b) => b.triggerYear - a.triggerYear)
+      .slice(0, 3)
+      .map((entry) => ({ id: entry.id, year: entry.triggerYear, title: entry.title, text: entry.text, tone: entry.tone }))
   };
 }

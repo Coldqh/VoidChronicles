@@ -40,10 +40,10 @@ export function MobileOperationsScreenV361({ chrome }: { chrome: ReactNode }) {
     ? requests.map((scene) => {
       const request = scene.operationRequest!;
       const target = store.galaxy?.systems.find((system) => system.id === request.targetSystemId);
-      return <button className="v361-list-button" key={scene.id} onClick={() => setSelectedId(scene.id)}><span>{operationLabels[request.category]} · СРОЧНОСТЬ {formatInteger(request.urgency)}</span><b>{scene.title}</b><p>{target?.name ?? 'Координаты скрыты'} · ₡{formatInteger(request.reward)}</p><em>›</em></button>;
+      return <button className="v361-list-button" key={scene.id} onClick={() => setSelectedId(scene.id)}><span>{request.chain ? `ГЛАВА ${request.chain.stage}/${request.chain.maxStages} · ` : ''}{operationLabels[request.category]} · СРОЧНОСТЬ {formatInteger(request.urgency)}</span><b>{scene.title}</b><p>{target?.name ?? 'Координаты скрыты'} · ₡{formatInteger(request.reward)}</p><em>›</em></button>;
     })
     : tab === 'active'
-      ? active.map((objective) => <button className="v361-list-button" key={objective.id} onClick={() => setSelectedId(objective.id)}><span>{objective.operation && operationLabels[objective.operation.category]} · {formatInteger(objective.progress)}%</span><b>{objective.title}</b><p>{currentOperationStage(objective)?.title ?? 'Операция ожидает решения'}</p><em>›</em></button>)
+      ? active.map((objective) => <button className="v361-list-button" key={objective.id} onClick={() => setSelectedId(objective.id)}><span>{objective.operation?.chain ? `ГЛАВА ${objective.operation.chain.stage}/${objective.operation.chain.maxStages} · ` : ''}{objective.operation && operationLabels[objective.operation.category]} · {formatInteger(objective.progress)}%</span><b>{objective.title}</b><p>{currentOperationStage(objective)?.title ?? 'Операция ожидает решения'}</p><em>›</em></button>)
       : tab === 'contracts'
         ? contracts.map((contract) => <button className="v361-list-button" key={contract.id} onClick={() => setSelectedId(contract.id)}><span>{contract.type} · {contract.status === 'active' ? 'В РАБОТЕ' : 'ДОСТУПЕН'}</span><b>{contract.title}</b><p>₡{formatInteger(contract.reward)} · срок {formatInteger(contract.deadlineYear)}</p><em>›</em></button>)
         : completed.map((objective) => <button className="v361-list-button" key={objective.id} onClick={() => setSelectedId(objective.id)}><span>{objective.operation && operationLabels[objective.operation.category]} · {objective.status}</span><b>{objective.title}</b><p>{objective.description}</p><em>›</em></button>);
@@ -64,7 +64,7 @@ export function MobileOperationsScreenV361({ chrome }: { chrome: ReactNode }) {
 
       {selectedRequest && <article className="v361-dossier">
         <button className="v361-back" onClick={() => setSelectedId(null)}>← Входящие</button>
-        <span>{operationLabels[selectedRequest.operationRequest!.category]} · СРОЧНОСТЬ {formatInteger(selectedRequest.operationRequest!.urgency)}</span>
+        <span>{selectedRequest.operationRequest!.chain ? `ГЛАВА ${selectedRequest.operationRequest!.chain!.stage}/${selectedRequest.operationRequest!.chain!.maxStages} · ` : ''}{operationLabels[selectedRequest.operationRequest!.category]} · СРОЧНОСТЬ {formatInteger(selectedRequest.operationRequest!.urgency)}</span>
         <h2>{selectedRequest.title}</h2><p>{selectedRequest.summary}</p>
         <dl><div><dt>Заказчик</dt><dd>{selectedRequest.operationRequest!.issuerName}</dd></div><div><dt>Награда</dt><dd>₡{formatInteger(selectedRequest.operationRequest!.reward)}</dd></div><div><dt>Срок</dt><dd>{formatInteger(selectedRequest.operationRequest!.deadlineYear)}</dd></div></dl>
         <footer><button onClick={() => void store.resolveStoryScene(selectedRequest.id, 'decline-operation')}>Отказать</button><button className="primary-button" onClick={() => void store.resolveStoryScene(selectedRequest.id, 'accept-operation')}>Принять</button></footer>
@@ -77,7 +77,7 @@ export function MobileOperationsScreenV361({ chrome }: { chrome: ReactNode }) {
         const atTarget = store.currentSystemId === operation.targetSystemId;
         return <article className="v361-dossier">
           <button className="v361-back" onClick={() => setSelectedId(null)}>← Активные</button>
-          <span>{operationLabels[operation.category]} · {formatInteger(selectedObjective.progress)}%</span>
+          <span>{operation.chain ? `ГЛАВА ${operation.chain.stage}/${operation.chain.maxStages} · ` : ''}{operationLabels[operation.category]} · {formatInteger(selectedObjective.progress)}%</span>
           <h2>{selectedObjective.title}</h2><p>{selectedObjective.description}</p>
           <nav className="v361-subtabs"><b>Текущий этап</b><span>{stage?.title ?? 'Ожидание'}</span></nav>
           {stage && <section className="v361-detail-block"><h3>{stage.title}</h3><p>{stage.description}</p></section>}

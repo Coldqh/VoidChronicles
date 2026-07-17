@@ -79,6 +79,14 @@ export interface OperationStage {
   requiredProgress: number;
   systemId: string;
 }
+export interface OperationChainState {
+  id: string;
+  stage: number;
+  maxStages: number;
+  originObjectiveId: string;
+  previousOutcome?: OperationOutcome;
+}
+
 export interface OperationRequest {
   id: string;
   threadId: string;
@@ -93,6 +101,7 @@ export interface OperationRequest {
   deadlineYear: number;
   urgency: number;
   stages: OperationStage[];
+  chain?: OperationChainState;
 }
 export interface OperationState {
   requestId: string;
@@ -110,6 +119,7 @@ export interface OperationState {
   outcome?: OperationOutcome;
   completedYear?: number;
   log: string[];
+  chain?: OperationChainState;
 }
 export type GalacticRouteKind = 'standard' | 'trade' | 'military' | 'smuggler' | 'ancient' | 'quarantine';
 export type RoutePreference = 'fast' | 'safe' | 'economical' | 'covert';
@@ -816,6 +826,20 @@ export interface StoryScene {
   operationRequest?: OperationRequest;
 }
 
+export interface OperationConsequenceContext {
+  chain: OperationChainState;
+  sourceObjectiveId: string;
+  threadId: string;
+  category: OperationCategory;
+  outcome: OperationOutcome;
+  quality: number;
+  issuerName: string;
+  issuerCivilizationId?: string;
+  issuerFactionId?: string;
+  targetSystemId: string;
+  reward: number;
+}
+
 export interface PendingConsequence {
   id: string;
   status: ConsequenceStatus;
@@ -827,6 +851,7 @@ export interface PendingConsequence {
   systemId?: string;
   factionId?: string;
   sourceSceneId?: string;
+  operation?: OperationConsequenceContext;
 }
 
 export interface PlayerObjective {

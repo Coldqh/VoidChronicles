@@ -579,16 +579,22 @@ const operationStageSchema = z.object({
   title: z.string(), description: z.string(), status: z.enum(['locked','active','completed','failed']),
   progress: finiteNumber, requiredProgress: finiteNumber, systemId: z.string()
 });
+const operationChainSchema = z.object({
+  id: z.string(), stage: finiteNumber, maxStages: finiteNumber, originObjectiveId: z.string(),
+  previousOutcome: z.enum(['failed','partial','successful','exceptional']).optional()
+});
 const operationRequestSchema = z.object({
   id: z.string(), threadId: z.string(), category: z.enum(['relief','evacuation','escort','mediation','investigation','recovery','containment']),
   title: z.string(), summary: z.string(), issuerName: z.string(), issuerCivilizationId: z.string().optional(), issuerFactionId: z.string().optional(),
-  targetSystemId: z.string(), reward: finiteNumber, deadlineYear: finiteNumber, urgency: finiteNumber, stages: z.array(operationStageSchema)
+  targetSystemId: z.string(), reward: finiteNumber, deadlineYear: finiteNumber, urgency: finiteNumber, stages: z.array(operationStageSchema),
+  chain: operationChainSchema.optional()
 });
 const operationStateSchema = z.object({
   requestId: z.string(), threadId: z.string(), category: z.enum(['relief','evacuation','escort','mediation','investigation','recovery','containment']),
   issuerName: z.string(), issuerCivilizationId: z.string().optional(), issuerFactionId: z.string().optional(), reward: finiteNumber,
   targetSystemId: z.string(), stages: z.array(operationStageSchema), currentStageIndex: finiteNumber, quality: finiteNumber, attempts: finiteNumber,
-  outcome: z.enum(['failed','partial','successful','exceptional']).optional(), completedYear: finiteNumber.optional(), log: z.array(z.string())
+  outcome: z.enum(['failed','partial','successful','exceptional']).optional(), completedYear: finiteNumber.optional(), log: z.array(z.string()),
+  chain: operationChainSchema.optional()
 });
 const galacticRouteKindSchema = z.enum(['standard','trade','military','smuggler','ancient','quarantine']);
 const routePreferenceSchema = z.enum(['fast','safe','economical','covert']);
@@ -625,9 +631,23 @@ const storySceneSchema = z.object({
   hubId: z.string().optional(), npcIds: z.array(z.string()), factionIds: z.array(z.string()), createdYear: finiteNumber, expiresYear: finiteNumber.optional(),
   choices: z.array(storyChoiceSchema), resolvedChoiceId: z.string().optional(), operationRequest: operationRequestSchema.optional()
 });
+const operationConsequenceContextSchema = z.object({
+  chain: operationChainSchema,
+  sourceObjectiveId: z.string(),
+  threadId: z.string(),
+  category: z.enum(['relief','evacuation','escort','mediation','investigation','recovery','containment']),
+  outcome: z.enum(['failed','partial','successful','exceptional']),
+  quality: finiteNumber,
+  issuerName: z.string(),
+  issuerCivilizationId: z.string().optional(),
+  issuerFactionId: z.string().optional(),
+  targetSystemId: z.string(),
+  reward: finiteNumber
+});
 const pendingConsequenceSchema = z.object({
   id: z.string(), status: z.enum(['pending','resolved']), createdYear: finiteNumber, triggerYear: finiteNumber, title: z.string(), text: z.string(),
-  tone: z.enum(['info','good','warning','danger']), systemId: z.string().optional(), factionId: z.string().optional(), sourceSceneId: z.string().optional()
+  tone: z.enum(['info','good','warning','danger']), systemId: z.string().optional(), factionId: z.string().optional(), sourceSceneId: z.string().optional(),
+  operation: operationConsequenceContextSchema.optional()
 });
 const objectiveSchema = z.object({
   id: z.string(), title: z.string(), description: z.string(), kind: z.enum(['urgent','opportunity','story','tutorial']), status: z.enum(['active','completed','failed']),

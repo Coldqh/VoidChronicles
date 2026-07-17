@@ -35,6 +35,7 @@ export function CommandDeckV35({ chrome }: { chrome?: ReactNode }) {
     navigation: store.navigation,
     discoveries: store.discoveries,
     logs: store.logs,
+    pendingConsequences: store.pendingConsequences,
     openShipIssues: openIssues.length
   });
 

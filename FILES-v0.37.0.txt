@@ -1,0 +1,5 @@
+APPLY-v0.37.0.mjs
+PATCH-v0.37.0.txt
+src/narrative/livingConsequences.ts
+src/tests/livingConsequences.test.ts
+src/tests/interfaceV370.test.ts

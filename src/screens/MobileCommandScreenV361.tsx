@@ -33,6 +33,7 @@ export function MobileCommandScreenV361({ chrome }: { chrome: ReactNode }) {
     navigation: store.navigation,
     discoveries: store.discoveries,
     logs: store.logs,
+    pendingConsequences: store.pendingConsequences,
     openShipIssues: openIssues.length
   });
 
