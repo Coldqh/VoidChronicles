@@ -1,4 +1,3 @@
-import { readFileSync } from 'node:fs';
 import appSource from '../App.tsx?raw';
 import sharedSource from '../components/MobileCoverageV362.tsx?raw';
 import shipSource from '../screens/MobileShipScreenV362.tsx?raw';
@@ -8,10 +7,9 @@ import archiveSource from '../screens/MobileArchiveScreenV362.tsx?raw';
 import laboratorySource from '../screens/MobileLaboratoryScreenV362.tsx?raw';
 import hubSource from '../screens/MobileHubScreenV362.tsx?raw';
 import settingsSource from '../screens/MobileSettingsScreenV362.tsx?raw';
+import coverageCss from '../styles/mobileCoverageV362.css?raw';
 import versionSource from '../version.ts?raw';
 import { describe, expect, it } from 'vitest';
-
-const coverageCss = readFileSync(new URL('../styles/mobileCoverageV362.css', import.meta.url), 'utf8');
 
 describe('v0.36.2 full mobile coverage', () => {
   it('routes every remaining heavy phone screen into a compact composition', () => {
