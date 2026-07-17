@@ -1,0 +1,243 @@
+/* v0.36.2 — full phone coverage for the remaining game spaces. */
+@media (max-width: 700px) {
+  .v362-shell > .v362-screen {
+    grid-row: 1 / -1 !important;
+    width: 100% !important;
+    height: 100dvh !important;
+    min-height: 0 !important;
+    padding: calc(var(--v361-hud) + env(safe-area-inset-top) + 5px) var(--v361-page-x) calc(var(--v361-dock) + env(safe-area-inset-bottom) + 5px) !important;
+    display: grid !important;
+    grid-template-rows: 40px 34px minmax(0, 1fr) !important;
+    gap: var(--v361-gap) !important;
+    overflow: hidden !important;
+  }
+
+  .v362-screen-header > .v362-header-action,
+  .v362-header-action {
+    min-height: 30px !important;
+    max-width: 92px;
+    padding: 4px 7px !important;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 9px !important;
+  }
+
+  .v362-tabs.five { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+  .v362-tabs.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .v362-tabs.five button { font-size: 8px !important; }
+  .v362-tabs.five button b { display: none; }
+
+  .v362-body {
+    min-height: 0 !important;
+    height: 100% !important;
+    overflow: hidden !important;
+  }
+
+  .v362-body > .v361-scroll-list,
+  .v362-body > .v361-dossier {
+    height: 100%;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .v362-section-title {
+    min-height: 27px;
+    padding: 6px 4px 3px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    color: #63808b;
+    font-size: 8px;
+    letter-spacing: .1em;
+  }
+  .v362-section-title b { color: #d8f1f7; font-size: 9px; letter-spacing: 0; }
+
+  .v362-action-grid {
+    display: grid;
+    gap: 3px;
+    margin: 3px 0;
+  }
+  .v362-action-grid.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .v362-action-grid.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .v362-action-grid.four { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .v362-action-grid button {
+    min-width: 0;
+    min-height: 34px !important;
+    padding: 4px !important;
+    font-size: 9px !important;
+  }
+  .v362-wide-button { width: 100%; min-height: 36px !important; font-size: 10px !important; }
+
+  .v362-vitals-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 3px;
+  }
+  .v362-vitals-grid.five { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+  .v362-vitals-grid article {
+    min-width: 0;
+    padding: 6px 4px;
+    border: 1px solid rgba(255,255,255,.05);
+    border-radius: 7px;
+    background: rgba(255,255,255,.018);
+  }
+  .v362-vitals-grid article span,
+  .v362-vitals-grid article b { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .v362-vitals-grid article span { color: #667f8a; font-size: 7px; }
+  .v362-vitals-grid article b { margin-top: 2px; font-size: 11px; }
+  .v362-vitals-grid article > i { display: block; height: 2px; margin-top: 4px; overflow: hidden; background: rgba(255,255,255,.06); }
+  .v362-vitals-grid article > i em { display: block; height: 100%; background: var(--v361-cyan); }
+  .v362-vitals-grid article.critical { border-color: rgba(255,103,115,.28); color: #ff9aa1; }
+
+  .v362-system-row {
+    min-height: 48px;
+    padding: 6px 7px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 2px 8px;
+    border: 1px solid rgba(255,255,255,.045);
+    border-radius: 7px;
+    background: rgba(255,255,255,.012);
+  }
+  .v362-system-row b,
+  .v362-system-row small { display: block; }
+  .v362-system-row b { font-size: 10px; }
+  .v362-system-row small { color: #6e8791; font-size: 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .v362-system-row strong { font-size: 10px; }
+  .v362-system-row > i { grid-column: 1 / -1; height: 3px; overflow: hidden; background: rgba(255,255,255,.06); }
+  .v362-system-row > i em { display: block; height: 100%; background: var(--v361-cyan); }
+
+  .v362-field {
+    margin: 6px 0;
+    display: grid;
+    gap: 3px;
+    color: #63808b;
+    font-size: 8px;
+    letter-spacing: .08em;
+  }
+  .v362-field select {
+    min-height: 36px;
+    padding: 5px 7px;
+    border-radius: 7px;
+    font-size: 10px;
+  }
+
+  .v362-dossier-list {
+    display: grid;
+    gap: 3px;
+  }
+  .v362-relation-row,
+  .v362-diplomatic-action,
+  .v362-issue-card,
+  .v362-candidate-card,
+  .v362-person-card,
+  .v362-contract-row,
+  .v362-cargo-sale {
+    padding: 7px;
+    border: 1px solid rgba(255,255,255,.05);
+    border-radius: 7px;
+    background: rgba(255,255,255,.012);
+  }
+  .v362-relation-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 5px; }
+  .v362-relation-row b,
+  .v362-relation-row small { display: block; }
+  .v362-relation-row b { font-size: 10px; }
+  .v362-relation-row small { color: #6e8791; font-size: 8px; }
+  .v362-relation-row > span { color: #6fcfe7; font-size: 8px; text-align: right; }
+
+  .v362-diplomatic-action {
+    width: 100%;
+    min-height: 57px !important;
+    display: grid;
+    gap: 2px;
+    text-align: left;
+  }
+  .v362-diplomatic-action b { font-size: 11px; }
+  .v362-diplomatic-action span { color: #768e98; font-size: 9px; }
+  .v362-diplomatic-action small { color: #64cee8; font-size: 8px; }
+
+  .v362-issue-card > span,
+  .v362-candidate-card > span,
+  .v362-person-card > span,
+  .v362-contract-row > span,
+  .v362-cargo-sale > span { color: #63cde7; font-size: 8px; letter-spacing: .07em; }
+  .v362-issue-card > b,
+  .v362-candidate-card > b,
+  .v362-person-card > b,
+  .v362-contract-row > b,
+  .v362-cargo-sale > b { display: block; margin: 3px 0; font-size: 11px; }
+  .v362-issue-card > p,
+  .v362-candidate-card > p,
+  .v362-person-card > p,
+  .v362-contract-row > p,
+  .v362-cargo-sale > p { margin: 0 0 5px !important; color: #778f99; font-size: 9px; line-height: 1.25; }
+  .v362-person-card > small,
+  .v362-contract-row > small,
+  .v362-cargo-sale > small { display: block; margin-bottom: 5px; color: #6f8791; font-size: 8px; }
+  .v362-issue-card.danger,
+  .v362-contract-row.danger,
+  .v362-cargo-sale.danger { border-left: 2px solid #d85f69; }
+
+  .v362-progress-card {
+    margin: 7px 0;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 38px;
+    align-items: center;
+    gap: 6px;
+  }
+  .v362-progress-card > i { height: 5px; overflow: hidden; background: rgba(255,255,255,.06); }
+  .v362-progress-card > i em { display: block; height: 100%; background: var(--v361-cyan); }
+  .v362-progress-card > b { font-size: 10px; text-align: right; }
+
+  .v362-market-row {
+    min-height: 54px;
+    padding: 6px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto 58px;
+    align-items: center;
+    gap: 5px;
+    border: 1px solid rgba(255,255,255,.045);
+    border-radius: 7px;
+    background: rgba(255,255,255,.012);
+  }
+  .v362-market-row.danger { border-left: 2px solid #d85f69; }
+  .v362-market-row span,
+  .v362-market-row b,
+  .v362-market-row small { display: block; }
+  .v362-market-row span { color: #63cde7; font-size: 7px; }
+  .v362-market-row b { font-size: 10px; }
+  .v362-market-row small { color: #6f8791; font-size: 8px; }
+  .v362-market-row strong { font-size: 10px; }
+  .v362-market-row button { min-height: 32px !important; padding: 4px !important; font-size: 9px !important; }
+
+  .v362-version-card {
+    min-height: 105px;
+    display: grid;
+    place-content: center;
+    text-align: center;
+    border: 1px solid rgba(104,220,247,.13);
+    border-radius: 9px;
+    background: radial-gradient(circle at 50% 0, rgba(79,179,210,.12), rgba(255,255,255,.012));
+  }
+  .v362-version-card span { color: #63808b; font-size: 8px; letter-spacing: .1em; }
+  .v362-version-card b { margin: 2px 0; color: #e9fbff; font-size: 27px; }
+  .v362-version-card p { margin: 0 !important; color: #72d9f2; font-size: 9px; }
+
+  .v362-status-view { padding-bottom: 6px; }
+  .v362-ship-screen .v361-dossier > footer,
+  .v362-archive-screen .v361-dossier > footer,
+  .v362-lab-screen .v361-dossier > footer,
+  .v362-crew-screen .v361-dossier > footer { flex-wrap: nowrap; }
+  .v362-archive-screen .v361-dossier > footer button { min-width: 0; padding-inline: 3px !important; }
+
+  @media (max-height: 745px) {
+    .v362-shell > .v362-screen { gap: 4px !important; }
+    .v362-vitals-grid article { padding-block: 4px; }
+    .v362-market-row { min-height: 49px; }
+    .v361-list-button,
+    .v361-list-static { min-height: 49px !important; }
+  }
+}

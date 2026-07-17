@@ -1,0 +1,8 @@
+Void Chronicles v0.36.2 — FULL MOBILE COVERAGE
+
+- dedicated compact phone screens for Ship, Crew, Contacts, Archive, Laboratory, Hub and Settings;
+- one shared mobile shell with fixed HUD, tabs, controlled scroll body and safe-area support;
+- list-to-dossier navigation instead of stacked dashboards;
+- original repair, crew, diplomacy, research, trade, archive and save actions remain available;
+- desktop layouts are unchanged;
+- SAVE_SCHEMA_VERSION remains 13.

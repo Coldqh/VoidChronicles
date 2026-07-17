@@ -1,0 +1,13 @@
+APPLY-v0.36.2.mjs
+src/components/MobileCoverageV362.tsx
+src/screens/MobileShipScreenV362.tsx
+src/screens/MobileCrewScreenV362.tsx
+src/screens/MobileContactsScreenV362.tsx
+src/screens/MobileArchiveScreenV362.tsx
+src/screens/MobileLaboratoryScreenV362.tsx
+src/screens/MobileHubScreenV362.tsx
+src/screens/MobileSettingsScreenV362.tsx
+src/styles/mobileCoverageV362.css
+src/tests/interfaceV362.test.ts
+PATCH-v0.36.2.txt
+FILES-v0.36.2.txt

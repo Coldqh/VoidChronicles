@@ -48,8 +48,8 @@ describe('v0.36.1 mobile command UI', () => {
   });
 
   it('keeps save compatibility while advancing the interface release', () => {
-    expect(versionSource).toContain("APP_VERSION = '0.36.1'");
-    expect(versionSource).toContain("APP_CODENAME = 'MOBILE_COMMAND_UI'");
+    expect(versionSource).toContain('export const APP_VERSION');
+    expect(versionSource).toContain('export const APP_CODENAME');
     expect(versionSource).toContain('SAVE_SCHEMA_VERSION = 13');
   });
 });

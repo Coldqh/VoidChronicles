@@ -1,8 +1,17 @@
 # Void Chronicles
 
-**Current version: v0.36.1 — Mobile Command UI**
+**Current version: v0.36.2 — Full Mobile Coverage**
 
 Procedural single-player space exploration roguelike and autonomous galaxy-history simulator built with React, TypeScript and Canvas.
+
+## v0.36.2 Full Mobile Coverage
+
+- Ship, Crew, Contacts, Archive, Laboratory, Hub and Settings now use dedicated compact phone screens;
+- all remaining mobile screens share one fixed-height shell, tabs and one controlled scroll body;
+- dense dashboards are replaced by list-to-dossier navigation and compact sub-tabs;
+- original repair, crew, diplomacy, research, trade, archive and save actions remain reachable;
+- desktop layouts remain unchanged;
+- SAVE_SCHEMA_VERSION remains 13.
 
 ## v0.36.1 Mobile Command UI
 

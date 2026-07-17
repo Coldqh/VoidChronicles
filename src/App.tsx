@@ -33,6 +33,13 @@ import { MobileOperationsScreenV361 } from './screens/MobileOperationsScreenV361
 import { MobileSituationScreenV361 } from './screens/MobileSituationScreenV361';
 import { MobileChronicleScreenV361 } from './screens/MobileChronicleScreenV361';
 import { MobileFactionsScreenV361 } from './screens/MobileFactionsScreenV361';
+import { MobileShipScreenV362 } from './screens/MobileShipScreenV362';
+import { MobileCrewScreenV362 } from './screens/MobileCrewScreenV362';
+import { MobileContactsScreenV362 } from './screens/MobileContactsScreenV362';
+import { MobileArchiveScreenV362 } from './screens/MobileArchiveScreenV362';
+import { MobileLaboratoryScreenV362 } from './screens/MobileLaboratoryScreenV362';
+import { MobileHubScreenV362 } from './screens/MobileHubScreenV362';
+import { MobileSettingsScreenV362 } from './screens/MobileSettingsScreenV362';
 const LaboratoryScreen = lazy(() => import('./screens/LaboratoryScreen').then((module) => ({ default: module.LaboratoryScreen })));
 const WorldScreen = lazy(() => import('./screens/WorldScreen').then((module) => ({ default: module.WorldScreen })));
 const OperationsScreen = lazy(() => import('./screens/OperationsScreen').then((module) => ({ default: module.OperationsScreen })));
@@ -51,6 +58,7 @@ import './styles/shipCrewLife.css';
 import './styles/galacticGeography.css';
 import './styles/experienceV35.css';
 import './styles/mobileCommandV361.css';
+import './styles/mobileCoverageV362.css';
 
 const defaultSettings: GalaxySettings = {
   seed: 'VOID-CHRONICLES-005',
@@ -341,22 +349,22 @@ export default function App() {
   useEffect(() => { if (rawScreen !== screen) setScreen(screen); }, [rawScreen, screen, setScreen]);
   if (hydration === 'idle' || hydration === 'loading') return <BootScreen/>;
   let content;
-  if (screen === 'settings') content = <SettingsScreen/>;
+  if (screen === 'settings') content = compact && galaxy ? <MobileSettingsScreenV362 chrome={<AppChrome/>}/> : <SettingsScreen/>;
   else if (screen === 'continuity') content = <ContinuityScreen/>;
   else if (screen === 'chronicle') content = compact && galaxy ? <MobileChronicleScreenV361 chrome={useGameStore.getState().legacy.mode !== 'chronicle' ? <AppChrome/> : undefined}/> : <ChronicleScreen chrome={galaxy && useGameStore.getState().legacy.mode !== 'chronicle' ? <AppChrome/> : undefined}/>;
   else if (!galaxy || screen === 'menu') content = <MainMenu/>;
   else if (screen === 'command') content = compact ? <MobileCommandScreenV361 chrome={<AppChrome/>}/> : <CommandDeckScreen/>;
   else if (screen === 'galaxy') content = <GalaxyScreenV34 chrome={<AppChrome/>}/>;
   else if (screen === 'system') content = compact ? <SystemScreen/> : <div className="game-shell"><AppChrome/><SystemWorkspaceV352/></div>;
-  else if (screen === 'hub') content = <HubScreen/>;
+  else if (screen === 'hub') content = compact ? <MobileHubScreenV362 chrome={<AppChrome/>}/> : <HubScreen/>;
   else if (screen === 'contracts') content = compact ? <MobileOperationsScreenV361 chrome={<AppChrome/>}/> : <OperationsScreen chrome={<AppChrome/>}/>;
   else if (screen === 'factions') content = compact ? <MobileFactionsScreenV361 chrome={<AppChrome/>}/> : <FactionsScreen/>;
-  else if (screen === 'civilizations') content = <ContactsScreen chrome={<AppChrome/>}/>;
-  else if (screen === 'crew') content = <CrewScreenV33 chrome={<AppChrome/>}/>;
-  else if (screen === 'archive') content = <div className="game-shell"><AppChrome/><ArchiveWorkspaceV352/></div>;
-  else if (screen === 'laboratory') content = <LaboratoryScreen chrome={<AppChrome/>}/>;
+  else if (screen === 'civilizations') content = compact ? <MobileContactsScreenV362 chrome={<AppChrome/>}/> : <ContactsScreen chrome={<AppChrome/>}/>;
+  else if (screen === 'crew') content = compact ? <MobileCrewScreenV362 chrome={<AppChrome/>}/> : <CrewScreenV33 chrome={<AppChrome/>}/>;
+  else if (screen === 'archive') content = compact ? <MobileArchiveScreenV362 chrome={<AppChrome/>}/> : <div className="game-shell"><AppChrome/><ArchiveWorkspaceV352/></div>;
+  else if (screen === 'laboratory') content = compact ? <MobileLaboratoryScreenV362 chrome={<AppChrome/>}/> : <LaboratoryScreen chrome={<AppChrome/>}/>;
   else if (screen === 'world') content = compact ? <MobileSituationScreenV361 chrome={<AppChrome/>}/> : <WorldScreen chrome={<AppChrome/>}/>;
   else if (screen === 'operations') content = compact ? <MobileOperationsScreenV361 chrome={<AppChrome/>}/> : <OperationsScreen chrome={<AppChrome/>}/>;
-  else content = <ShipScreenV33 chrome={<AppChrome/>}/>;
+  else content = compact ? <MobileShipScreenV362 chrome={<AppChrome/>}/> : <ShipScreenV33 chrome={<AppChrome/>}/>;
   return <Suspense fallback={<BootScreen/>}>{content}{galaxy && <TutorialController/>}{galaxy && <StoryScenePopup/>}{galaxy && <ShipCombatModal/>}</Suspense>;
 }
